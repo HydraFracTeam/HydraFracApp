@@ -8,3 +8,6 @@ pytz==2025.2
 shiboken6==6.10.0
 six==1.17.0
 tzdata==2025.2
+pyqtgraph==0.13.7
+pytest==8.3.3
+pydantic==2.8.2
