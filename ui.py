@@ -15,7 +15,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QDoubleSpinBox, QLabel, QMainWindow,
+from PySide6.QtWidgets import (QApplication, QDoubleSpinBox, QSpinBox, QLabel, QMainWindow,
     QMenuBar, QPushButton, QSizePolicy, QStatusBar,
     QWidget)
 
@@ -63,7 +63,35 @@ class Ui_mainWindow(object):
         self.statusbar = QStatusBar(mainWindow)
         self.statusbar.setObjectName(u"statusbar")
         mainWindow.setStatusBar(self.statusbar)
+        
+        # Параметры ГРП
+        self.skin_label = QLabel(self.centralwidget)
+        self.skin_label.setObjectName(u"skin_label")
+        self.skin_label.setGeometry(QRect(30, 250, 181, 18))
+        self.skin_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        self.n_label = QLabel(self.centralwidget)
+        self.n_label.setObjectName(u"n_label")
+        self.n_label.setGeometry(QRect(30, 300, 181, 18))
+        self.n_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.aL_label = QLabel(self.centralwidget)
+        self.aL_label.setObjectName(u"aL_label")
+        self.aL_label.setGeometry(QRect(30, 350, 181, 18))
+        self.skin_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.skin_doubleSpinBox = QDoubleSpinBox(self.centralwidget)
+        self.skin_doubleSpinBox.setObjectName(u"skin_doubleSpinBox")
+        self.skin_doubleSpinBox.setGeometry(QRect(220, 240, 71, 27))
+
+        self.n_spinBox = QSpinBox(self.centralwidget)  # Число трещин - целое
+        self.n_spinBox.setObjectName(u"n_spinBox")
+        self.n_spinBox.setGeometry(QRect(220, 290, 71, 27))
+
+        self.aL_doubleSpinBox = QDoubleSpinBox(self.centralwidget)
+        self.aL_doubleSpinBox.setObjectName(u"aL_doubleSpinBox")
+        self.aL_doubleSpinBox.setGeometry(QRect(220, 340, 71, 27))
+        
         self.retranslateUi(mainWindow)
 
         QMetaObject.connectSlotsByName(mainWindow)
@@ -76,5 +104,8 @@ class Ui_mainWindow(object):
         self.params_label.setText(QCoreApplication.translate("mainWindow", u"\u041f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
         self.h_label.setText(QCoreApplication.translate("mainWindow", u"\u0422\u043e\u043b\u0449\u0438\u043d\u0430 \u043f\u043b\u0430\u0441\u0442\u0430 h, \u043c", None))
         self.phi_label.setText(QCoreApplication.translate("mainWindow", u"\u041f\u043e\u0440\u0438\u0441\u0442\u043e\u0441\u0442\u044c phi", None))
+        self.skin_label.setText(QCoreApplication.translate("mainWindow", u"Skin", None))
+        self.n_label.setText(QCoreApplication.translate("mainWindow", u"N (\u0442\u0440\u0435\u0449\u0438\u043d\u044b)", None))
+        self.aL_label.setText(QCoreApplication.translate("mainWindow", u"a/L", None))
     # retranslateUi
 

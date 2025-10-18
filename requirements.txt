@@ -11,3 +11,7 @@ tzdata==2025.2
 pyqtgraph==0.13.7
 pytest==8.3.3
 pydantic==2.8.2
+scipy>=1.9.0
+scikit-learn>=1.1.0
+matplotlib>=3.5.0
+pyarrow>=10.0.0

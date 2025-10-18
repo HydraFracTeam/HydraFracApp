@@ -1,12 +1,19 @@
 import sys
 import pandas as pd
 import numpy as np
-from PySide6.QtWidgets import QLabel, QApplication, QMainWindow, QFileDialog, QMessageBox, QComboBox, QPushButton, QWidget, QVBoxLayout, QHBoxLayout
+from PySide6.QtWidgets import (QLabel, QApplication, QMainWindow, QFileDialog, QMessageBox, 
+                               QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, 
+                               QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout)
 from ui import Ui_mainWindow
 
-from helpers.parse_csv_params import parse_csv_params
+from helpers.parse_well_data import parse_well_csv, extract_well_parameters, analyze_well_groups
 from helpers.physics import compute_transmissivity, compute_pore_volume
 from helpers.timeseries import compute_derivative, interpolate_series, smooth_series
+from helpers.grp_analysis import (analyze_flow_regime, match_type_curves, 
+                                 compute_well_productivity_index, detect_flow_regime_transitions)
+from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
+                               clean_data, detect_outliers, AdvancedInterpolator)
+from schemas.well_data import WellTimeSeries
 
 try:
     import pyqtgraph as pg
@@ -19,201 +26,761 @@ class MyApp(QMainWindow, Ui_mainWindow):
         super().__init__()
         self.setupUi(self)
         self.load_template_button.clicked.connect(self.load_template)
-        self.df_ts = None
-        self.time_column = None  # Фиксированная колонка времени
-        self.has_real_time = False  # Флаг наличия реального времени
-
-        # Контейнер для графиков и управления
-        self.plot_container = QWidget(self.centralwidget)
-        self.plot_container.setGeometry(350, 20, 830, 680)
-        self.plot_vlayout = QVBoxLayout(self.plot_container)
-        self.plot_vlayout.setContentsMargins(0, 0, 0, 0)
-
-        # Панель управления
-        controls = QWidget(self.plot_container)
-        controls_layout = QHBoxLayout(controls)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.well_data_list = []  # Список WellTimeSeries объектов
+        self.current_well_index = 0  # Индекс текущей скважины
+        self.current_plot_type = "pressure"  # Тип текущего графика
         
-        # Выбор временной колонки (фиксируется при загрузке)
-        self.time_label = QLabel("Время:", controls)
-        self.data_combo = QComboBox(controls)  # Выбор показателя для отображения
-        self.plot_btn = QPushButton("Построить", controls)
-        self.deriv_btn = QPushButton("Производная", controls)
-        self.interp_btn = QPushButton("Интерполяция", controls)
-        self.smooth_btn = QPushButton("Сгладить", controls)
+        # Создаем профессиональный интерфейс с вкладками
+        self.setup_professional_interface()
         
-        controls_layout.addWidget(self.time_label)
-        controls_layout.addWidget(self.data_combo)
-        controls_layout.addWidget(self.plot_btn)
-        controls_layout.addWidget(self.deriv_btn)
-        controls_layout.addWidget(self.interp_btn)
-        controls_layout.addWidget(self.smooth_btn)
-        self.plot_vlayout.addWidget(controls)
+        # Настраиваем обработчики событий
+        self.setup_event_handlers()
+    
+    @property
+    def current_well_data(self):
+        """Возвращает данные текущей скважины"""
+        if self.well_data_list and 0 <= self.current_well_index < len(self.well_data_list):
+            return self.well_data_list[self.current_well_index]
+        return None
 
-        # Площадка графика
+    def setup_professional_interface(self):
+        """Создает профессиональный интерфейс с вкладками для анализа ГРП"""
+        # Основной контейнер с вкладками
+        self.tab_widget = QTabWidget(self.centralwidget)
+        self.tab_widget.setGeometry(350, 20, 850, 700)
+        
+        # Вкладка 1: Временные ряды
+        self.timeseries_tab = QWidget()
+        self.tab_widget.addTab(self.timeseries_tab, "Временные ряды")
+        self.setup_timeseries_tab()
+        
+        # Вкладка 2: Анализ ГРП
+        self.grp_tab = QWidget()
+        self.tab_widget.addTab(self.grp_tab, "Анализ ГРП")
+        self.setup_grp_tab()
+        
+        # Вкладка 3: Эталонные кривые
+        self.type_curves_tab = QWidget()
+        self.tab_widget.addTab(self.type_curves_tab, "Эталонные кривые")
+        self.setup_type_curves_tab()
+        
+        # Вкладка 4: Результаты анализа
+        self.results_tab = QWidget()
+        self.tab_widget.addTab(self.results_tab, "Результаты")
+        self.setup_results_tab()
+    
+    def setup_timeseries_tab(self):
+        """Настройка вкладки временных рядов"""
+        layout = QVBoxLayout(self.timeseries_tab)
+        
+        # Панель управления графиками
+        controls_group = QGroupBox("Управление графиками")
+        controls_layout = QGridLayout(controls_group)
+        
+        # Выбор скважины
+        self.well_selection_combo = QComboBox()
+        self.well_selection_combo.setToolTip("Выберите скважину для анализа")
+        
+        # Выбор типа графика
+        self.plot_type_combo = QComboBox()
+        self.plot_type_combo.addItems([
+            "Давление vs Время",
+            "Дебит vs Время", 
+            "Производная давления",
+            "Производная дебита",
+            "Давление vs Дебит"
+        ])
+        
+        # Кнопки анализа
+        self.plot_btn = QPushButton("Построить график")
+        self.smooth_btn = QPushButton("Сгладить данные")
+        self.interp_btn = QPushButton("Интерполяция")
+        self.ml_interp_btn = QPushButton("ML интерполяция")
+        self.ml_filter_btn = QPushButton("ML фильтрация")
+        self.outlier_btn = QPushButton("Обнаружить выбросы")
+        self.export_btn = QPushButton("Экспорт данных")
+        
+        controls_layout.addWidget(QLabel("Скважина:"), 0, 0)
+        controls_layout.addWidget(self.well_selection_combo, 0, 1)
+        controls_layout.addWidget(QLabel("Тип графика:"), 0, 2)
+        controls_layout.addWidget(self.plot_type_combo, 0, 3)
+        controls_layout.addWidget(self.plot_btn, 1, 0)
+        controls_layout.addWidget(self.smooth_btn, 1, 1)
+        controls_layout.addWidget(self.interp_btn, 1, 2)
+        controls_layout.addWidget(self.ml_interp_btn, 1, 3)
+        controls_layout.addWidget(self.ml_filter_btn, 2, 0)
+        controls_layout.addWidget(self.outlier_btn, 2, 1)
+        controls_layout.addWidget(self.export_btn, 2, 2)
+        
+        layout.addWidget(controls_group)
+        
+        # Область для графиков
         if pg is not None:
-            self.plot_widget = pg.PlotWidget(self.plot_container)
-            self.plot = self.plot_widget.plot()
-            
-            # НАСТРОЙКА ВЕРТИКАЛЬНОГО ГРАФИКА (время по Y)
-            self.plot_widget.setLabel('left', 'Время/Измерения')
-            self.plot_widget.setLabel('bottom', 'Значения')
-            self.plot_widget.invertY(True)  # Время идет сверху вниз
-            
-            self.plot_vlayout.addWidget(self.plot_widget)
+            self.plot_widget = pg.PlotWidget()
+            self.plot_widget.setLabel('left', 'Значение')
+            self.plot_widget.setLabel('bottom', 'Время, ч')
+            self.plot_widget.showGrid(x=True, y=True)
+            layout.addWidget(self.plot_widget)
         else:
             self.plot_widget = None
-
-        # Сигналы
-        self.plot_btn.clicked.connect(self.on_plot)
-        self.deriv_btn.clicked.connect(self.on_derivative)
-        self.interp_btn.clicked.connect(self.on_interpolate)
-        self.smooth_btn.clicked.connect(self.on_smooth)
+            layout.addWidget(QLabel("pyqtgraph не установлен"))
+    
+    def setup_grp_tab(self):
+        """Настройка вкладки анализа ГРП"""
+        layout = QVBoxLayout(self.grp_tab)
+        
+        # Панель параметров ГРП
+        params_group = QGroupBox("Параметры ГРП")
+        params_layout = QGridLayout(params_group)
+        
+        # Отображение параметров из загруженных данных
+        self.skin_value_label = QLabel("Skin: -")
+        self.thickness_value_label = QLabel("Толщина: -")
+        self.fractures_value_label = QLabel("Трещины: -")
+        self.fracture_width_label = QLabel("Ширина трещины: -")
+        self.fracture_length_label = QLabel("Длина трещины: -")
+        self.al_ratio_label = QLabel("a/L: -")
+        
+        params_layout.addWidget(self.skin_value_label, 0, 0)
+        params_layout.addWidget(self.thickness_value_label, 0, 1)
+        params_layout.addWidget(self.fractures_value_label, 0, 2)
+        params_layout.addWidget(self.fracture_width_label, 1, 0)
+        params_layout.addWidget(self.fracture_length_label, 1, 1)
+        params_layout.addWidget(self.al_ratio_label, 1, 2)
+        
+        layout.addWidget(params_group)
+        
+        # Кнопки анализа
+        analysis_group = QGroupBox("Анализ")
+        analysis_layout = QHBoxLayout(analysis_group)
+        
+        self.flow_regime_btn = QPushButton("Анализ режима течения")
+        self.productivity_btn = QPushButton("Индекс продуктивности")
+        self.transitions_btn = QPushButton("Переходы режимов")
+        
+        analysis_layout.addWidget(self.flow_regime_btn)
+        analysis_layout.addWidget(self.productivity_btn)
+        analysis_layout.addWidget(self.transitions_btn)
+        
+        layout.addWidget(analysis_group)
+        
+        # Область для результатов
+        self.grp_results_text = QTextEdit()
+        self.grp_results_text.setMaximumHeight(200)
+        layout.addWidget(self.grp_results_text)
+    
+    def setup_type_curves_tab(self):
+        """Настройка вкладки эталонных кривых"""
+        layout = QVBoxLayout(self.type_curves_tab)
+        
+        # Панель управления
+        controls_group = QGroupBox("Эталонные кривые")
+        controls_layout = QHBoxLayout(controls_group)
+        
+        self.bilinear_btn = QPushButton("Билинейное течение")
+        self.linear_btn = QPushButton("Линейное течение")
+        self.pseudoradial_btn = QPushButton("Псевдорадиальное течение")
+        self.match_curves_btn = QPushButton("Сопоставить с данными")
+        
+        controls_layout.addWidget(self.bilinear_btn)
+        controls_layout.addWidget(self.linear_btn)
+        controls_layout.addWidget(self.pseudoradial_btn)
+        controls_layout.addWidget(self.match_curves_btn)
+        
+        layout.addWidget(controls_group)
+        
+        # График эталонных кривых
+        if pg is not None:
+            self.type_curves_widget = pg.PlotWidget()
+            self.type_curves_widget.setLabel('left', 'Дебит, м³/сут')
+            self.type_curves_widget.setLabel('bottom', 'Время, ч')
+            self.type_curves_widget.setLogMode(True, True)  # Log-log масштаб
+            self.type_curves_widget.showGrid(x=True, y=True)
+            layout.addWidget(self.type_curves_widget)
+        else:
+            self.type_curves_widget = None
+            layout.addWidget(QLabel("pyqtgraph не установлен"))
+    
+    def setup_results_tab(self):
+        """Настройка вкладки результатов анализа"""
+        layout = QVBoxLayout(self.results_tab)
+        
+        # Область для отображения результатов
+        self.results_text = QTextEdit()
+        self.results_text.setReadOnly(True)
+        layout.addWidget(self.results_text)
+        
+        # Кнопка экспорта отчета
+        self.export_report_btn = QPushButton("Экспорт отчета")
+        layout.addWidget(self.export_report_btn)
+    
+    def setup_event_handlers(self):
+        """Настройка обработчиков событий"""
+        # Временные ряды
+        self.well_selection_combo.currentIndexChanged.connect(self.on_well_selection_changed)
+        self.plot_btn.clicked.connect(self.on_plot_timeseries)
+        self.smooth_btn.clicked.connect(self.on_smooth_data)
+        self.interp_btn.clicked.connect(self.on_interpolate_data)
+        self.ml_interp_btn.clicked.connect(self.on_ml_interpolate)
+        self.ml_filter_btn.clicked.connect(self.on_ml_filter)
+        self.outlier_btn.clicked.connect(self.on_detect_outliers)
+        self.export_btn.clicked.connect(self.on_export_data)
+        
+        # Анализ ГРП
+        self.flow_regime_btn.clicked.connect(self.on_analyze_flow_regime)
+        self.productivity_btn.clicked.connect(self.on_compute_productivity)
+        self.transitions_btn.clicked.connect(self.on_detect_transitions)
+        
+        # Эталонные кривые
+        self.bilinear_btn.clicked.connect(self.on_plot_bilinear)
+        self.linear_btn.clicked.connect(self.on_plot_linear)
+        self.pseudoradial_btn.clicked.connect(self.on_plot_pseudoradial)
+        self.match_curves_btn.clicked.connect(self.on_match_curves)
+        
+        # Результаты
+        self.export_report_btn.clicked.connect(self.on_export_report)
 
     def load_template(self):
+        """Загрузка CSV файла с данными разведки месторождений"""
         file_dialog = QFileDialog()
-        file_path, _ = file_dialog.getOpenFileName(self, "Load CSV File", "./", "CSV Files (*.csv);;All Files (*)")
+        file_path, _ = file_dialog.getOpenFileName(self, "Загрузить файл данных", "./", 
+                                                 "Data Files (*.csv *.parquet);;CSV Files (*.csv);;Parquet Files (*.parquet);;All Files (*)")
         if not file_path:
             return
 
-        # 1) Попытка разобрать параметры для скалярных расчётов
-        required_params, data_df, error_msg = parse_csv_params(file_path)
-        if error_msg is None and required_params is not None:
-            self.k_doubleSpinBox.setValue(float(required_params.k))
-            self.h_doubleSpinBox.setValue(float(required_params.h))
-            self.phi_doubleSpinBox.setValue(float(required_params.phi))
-            t_scalar = compute_transmissivity(required_params.k, required_params.h)
-            vp_scalar = compute_pore_volume(required_params.phi, required_params.h)
-            QMessageBox.information(self, "Расчёт выполнен", f"T = {t_scalar}; Vp = {vp_scalar}")
-        else:
-            if error_msg:
-                QMessageBox.information(self, "Info", f"Схема параметров не применима: {error_msg}")
-
-        # 2) Загрузка временного ряда
-        try:
-            df = pd.read_csv(file_path)
-        except Exception as exc:
-            QMessageBox.information(self, "Error load", f"Ошибка чтения CSV: {exc}")
+        # Парсим данные скважины
+        well_data_list, error_msg = parse_well_csv(file_path)
+        if error_msg is not None:
+            QMessageBox.warning(self, "Ошибка загрузки", error_msg)
             return
 
-        # Автоматически находим колонку времени
-        time_columns = [c for c in df.columns if str(c).lower().find("time") >= 0 or str(c).lower().find("date") >= 0]
-        if time_columns:
-            self.time_column = time_columns[0]
-            self.has_real_time = True
-            # Парсим даты
+        self.well_data_list = well_data_list
+        self.current_well_index = 0
+        
+        # Обновляем список выбора скважин
+        self.update_well_selection()
+        
+        # Обновляем отображение параметров ГРП
+        self.update_grp_parameters()
+        
+        # Обновляем старые поля для совместимости
+        current_well = self.current_well_data
+        if current_well:
+            self.k_doubleSpinBox.setValue(0.001)  # Примерное значение
+            self.h_doubleSpinBox.setValue(current_well.thickness)
+            self.phi_doubleSpinBox.setValue(0.2)  # Примерное значение
+            
+            # Обновляем параметры ГРП в старом интерфейсе
+            self.skin_doubleSpinBox.setValue(current_well.skin)
+            self.n_spinBox.setValue(current_well.fractures_count)
+            self.aL_doubleSpinBox.setValue(current_well.a_l_ratio)
+        
+        # Показываем информацию о загруженных данных
+        total_points = sum(len(well.time) for well in well_data_list)
+        QMessageBox.information(self, "Данные загружены", 
+                              f"Загружено {len(well_data_list)} групп данных\n"
+                              f"Всего измерений: {total_points}\n"
+                              f"Текущая скважина: {self.well_selection_combo.currentText()}")
+        
+        # Автоматически строим первый график
+        self.on_plot_timeseries()
+    
+    def update_well_selection(self):
+        """Обновляет список выбора скважин"""
+        self.well_selection_combo.clear()
+        
+        for i, well_data in enumerate(self.well_data_list):
+            well_name = f"Скважина {i+1} (Skin={well_data.skin:.3f}, N={well_data.fractures_count})"
+            self.well_selection_combo.addItem(well_name)
+        
+        if self.well_data_list:
+            self.well_selection_combo.setCurrentIndex(self.current_well_index)
+    
+    def on_well_selection_changed(self, index):
+        """Обработчик изменения выбора скважины"""
+        if 0 <= index < len(self.well_data_list):
+            self.current_well_index = index
+            self.update_grp_parameters()
+            # Автоматически обновляем график
+            self.on_plot_timeseries()
+    
+    def update_grp_parameters(self):
+        """Обновляет отображение параметров ГРП"""
+        current_well = self.current_well_data
+        if current_well is None:
+            return
+            
+        self.skin_value_label.setText(f"Skin: {current_well.skin:.3f}")
+        self.thickness_value_label.setText(f"Толщина: {current_well.thickness:.1f} м")
+        self.fractures_value_label.setText(f"Трещины: {current_well.fractures_count}")
+        self.fracture_width_label.setText(f"Ширина трещины: {current_well.fracture_width:.3f} м")
+        self.fracture_length_label.setText(f"Длина трещины: {current_well.fracture_length:.1f} м")
+        self.al_ratio_label.setText(f"a/L: {current_well.a_l_ratio:.3f}")
+    
+    # Обработчики событий для временных рядов
+    def on_plot_timeseries(self):
+        """Построение графиков временных рядов"""
+        current_well = self.current_well_data
+        if current_well is None or self.plot_widget is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        self.plot_widget.clear()
+        
+        try:
+            if plot_type == "Давление vs Время":
+                # Проверяем данные на корректность
+                if current_well.pressure.isna().all():
+                    QMessageBox.warning(self, "Ошибка", "Данные давления содержат только NaN значения")
+                    return
+                
+                # Убираем NaN значения
+                valid_mask = ~(current_well.time.isna() | current_well.pressure.isna())
+                time_clean = current_well.time[valid_mask]
+                pressure_clean = current_well.pressure[valid_mask]
+                
+                if len(time_clean) == 0:
+                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
+                    return
+                
+                self.plot_widget.plot(time_clean, pressure_clean, pen='b', symbol='o')
+                self.plot_widget.setLabel('left', 'Давление, атм')
+                self.plot_widget.setLabel('bottom', 'Время, ч')
+                self.plot_widget.setTitle('Давление vs Время')
+                
+            elif plot_type == "Дебит vs Время":
+                # Проверяем данные на корректность
+                if current_well.flow_rate.isna().all():
+                    QMessageBox.warning(self, "Ошибка", "Данные дебита содержат только NaN значения")
+                    return
+                
+                # Убираем NaN значения
+                valid_mask = ~(current_well.time.isna() | current_well.flow_rate.isna())
+                time_clean = current_well.time[valid_mask]
+                flow_rate_clean = current_well.flow_rate[valid_mask]
+                
+                if len(time_clean) == 0:
+                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
+                    return
+                
+                self.plot_widget.plot(time_clean, flow_rate_clean, pen='g', symbol='s')
+                self.plot_widget.setLabel('left', 'Дебит, м³/сут')
+                self.plot_widget.setLabel('bottom', 'Время, ч')
+                self.plot_widget.setTitle('Дебит vs Время')
+                
+            elif plot_type == "Производная давления":
+                from helpers.grp_analysis import compute_pressure_derivative
+                try:
+                    dp_dt = compute_pressure_derivative(current_well)
+                    valid_mask = ~(current_well.time.isna() | dp_dt.isna())
+                    time_clean = current_well.time[valid_mask]
+                    dp_dt_clean = dp_dt[valid_mask]
+                    
+                    if len(time_clean) == 0:
+                        QMessageBox.warning(self, "Ошибка", "Нет корректных данных для производной давления")
+                        return
+                    
+                    self.plot_widget.plot(time_clean, dp_dt_clean, pen='r', symbol='^')
+                    self.plot_widget.setLabel('left', 'dP/dt, атм/ч')
+                    self.plot_widget.setLabel('bottom', 'Время, ч')
+                    self.plot_widget.setTitle('Производная давления')
+                except Exception as e:
+                    QMessageBox.warning(self, "Ошибка", f"Ошибка вычисления производной давления: {str(e)}")
+                    
+            elif plot_type == "Производная дебита":
+                from helpers.grp_analysis import compute_flow_rate_derivative
+                try:
+                    dq_dt = compute_flow_rate_derivative(current_well)
+                    valid_mask = ~(current_well.time.isna() | dq_dt.isna())
+                    time_clean = current_well.time[valid_mask]
+                    dq_dt_clean = dq_dt[valid_mask]
+                    
+                    if len(time_clean) == 0:
+                        QMessageBox.warning(self, "Ошибка", "Нет корректных данных для производной дебита")
+                        return
+                    
+                    self.plot_widget.plot(time_clean, dq_dt_clean, pen='m', symbol='d')
+                    self.plot_widget.setLabel('left', 'dQ/dt, м³/сут/ч')
+                    self.plot_widget.setLabel('bottom', 'Время, ч')
+                    self.plot_widget.setTitle('Производная дебита')
+                except Exception as e:
+                    QMessageBox.warning(self, "Ошибка", f"Ошибка вычисления производной дебита: {str(e)}")
+                    
+            elif plot_type == "Давление vs Дебит":
+                # Проверяем данные на корректность
+                valid_mask = ~(current_well.pressure.isna() | current_well.flow_rate.isna())
+                pressure_clean = current_well.pressure[valid_mask]
+                flow_rate_clean = current_well.flow_rate[valid_mask]
+                
+                if len(pressure_clean) == 0:
+                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
+                    return
+                
+                self.plot_widget.plot(flow_rate_clean, pressure_clean, pen='c', symbol='*')
+                self.plot_widget.setLabel('left', 'Давление, атм')
+                self.plot_widget.setLabel('bottom', 'Дебит, м³/сут')
+                self.plot_widget.setTitle('Давление vs Дебит')
+                
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка построения графика", f"Ошибка: {str(e)}")
+    
+    def on_smooth_data(self):
+        """Сглаживание данных"""
+        if self.well_data is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
+            from helpers.timeseries import smooth_series
+            
+            if plot_type == "Давление vs Время":
+                smoothed = smooth_series(self.well_data.pressure, window=5)
+                self.well_data.pressure = smoothed
+            else:
+                smoothed = smooth_series(self.well_data.flow_rate, window=5)
+                self.well_data.flow_rate = smoothed
+                
+            self.on_plot_timeseries()
+            QMessageBox.information(self, "Сглаживание", "Данные сглажены")
+    
+    def on_interpolate_data(self):
+        """Интерполяция данных"""
+        if self.well_data is None:
+            return
+            
+        from helpers.timeseries import interpolate_series
+        
+        # Интерполируем пропуски в данных
+        self.well_data.pressure = interpolate_series(self.well_data.pressure)
+        self.well_data.flow_rate = interpolate_series(self.well_data.flow_rate)
+        
+        self.on_plot_timeseries()
+        QMessageBox.information(self, "Интерполяция", "Пропуски в данных интерполированы")
+    
+    def on_ml_interpolate(self):
+        """ML-интерполяция данных"""
+        if self.well_data is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
             try:
-                df[self.time_column] = pd.to_datetime(df[self.time_column], errors="coerce")
-            except Exception:
-                pass
-            QMessageBox.information(self, "Info", f"Найдена временная колонка: {self.time_column}")
-        else:
-            # Если нет временной колонки, создаем последовательные номера
-            self.time_column = "Измерения"
-            self.has_real_time = False
-            df[self.time_column] = np.arange(len(df))
-            QMessageBox.information(self, "Info", "Временная колонка не найдена, используются последовательные измерения")
+                if plot_type == "Давление vs Время":
+                    interpolated = apply_ml_interpolation(self.well_data.time, self.well_data.pressure, 'random_forest')
+                    self.well_data.pressure = interpolated
+                else:
+                    interpolated = apply_ml_interpolation(self.well_data.time, self.well_data.flow_rate, 'random_forest')
+                    self.well_data.flow_rate = interpolated
+                    
+                self.on_plot_timeseries()
+                QMessageBox.information(self, "ML Интерполяция", "Данные интерполированы с помощью Random Forest")
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка ML", f"Ошибка ML-интерполяции: {str(e)}")
+    
+    def on_ml_filter(self):
+        """ML-фильтрация данных"""
+        if self.well_data is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
+            try:
+                if plot_type == "Давление vs Время":
+                    filtered = apply_ml_filter(self.well_data.pressure, 'savitzky_golay', window_length=5, polyorder=2)
+                    self.well_data.pressure = filtered
+                else:
+                    filtered = apply_ml_filter(self.well_data.flow_rate, 'savitzky_golay', window_length=5, polyorder=2)
+                    self.well_data.flow_rate = filtered
+                    
+                self.on_plot_timeseries()
+                QMessageBox.information(self, "ML Фильтрация", "Данные отфильтрованы с помощью фильтра Савицкого-Голея")
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка ML", f"Ошибка ML-фильтрации: {str(e)}")
+    
+    def on_detect_outliers(self):
+        """Обнаружение выбросов"""
+        if self.well_data is None:
+            return
 
-        self.df_ts = df
-        
-        # Заполняем комбобокс только колонками данных (исключая время)
-        data_columns = [col for col in df.columns if col != self.time_column]
-        self.data_combo.clear()
-        self.data_combo.addItems(data_columns)
-        
-        # Автовыбор первого показателя
-        if data_columns:
-            self.data_combo.setCurrentIndex(0)
-
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
+            try:
+                if plot_type == "Давление vs Время":
+                    outliers = detect_outliers(self.well_data.pressure, 'iqr', threshold=1.5)
+                    outlier_count = outliers.sum()
+                else:
+                    outliers = detect_outliers(self.well_data.flow_rate, 'iqr', threshold=1.5)
+                    outlier_count = outliers.sum()
+                
+                if outlier_count > 0:
+                    QMessageBox.information(self, "Выбросы обнаружены", 
+                                          f"Найдено {outlier_count} выбросов из {len(outliers)} точек")
+                    
+                    # Показываем график с выделенными выбросами
+                    self.plot_outliers_with_highlight(outliers, plot_type)
+                else:
+                    QMessageBox.information(self, "Выбросы", "Выбросы не обнаружены")
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Ошибка обнаружения выбросов: {str(e)}")
+    
+    def plot_outliers_with_highlight(self, outliers: pd.Series, plot_type: str):
+        """Построение графика с выделенными выбросами"""
         if self.plot_widget is None:
-            QMessageBox.information(self, "Нет графика", "pyqtgraph не установлен.")
+            return
+            
+        self.plot_widget.clear()
         
+        if plot_type == "Давление vs Время":
+            # Обычные точки
+            normal_mask = ~outliers
+            self.plot_widget.plot(self.well_data.time[normal_mask], 
+                                self.well_data.pressure[normal_mask], 
+                                pen='b', symbol='o', symbolSize=5)
+            
+            # Выбросы
+            if outliers.any():
+                self.plot_widget.plot(self.well_data.time[outliers], 
+                                    self.well_data.pressure[outliers], 
+                                    pen=None, symbol='x', symbolSize=10, symbolBrush='r')
+            
+            self.plot_widget.setLabel('left', 'Давление, атм')
+            self.plot_widget.setLabel('bottom', 'Время, ч')
+            self.plot_widget.setTitle('Давление vs Время (красные X - выбросы)')
+            
+        else:  # Дебит vs Время
+            normal_mask = ~outliers
+            self.plot_widget.plot(self.well_data.time[normal_mask], 
+                                self.well_data.flow_rate[normal_mask], 
+                                pen='g', symbol='s', symbolSize=5)
+            
+            if outliers.any():
+                self.plot_widget.plot(self.well_data.time[outliers], 
+                                    self.well_data.flow_rate[outliers], 
+                                    pen=None, symbol='x', symbolSize=10, symbolBrush='r')
+            
+            self.plot_widget.setLabel('left', 'Дебит, м³/сут')
+            self.plot_widget.setLabel('bottom', 'Время, ч')
+            self.plot_widget.setTitle('Дебит vs Время (красные X - выбросы)')
+    
+    def on_export_data(self):
+        """Экспорт данных"""
+        if self.well_data is None:
+            return
+            
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getSaveFileName(self, "Экспорт данных", "./", "CSV Files (*.csv)")
+        if file_path:
+            # Создаем DataFrame для экспорта
+            export_df = pd.DataFrame({
+                'Time': self.well_data.time,
+                'Pressure': self.well_data.pressure,
+                'FlowRate': self.well_data.flow_rate
+            })
+            export_df.to_csv(file_path, index=False)
+            QMessageBox.information(self, "Экспорт", f"Данные экспортированы в {file_path}")
+    
+    # Обработчики событий для анализа ГРП
+    def on_analyze_flow_regime(self):
+        """Анализ режима течения"""
+        if self.well_data is None:
+            return
+            
+        from helpers.grp_analysis import analyze_flow_regime
+        analysis = analyze_flow_regime(self.well_data)
+        
+        result_text = f"""
+АНАЛИЗ РЕЖИМА ТЕЧЕНИЯ
+=======================
+Тип режима: {analysis.regime_type}
+Уверенность: {analysis.confidence:.2%}
+Характерное время перехода: {analysis.characteristic_time or 'Не определено'}
+
+Параметры:
+- Наклон кривой: {analysis.parameters['slope']:.3f}
+- Фактор скин: {analysis.parameters['skin_factor']:.3f}
+- Количество трещин: {analysis.parameters['fractures_count']}
+- Отношение a/L: {analysis.parameters['a_l_ratio']:.3f}
+"""
+        self.grp_results_text.setText(result_text)
+        self.results_text.append(result_text)
+    
+    def on_compute_productivity(self):
+        """Вычисление индекса продуктивности"""
+        if self.well_data is None:
+            return
+            
+        from helpers.grp_analysis import compute_well_productivity_index
+        productivity = compute_well_productivity_index(self.well_data)
+        
+        result_text = f"""
+ИНДЕКС ПРОДУКТИВНОСТИ
+=====================
+Индекс продуктивности: {productivity['productivity_index']:.3f}
+Эффективность ГРП: {productivity['fracture_efficiency']:.3f}
+Средний дебит: {productivity['average_flow_rate']:.1f} м³/сут
+Среднее давление: {productivity['average_pressure']:.1f} атм
+Влияние скин-эффекта: {productivity['skin_impact']:.3f}
+Общая длина трещин: {productivity['total_fracture_length']:.1f} м
+"""
+        self.grp_results_text.setText(result_text)
+        self.results_text.append(result_text)
+    
+    def on_detect_transitions(self):
+        """Обнаружение переходов режимов"""
+        if self.well_data is None:
+            return
+
+        from helpers.grp_analysis import detect_flow_regime_transitions
+        transitions = detect_flow_regime_transitions(self.well_data)
+        
+        if transitions:
+            result_text = f"ОБНАРУЖЕНО ПЕРЕХОДОВ: {len(transitions)}\n"
+            for i, transition in enumerate(transitions, 1):
+                result_text += f"""
+Переход {i}:
+- Время: {transition['time']:.2f} ч
+- Давление: {transition['pressure']:.1f} атм
+- Дебит: {transition['flow_rate']:.1f} м³/сут
+- Изменение производной: {transition['derivative_change']:.3f}
+"""
+        else:
+            result_text = "Переходы режимов не обнаружены"
+            
+        self.grp_results_text.setText(result_text)
+        self.results_text.append(result_text)
+    
+    # Обработчики событий для эталонных кривых
+    def on_plot_bilinear(self):
+        """Построение кривой билинейного течения"""
+        if self.well_data is None or self.type_curves_widget is None:
+            return
+            
+        from helpers.grp_analysis import generate_type_curves
+        time_range = np.logspace(-1, 3, 100)
+        curves = generate_type_curves(self.well_data.skin, self.well_data.fractures_count, 
+                                     self.well_data.a_l_ratio, time_range)
+        
+        self.type_curves_widget.clear()
+        t, q = curves['bilinear']
+        self.type_curves_widget.plot(t, q, pen='b', name='Билинейное течение')
+        self.type_curves_widget.setTitle('Эталонная кривая: Билинейное течение')
+    
+    def on_plot_linear(self):
+        """Построение кривой линейного течения"""
+        if self.well_data is None or self.type_curves_widget is None:
+            return
+            
+        from helpers.grp_analysis import generate_type_curves
+        time_range = np.logspace(-1, 3, 100)
+        curves = generate_type_curves(self.well_data.skin, self.well_data.fractures_count, 
+                                     self.well_data.a_l_ratio, time_range)
+        
+        self.type_curves_widget.clear()
+        t, q = curves['linear']
+        self.type_curves_widget.plot(t, q, pen='g', name='Линейное течение')
+        self.type_curves_widget.setTitle('Эталонная кривая: Линейное течение')
+    
+    def on_plot_pseudoradial(self):
+        """Построение кривой псевдорадиального течения"""
+        if self.well_data is None or self.type_curves_widget is None:
+            return
+            
+        from helpers.grp_analysis import generate_type_curves
+        time_range = np.logspace(-1, 3, 100)
+        curves = generate_type_curves(self.well_data.skin, self.well_data.fractures_count, 
+                                     self.well_data.a_l_ratio, time_range)
+        
+        self.type_curves_widget.clear()
+        t, q = curves['pseudoradial']
+        self.type_curves_widget.plot(t, q, pen='r', name='Псевдорадиальное течение')
+        self.type_curves_widget.setTitle('Эталонная кривая: Псевдорадиальное течение')
+    
+    def on_match_curves(self):
+        """Сопоставление с эталонными кривыми"""
+        if self.well_data is None:
+            return
+            
+        from helpers.grp_analysis import match_type_curves
+        match_result = match_type_curves(self.well_data)
+        
+        result_text = f"""
+СОПОСТАВЛЕНИЕ С ЭТАЛОННЫМИ КРИВЫМИ
+===================================
+Лучшее соответствие: {match_result.curve_type}
+Качество сопоставления: {match_result.match_quality:.2%}
+R²: {match_result.estimated_parameters['r_squared']:.3f}
+
+Оцененные параметры:
+- Фактор скин: {match_result.estimated_parameters['skin_factor']:.3f}
+- Количество трещин: {match_result.estimated_parameters['fractures_count']}
+- Отношение a/L: {match_result.estimated_parameters['a_l_ratio']:.3f}
+"""
+        self.results_text.append(result_text)
+        QMessageBox.information(self, "Сопоставление", f"Лучшее соответствие: {match_result.curve_type}\nКачество: {match_result.match_quality:.2%}")
+    
+    def on_export_report(self):
+        """Экспорт отчета"""
+        if self.well_data is None:
+            return
+            
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getSaveFileName(self, "Экспорт отчета", "./", "Text Files (*.txt)")
+        if file_path:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(self.results_text.toPlainText())
+            QMessageBox.information(self, "Экспорт", f"Отчет экспортирован в {file_path}")
+        
+    # Старые методы для совместимости (можно удалить в будущем)
     def _get_data(self):
-        """Возвращает время и выбранный показатель"""
-        if self.df_ts is None or self.time_column is None:
+        """Возвращает время и выбранный показатель (старый метод)"""
+        if self.well_data is None:
             return None, None
-        data_column = self.data_combo.currentText()
-        if not data_column:
-            return None, None
-        time_data = self.df_ts[self.time_column]
-        value_data = self.df_ts[data_column]
-        return time_data, value_data
+        return self.well_data.time, self.well_data.pressure
 
     def _plot_data(self, values, times, title: str = ""):
-        """Отрисовка графика: значения по X, время по Y"""
+        """Отрисовка графика (старый метод)"""
         if self.plot_widget is None:
             return
         self.plot_widget.clear()
-        
-        # Преобразуем время в числовой формат
-        if self.has_real_time and np.issubdtype(getattr(times, "dtype", type(times)), np.datetime64):
-            time_vals = times.view("int64") / 1e9  # Конвертируем в секунды
-        else:
-            time_vals = pd.to_numeric(times, errors="coerce").to_numpy()
-            
-        value_vals = pd.to_numeric(values, errors="coerce").to_numpy()
-        
-        # ВЕРТИКАЛЬНЫЙ ГРАФИК: значения по X, время по Y
-        self.plot_widget.plot(value_vals, time_vals, pen='y')
-        
-        # Настройка подписей
-        self.plot_widget.setLabel('bottom', f"{self.data_combo.currentText()}")
-        y_label = self.time_column if self.has_real_time else "Номер измерения"
-        self.plot_widget.setLabel('left', y_label)
-        
+        self.plot_widget.plot(values, times, pen='y')
         if title:
             self.plot_widget.setTitle(title)
 
     def on_plot(self):
-        times, values = self._get_data()
-        if times is None:
-            return
-        self._plot_data(values, times, title=f"{self.data_combo.currentText()} vs {self.time_column}")
+        """Старый метод построения графиков"""
+        self.on_plot_timeseries()
 
     def on_derivative(self):
-        times, values = self._get_data()
-        if times is None:
+        """Старый метод вычисления производной"""
+        if self.well_data is None:
             return
-        
-        if self.has_real_time:
-            # Для временных данных
-            if isinstance(times, pd.Series) and np.issubdtype(times.dtype, np.datetime64):
-                values_series = pd.Series(values.values, index=pd.to_datetime(times))
-                deriv = compute_derivative(values_series, method="time")
-                self._plot_data(deriv.values, times, title=f"Производная {self.data_combo.currentText()}")
-            else:
-                QMessageBox.warning(self, "Ошибка", "Ошибка обработки временных данных")
-        else:
-            # Для последовательных измерений - производная по индексу
-            deriv = compute_derivative(values, method="linear")
-            self._plot_data(deriv, times, title=f"Производная {self.data_combo.currentText()}")
+        self.plot_type_combo.setCurrentText("Производная давления")
+        self.on_plot_timeseries()
 
     def on_interpolate(self):
-        times, values = self._get_data()
-        if times is None:
-            return
-        
-        if self.has_real_time:
-            # Для временных данных
-            if isinstance(times, pd.Series) and np.issubdtype(times.dtype, np.datetime64):
-                values_series = pd.Series(values.values, index=pd.to_datetime(times))
-                interpolated = interpolate_series(values_series, method="time")
-                self._plot_data(interpolated.values, times, title=f"Интерполяция {self.data_combo.currentText()}")
-            else:
-                QMessageBox.warning(self, "Ошибка", "Ошибка обработки временных данных")
-        else:
-            # Для последовательных измерений - линейная интерполяция
-            interpolated = interpolate_series(values, method="linear")
-            self._plot_data(interpolated, times, title=f"Интерполяция {self.data_combo.currentText()}")
+        """Старый метод интерполяции"""
+        self.on_interpolate_data()
 
     def on_smooth(self):
-        times, values = self._get_data()
-        if times is None:
-            return
-        
-        smoothed = smooth_series(values, window=5)
-        self._plot_data(smoothed, times, title=f"Сглаживание {self.data_combo.currentText()}")
-        
+        """Старый метод сглаживания"""
+        self.on_smooth_data()
+    
+    def setup_grp_analysis(self):
+        """Настройка ГРП-анализа (старый метод)"""
+        pass
+
+    def on_grp_analysis(self):
+        """Старый метод анализа ГРП"""
+        self.on_analyze_flow_regime()
+
+    def on_type_curves(self):
+        """Старый метод эталонных кривых"""
+        self.on_match_curves()
+
+    def on_ml_prediction(self):
+        """Старый метод ML прогноза"""
+        self.on_compute_productivity()
+    
 if __name__ == "__main__":
     app = QApplication()
     window = MyApp()
