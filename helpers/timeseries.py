@@ -11,7 +11,7 @@ def compute_derivative(y: pd.Series, x: pd.Series) -> pd.Series:
         raise ValueError("Длины x и y должны совпадать")
 
     if np.issubdtype(x.dtype, np.datetime64):
-        x_numeric = x.view("int64") / 1e9  # наносекунды -> секунды
+        x_numeric = x.astype(np.int64) / 1e9  # наносекунды -> секунды
     else:
         x_numeric = x.astype(float).to_numpy()
 

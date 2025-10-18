@@ -70,7 +70,7 @@ def test_derivative_linear_should_be_constant():
 
 def test_derivative_datetime_index():
     t0 = pd.Timestamp("2024-01-01 00:00:00")
-    times = pd.Series(pd.date_range(t0, periods=10, freq="S"), name="time")
+    times = pd.Series(pd.date_range(t0, periods=10, freq="s"), name="time")
     y = pd.Series(np.arange(10), name="y")
     dy_dt = compute_derivative(y, times)
     assert np.allclose(dy_dt[1:-1], 1.0, atol=1e-12)
@@ -85,7 +85,7 @@ def test_interpolate_linear_gaps():
 
 
 def test_interpolate_time_index():
-    t = pd.date_range("2025-01-01", periods=5, freq="T")
+    t = pd.date_range("2025-01-01", periods=5, freq="min")
     y = pd.Series([0.0, np.nan, np.nan, 3.0, 4.0], index=t, name="y")
     y_int = interpolate_series(y, method="time")
     assert not y_int.isna().any()

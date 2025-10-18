@@ -84,7 +84,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.phi_doubleSpinBox.setValue(float(required_params.phi))
             t_scalar = compute_transmissivity(required_params.k, required_params.h)
             vp_scalar = compute_pore_volume(required_params.phi, required_params.h)
-            QMessageBox.information(self, "Расчёт выполнен", f"T = {t_scalar}; Vp = {vp_scalar}")
+            QMessageBox.information(self, "Расчёт выполнен", f"Скаляр T = {t_scalar}; Скаляр Vp = {vp_scalar}")
         else:
             if error_msg:
                 QMessageBox.information(self, "Info", f"Схема параметров не применима: {error_msg}")
