@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QLabel, QApplication, QMainWindow, QFileDialog, Q
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout)
 from ui import Ui_mainWindow
 
-from helpers.parse_well_data import parse_well_csv, extract_well_parameters, analyze_well_groups
+from helpers.parse_well_data import parse_well_csv, analyze_well_groups
 from helpers.physics import compute_transmissivity, compute_pore_volume
 from helpers.timeseries import compute_derivative, interpolate_series, smooth_series
 from helpers.grp_analysis import (analyze_flow_regime, match_type_curves, 
@@ -279,14 +279,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Обновляем старые поля для совместимости
         current_well = self.current_well_data
         if current_well:
-            self.k_doubleSpinBox.setValue(0.001)  # Примерное значение
-            self.h_doubleSpinBox.setValue(current_well.thickness)
-            self.phi_doubleSpinBox.setValue(0.2)  # Примерное значение
-            
-            # Обновляем параметры ГРП в старом интерфейсе
-            self.skin_doubleSpinBox.setValue(current_well.skin)
-            self.n_spinBox.setValue(current_well.fractures_count)
-            self.aL_doubleSpinBox.setValue(current_well.a_l_ratio)
+            self.update_interface_parameters()
         
         # Показываем информацию о загруженных данных
         total_points = sum(len(well.time) for well in well_data_list)
@@ -298,6 +291,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Автоматически строим первый график
         self.on_plot_timeseries()
     
+    def update_interface_parameters(self):
+        self.thickness_doubleSpinBox.setValue(self.current_well_data.thickness)
+        self.skin_doubleSpinBox.setValue(self.current_well_data.skin)
+        self.width_doubleSpinBox.setValue(self.current_well_data.fracture_width)
+        self.n_spinBox.setValue(self.current_well_data.fractures_count)
+        self.aL_doubleSpinBox.setValue(self.current_well_data.a_l_ratio)
+        
     def update_well_selection(self):
         """Обновляет список выбора скважин"""
         self.well_selection_combo.clear()
@@ -314,6 +314,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if 0 <= index < len(self.well_data_list):
             self.current_well_index = index
             self.update_grp_parameters()
+            self.update_interface_parameters()
             # Автоматически обновляем график
             self.on_plot_timeseries()
     

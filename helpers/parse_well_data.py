@@ -272,22 +272,3 @@ def validate_well_data(df: pd.DataFrame) -> Tuple[bool, Optional[str]]:
         return False, "Время должно быть монотонно возрастающим"
     
     return True, None
-
-
-def extract_well_parameters(df: pd.DataFrame) -> dict:
-    """
-    Извлекает параметры скважины из DataFrame.
-    """
-    first_row = df.iloc[0]
-    return {
-        'skin': float(first_row['Skin']),
-        'thickness': float(first_row['h']),
-        'fractures_count': int(first_row['N']),
-        'fracture_width': float(first_row['W']),
-        'fracture_length': float(first_row['L']),
-        'a_l_ratio': float(first_row['a/L']),
-        'total_elements': len(df),
-        'time_range': (float(df['t'].min()), float(df['t'].max())),
-        'pressure_range': (float(df['P'].min()), float(df['P'].max())),
-        'flow_rate_range': (float(df['Q'].min()), float(df['Q'].max()))
-    }

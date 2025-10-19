@@ -9,7 +9,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from schemas.well_data import WellData, WellTimeSeries, FlowRegimeAnalysis, TypeCurveMatch
-from helpers.parse_well_data import parse_well_csv, validate_well_data, extract_well_parameters
+from helpers.parse_well_data import parse_well_csv, validate_well_data
 from helpers.grp_analysis import (
     compute_pressure_derivative, compute_flow_rate_derivative,
     analyze_flow_regime, generate_type_curves, match_type_curves,
