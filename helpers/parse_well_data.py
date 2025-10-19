@@ -15,11 +15,21 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
         return None, "Файл не выбран"
 
     try:
+        print(f"Загрузка файла: {file_path}")
+        
         # Определяем тип файла по расширению
         if file_path.lower().endswith('.parquet'):
             df = pd.read_parquet(file_path)
         else:
-            df = pd.read_csv(file_path)
+            # Для CSV файлов указываем кодировку и разделитель
+            try:
+                df = pd.read_csv(file_path, encoding='utf-8', sep=',', low_memory=False)
+            except UnicodeDecodeError:
+                # Пробуем другие кодировки
+                df = pd.read_csv(file_path, encoding='cp1251', sep=',', low_memory=False)
+        
+        print(f"Файл загружен: {len(df)} строк, {len(df.columns)} колонок")
+        
     except Exception as exc:
         return None, f"Ошибка чтения файла: {exc}"
 
@@ -35,6 +45,20 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
         return None, f"Отсутствуют обязательные колонки: {', '.join(missing_columns)}"
 
     try:
+        print("Очистка данных...")
+        # Очищаем данные от NaN и inf значений
+        df = df.replace([np.inf, -np.inf], np.nan)
+        initial_rows = len(df)
+        df = df.dropna(subset=['t', 'P', 'Q'])  # Удаляем строки с NaN в ключевых колонках
+        
+        if len(df) == 0:
+            return None, "После очистки данных не осталось валидных строк"
+        
+        removed_rows = initial_rows - len(df)
+        if removed_rows > 0:
+            print(f"Удалено {removed_rows} строк с некорректными данными")
+        
+        print(f"Группировка данных по параметрам скважин...")
         # Группируем данные по параметрам скважины
         well_groups = group_data_by_well_parameters(df)
         
@@ -42,27 +66,42 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
             return None, "Не удалось сгруппировать данные по параметрам скважин"
         
         # Создаем WellTimeSeries для каждой группы
+        print(f"Найдено {len(well_groups)} групп данных")
         time_series_list = []
-        for group_id, group_data in well_groups.items():
+        
+        for group_idx, (group_id, group_data) in enumerate(well_groups.items()):
+            print(f"Обработка группы {group_idx + 1}/{len(well_groups)}: {len(group_data)} точек")
+            
             if len(group_data) < 2:  # Минимум 2 точки для временного ряда
+                print(f"  Пропуск группы {group_id}: недостаточно точек")
                 continue
                 
             # Сортируем по времени
             group_data = group_data.sort_values('t')
             
-            # Создаем временные ряды
-            time_series = WellTimeSeries(
-                time=group_data['t'],
-                pressure=group_data['P'],
-                flow_rate=group_data['Q'],
-                skin=float(group_data['Skin'].iloc[0]),
-                thickness=float(group_data['h'].iloc[0]),
-                fractures_count=int(group_data['N'].iloc[0]),
-                fracture_width=float(group_data['W'].iloc[0]),
-                fracture_length=float(group_data['L'].iloc[0]),
-                a_l_ratio=float(group_data['a/L'].iloc[0])
-            )
-            time_series_list.append(time_series)
+            # Проверяем, что данные корректны
+            if group_data['t'].isna().any() or group_data['P'].isna().any() or group_data['Q'].isna().any():
+                print(f"  Пропуск группы {group_id}: содержит NaN значения")
+                continue
+            
+            try:
+                # Создаем временные ряды
+                time_series = WellTimeSeries(
+                    time=group_data['t'].reset_index(drop=True),
+                    pressure=group_data['P'].reset_index(drop=True),
+                    flow_rate=group_data['Q'].reset_index(drop=True),
+                    skin=float(group_data['Skin'].iloc[0]),
+                    thickness=float(group_data['h'].iloc[0]),
+                    fractures_count=int(group_data['N'].iloc[0]),
+                    fracture_width=float(group_data['W'].iloc[0]),
+                    fracture_length=float(group_data['L'].iloc[0]),
+                    a_l_ratio=float(group_data['a/L'].iloc[0])
+                )
+                time_series_list.append(time_series)
+                print(f"  ✓ Группа {group_id} успешно создана")
+            except (ValueError, TypeError) as e:
+                print(f"  ✗ Ошибка создания временного ряда для группы {group_id}: {e}")
+                continue
         
         if not time_series_list:
             return None, "Не удалось создать временные ряды из данных"
@@ -76,37 +115,70 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
 def group_data_by_well_parameters(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     """
     Группирует данные по параметрам скважины.
+    Уникальная комбинация Skin, h, N, W, L, a/L определяет один сценарий.
+    Для каждого сценария строки с разными ElemIdx, t, P, dP, Q описывают изменения по времени.
     Возвращает словарь {group_id: group_data}
     """
-    # Параметры для группировки
+    # Параметры для группировки (определяют уникальный сценарий)
     grouping_params = ['Skin', 'h', 'N', 'W', 'L', 'a/L']
     
-    # Создаем группировку с учетом небольшой погрешности для числовых параметров
-    tolerance = 1e-6
+    # Проверяем наличие необходимых колонок
+    missing_columns = [col for col in grouping_params if col not in df.columns]
+    if missing_columns:
+        print(f"Предупреждение: отсутствуют колонки для группировки: {missing_columns}")
+        return {"well_0": df}
     
-    groups = {}
-    group_id = 0
-    
-    for idx, row in df.iterrows():
-        # Ищем существующую группу с похожими параметрами
-        found_group = None
+    try:
+        # Создаем копию DataFrame для группировки
+        df_copy = df.copy()
         
-        for existing_group_id, existing_group in groups.items():
-            # Проверяем, подходят ли параметры к существующей группе
-            if all(abs(row[param] - existing_group[param].iloc[0]) <= tolerance 
-                   for param in grouping_params):
-                found_group = existing_group_id
-                break
+        # Округляем значения для группировки близких параметров
+        for param in grouping_params:
+            if df_copy[param].dtype in [np.float64, np.float32]:
+                # Округляем числовые параметры до 4 знаков
+                df_copy[f'{param}_rounded'] = df_copy[param].round(4)
+            else:
+                # Для нечисловых параметров просто копируем
+                df_copy[f'{param}_rounded'] = df_copy[param]
         
-        if found_group is not None:
-            # Добавляем к существующей группе
-            groups[found_group] = pd.concat([groups[found_group], row.to_frame().T], ignore_index=True)
-        else:
-            # Создаем новую группу
-            groups[f"well_{group_id}"] = row.to_frame().T
-            group_id += 1
-    
-    return groups
+        # Получаем список округленных параметров для группировки
+        rounded_params = [f'{param}_rounded' for param in grouping_params]
+        
+        # Группируем данные по уникальным комбинациям параметров
+        grouped = df_copy.groupby(rounded_params, dropna=False)
+        
+        print(f"Найдено {len(grouped)} уникальных сценариев (комбинаций параметров скважин)")
+        
+        groups = {}
+        for i, (params, group) in enumerate(grouped):
+            # Удаляем временные колонки с округлением
+            group_clean = group.drop(columns=[col for col in group.columns if col.endswith('_rounded')], errors='ignore')
+            
+            # Сортируем по времени для правильного отображения изменений
+            if 't' in group_clean.columns:
+                group_clean = group_clean.sort_values('t')
+                
+            groups[f"well_{i}"] = group_clean.reset_index(drop=True)
+            
+            # Формируем информацию о группе
+            param_info = []
+            for j, param in enumerate(grouping_params):
+                if isinstance(params, tuple):
+                    value = params[j]
+                else:
+                    value = params
+                param_info.append(f"{param}={value}")
+            
+            print(f"  Сценарий {i}: {', '.join(param_info)}, {len(group_clean)} точек")
+        
+        return groups
+        
+    except Exception as e:
+        print(f"Ошибка группировки данных: {e}")
+        import traceback
+        traceback.print_exc()
+        # Возвращаем все данные как одну группу в случае ошибки
+        return {"well_0": df}
 
 
 def analyze_well_groups(df: pd.DataFrame) -> Dict[str, any]:

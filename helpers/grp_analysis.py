@@ -14,17 +14,76 @@ def compute_pressure_derivative(time_series: WellTimeSeries) -> pd.Series:
     time = time_series.time
     pressure = time_series.pressure
     
-    # Используем логарифмическую производную для лучшей стабильности
-    log_time = np.log(time)
-    log_pressure = np.log(pressure)
+    # Проверяем на наличие валидных данных
+    if len(time) < 2 or len(pressure) < 2:
+        return pd.Series([], name='dP/dt')
     
-    # Численная производная
-    derivative = np.gradient(log_pressure) / np.gradient(log_time)
+    # Убираем NaN и inf значения
+    valid_mask = np.isfinite(time) & np.isfinite(pressure) & (time > 0) & (pressure > 0)
+    if not np.any(valid_mask):
+        return pd.Series([], name='dP/dt')
     
-    # Умножаем на время для получения производной давления
-    pressure_derivative = derivative * pressure
+    time_clean = time[valid_mask]
+    pressure_clean = pressure[valid_mask]
     
-    return pd.Series(pressure_derivative, index=time.index, name='dP/dt')
+    if len(time_clean) < 2:
+        return pd.Series([], name='dP/dt')
+    
+    try:
+        # Используем логарифмическую производную для лучшей стабильности
+        log_time = np.log(time_clean)
+        log_pressure = np.log(pressure_clean)
+        
+        # Проверяем на валидность логарифмов
+        valid_log_mask = np.isfinite(log_time) & np.isfinite(log_pressure)
+        if not np.any(valid_log_mask):
+            # Если логарифмическая производная не работает, используем обычную
+            time_grad = np.gradient(time_clean)
+            pressure_grad = np.gradient(pressure_clean)
+            
+            # Защита от деления на ноль
+            time_grad[time_grad == 0] = 1e-10
+            derivative = pressure_grad / time_grad
+        else:
+            log_time = log_time[valid_log_mask]
+            log_pressure = log_pressure[valid_log_mask]
+            time_clean = time_clean[valid_log_mask]
+            pressure_clean = pressure_clean[valid_log_mask]
+            
+            if len(log_time) < 2:
+                return pd.Series([], name='dP/dt')
+            
+            # Численная производная с обработкой ошибок
+            time_grad = np.gradient(log_time)
+            pressure_grad = np.gradient(log_pressure)
+            
+            # Защита от деления на ноль
+            time_grad[time_grad == 0] = 1e-10
+            derivative = pressure_grad / time_grad
+            
+            # Умножаем на давление для получения производной давления
+            derivative = derivative * pressure_clean
+        
+        # Создаем результат с правильными индексами
+        result = pd.Series(index=time.index, name='dP/dt', dtype=float)
+        
+        # Заполняем только валидные индексы
+        if len(derivative) > 0:
+            result_indices = time.index[valid_mask]
+            if np.any(valid_log_mask):
+                result_indices = result_indices[valid_log_mask]
+            
+            # Проверяем, что размеры совпадают
+            if len(result_indices) == len(derivative):
+                result.loc[result_indices] = derivative
+        
+        return result
+        
+    except Exception as e:
+        print(f"Ошибка вычисления производной давления: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.Series([], name='dP/dt')
 
 
 def compute_flow_rate_derivative(time_series: WellTimeSeries) -> pd.Series:
@@ -34,9 +93,41 @@ def compute_flow_rate_derivative(time_series: WellTimeSeries) -> pd.Series:
     time = time_series.time
     flow_rate = time_series.flow_rate
     
-    derivative = np.gradient(flow_rate) / np.gradient(time)
+    # Проверяем на наличие валидных данных
+    if len(time) < 2 or len(flow_rate) < 2:
+        return pd.Series([], name='dQ/dt')
     
-    return pd.Series(derivative, index=time.index, name='dQ/dt')
+    # Убираем NaN и inf значения
+    valid_mask = np.isfinite(time) & np.isfinite(flow_rate)
+    if not np.any(valid_mask):
+        return pd.Series([], name='dQ/dt')
+    
+    time_clean = time[valid_mask]
+    flow_rate_clean = flow_rate[valid_mask]
+    
+    if len(time_clean) < 2:
+        return pd.Series([], name='dQ/dt')
+    
+    try:
+        # Численная производная с обработкой ошибок
+        time_grad = np.gradient(time_clean)
+        flow_rate_grad = np.gradient(flow_rate_clean)
+        
+        # Защита от деления на ноль
+        time_grad[time_grad == 0] = 1e-10
+        derivative = flow_rate_grad / time_grad
+        
+        # Создаем результат с правильными индексами
+        result = pd.Series(index=time.index, name='dQ/dt', dtype=float)
+        result[valid_mask] = derivative
+        
+        return result
+        
+    except Exception as e:
+        print(f"Ошибка вычисления производной дебита: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.Series([], name='dQ/dt')
 
 
 def analyze_flow_regime(time_series: WellTimeSeries) -> FlowRegimeAnalysis:
