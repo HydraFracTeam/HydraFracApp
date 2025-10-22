@@ -12,7 +12,10 @@ from helpers.timeseries import compute_derivative, interpolate_series, smooth_se
 from helpers.grp_analysis import (analyze_flow_regime, match_type_curves, 
                                  compute_well_productivity_index, detect_flow_regime_transitions)
 from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
-                               clean_data, detect_outliers, AdvancedInterpolator)
+                               clean_data, detect_outliers, AdvancedInterpolator,
+                               apply_kriging_interpolation, apply_rbf_interpolation,
+                               apply_gp_interpolation, apply_physics_constrained_interpolation,
+                               apply_adaptive_interpolation)
 from schemas.well_data import WellTimeSeries
 
 try:
@@ -596,6 +599,113 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 QMessageBox.information(self, "ML интерполяция", "Данные интерполированы с помощью ML")
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка", f"Ошибка ML интерполяции: {str(e)}")
+    
+    def on_kriging_interpolate(self):
+        """Кригинг-интерполяция данных"""
+        if self.well_data is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
+            try:
+                if plot_type == "Давление vs Время":
+                    interpolated = apply_kriging_interpolation(self.well_data.time, self.well_data.pressure)
+                    self.well_data.pressure = interpolated
+                else:
+                    interpolated = apply_kriging_interpolation(self.well_data.time, self.well_data.flow_rate)
+                    self.well_data.flow_rate = interpolated
+                    
+                self.on_plot_timeseries()
+                QMessageBox.information(self, "Кригинг интерполяция", "Данные интерполированы с помощью кригинга")
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Ошибка кригинг интерполяции: {str(e)}")
+    
+    def on_rbf_interpolate(self):
+        """RBF-интерполяция данных"""
+        if self.well_data is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
+            try:
+                if plot_type == "Давление vs Время":
+                    interpolated = apply_rbf_interpolation(self.well_data.time, self.well_data.pressure)
+                    self.well_data.pressure = interpolated
+                else:
+                    interpolated = apply_rbf_interpolation(self.well_data.time, self.well_data.flow_rate)
+                    self.well_data.flow_rate = interpolated
+                    
+                self.on_plot_timeseries()
+                QMessageBox.information(self, "RBF интерполяция", "Данные интерполированы с помощью RBF")
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Ошибка RBF интерполяции: {str(e)}")
+    
+    def on_gp_interpolate(self):
+        """GP-интерполяция данных с оценкой неопределенности"""
+        if self.well_data is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
+            try:
+                if plot_type == "Давление vs Время":
+                    interpolated, std = apply_gp_interpolation(self.well_data.time, self.well_data.pressure, return_std=True)
+                    self.well_data.pressure = interpolated
+                    # Сохраняем стандартное отклонение для отображения
+                    self.well_data.pressure_std = std
+                else:
+                    interpolated, std = apply_gp_interpolation(self.well_data.time, self.well_data.flow_rate, return_std=True)
+                    self.well_data.flow_rate = interpolated
+                    self.well_data.flow_rate_std = std
+                    
+                self.on_plot_timeseries()
+                QMessageBox.information(self, "GP интерполяция", "Данные интерполированы с помощью гауссовских процессов")
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Ошибка GP интерполяции: {str(e)}")
+    
+    def on_physics_constrained_interpolate(self):
+        """Физически ограниченная интерполяция"""
+        if self.well_data is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
+            try:
+                if plot_type == "Давление vs Время":
+                    interpolated = apply_physics_constrained_interpolation(
+                        self.well_data.time, self.well_data.pressure, 'pressure')
+                    self.well_data.pressure = interpolated
+                else:
+                    interpolated = apply_physics_constrained_interpolation(
+                        self.well_data.time, self.well_data.flow_rate, 'flow_rate')
+                    self.well_data.flow_rate = interpolated
+                    
+                self.on_plot_timeseries()
+                QMessageBox.information(self, "Физически ограниченная интерполяция", 
+                                      "Данные интерполированы с учетом физических ограничений")
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Ошибка физически ограниченной интерполяции: {str(e)}")
+    
+    def on_adaptive_interpolate(self):
+        """Адаптивная интерполяция с автоматическим выбором метода"""
+        if self.well_data is None:
+            return
+            
+        plot_type = self.plot_type_combo.currentText()
+        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
+            try:
+                if plot_type == "Давление vs Время":
+                    interpolated = apply_adaptive_interpolation(self.well_data.time, self.well_data.pressure)
+                    self.well_data.pressure = interpolated
+                else:
+                    interpolated = apply_adaptive_interpolation(self.well_data.time, self.well_data.flow_rate)
+                    self.well_data.flow_rate = interpolated
+                    
+                self.on_plot_timeseries()
+                QMessageBox.information(self, "Адаптивная интерполяция", 
+                                      "Данные интерполированы с автоматическим выбором лучшего метода")
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Ошибка адаптивной интерполяции: {str(e)}")
     
     def on_ml_filter(self):
         """ML-фильтрация данных"""
