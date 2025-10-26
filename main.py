@@ -964,66 +964,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка экспорта", f"Не удалось экспортировать отчет: {str(e)}")
 
-    def _get_data(self):
-        """Возвращает время и выбранный показатель (старый метод)"""
-        if self.well_data is None:
-            return None, None
-        return self.well_data.time, self.well_data.pressure
-
-    def _plot_data(self, values, times, title: str = ""):
-        """Отрисовка графика (старый метод)"""
-        if self.plot_widget is None:
-            return
-        self.plot_widget.clear()
-        self.plot_widget.plot(values, times, pen='b')
-        if title:
-            self.plot_widget.setTitle(title)
-
-    def on_plot(self):
-        """Старый метод построения графиков"""
-        if self.well_data is None:
-            return
-        time_data, pressure_data = self._get_data()
-        if time_data is not None and pressure_data is not None:
-            self._plot_data(pressure_data, time_data, "Давление vs Время")
-
-    def on_derivative(self):
-        """Старый метод вычисления производной"""
-        if self.well_data is None:
-            return
-        self.plot_type_combo.setCurrentText("Производная давления")
-        self.on_plot_timeseries()
-
-    def on_interpolate(self):
-        """Старый метод интерполяции"""
-        if self.well_data is None:
-            return
-        self.plot_type_combo.setCurrentText("Давление vs Время")
-        self.on_interpolate_data()
-
-    def on_smooth(self):
-        """Старый метод сглаживания"""
-        if self.well_data is None:
-            return
-        self.plot_type_combo.setCurrentText("Давление vs Время")
-        self.on_smooth_data()
-
-    def setup_grp_analysis(self):
-        """Настройка ГРП-анализа (старый метод)"""
-        pass
-
-    def on_grp_analysis(self):
-        """Старый метод анализа ГРП"""
-        pass
-
-    def on_type_curves(self):
-        """Старый метод эталонных кривых"""
-        pass
-
-    def on_ml_prediction(self):
-        """Старый метод ML прогноза"""
-        pass
-
 
 def compute_dimensionless_parameters(time_series: WellTimeSeries, time_clean, pressure_clean, flow_rate_clean):
         """
