@@ -2,26 +2,20 @@ import sys
 import pandas as pd
 import numpy as np
 from PySide6.QtWidgets import (QLabel, QApplication, QMainWindow, QFileDialog, QMessageBox, 
-                               QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, 
+                               QComboBox, QPushButton, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout)
 from ui import Ui_mainWindow
 
-from helpers.parse_well_data import parse_well_csv, analyze_well_groups
-from helpers.physics import compute_transmissivity, compute_pore_volume
-from helpers.timeseries import compute_derivative, interpolate_series, smooth_series
-from helpers.grp_analysis import (analyze_flow_regime, match_type_curves, 
-                                 compute_well_productivity_index, detect_flow_regime_transitions)
+from helpers.parse_well_data import parse_well_csv
+from helpers.timeseries import interpolate_series
 from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
-                               clean_data, detect_outliers, AdvancedInterpolator,
+                               detect_outliers,
                                apply_kriging_interpolation, apply_rbf_interpolation,
                                apply_gp_interpolation, apply_physics_constrained_interpolation,
                                apply_adaptive_interpolation)
 from schemas.well_data import WellTimeSeries
+import pyqtgraph as pg
 
-try:
-    import pyqtgraph as pg
-except Exception:
-    pg = None
 
 
 class MyApp(QMainWindow, Ui_mainWindow):

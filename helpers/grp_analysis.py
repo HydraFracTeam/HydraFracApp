@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict, Optional, List
-from scipy import signal
-from scipy.optimize import curve_fit
+from typing import Tuple, Dict, List
 
 from schemas.well_data import WellTimeSeries, FlowRegimeAnalysis, TypeCurveMatch
 
