@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 from typing import Tuple, Dict, Optional, List, Union
 from dataclasses import dataclass
-from scipy.interpolate import griddata, RBFInterpolator
+from scipy.interpolate import griddata, RBFInterpolator, UnivariateSpline
+from scipy.signal import savgol_filter
 from scipy.optimize import minimize
 import warnings
 
@@ -224,6 +225,107 @@ class DimensionlessInterpolator:
         flow_rate = target_dimensionless.Q * np.ones_like(target_times)  # Упрощение
         
         return pressure, flow_rate
+
+
+def get_dimensionless_series(dimensionless: DimensionlessParameters) -> Dict[str, np.ndarray]:
+    """Возвращает безразмерные ряды pD(Y) и qD(Y) для 1D анализа по оси Y.
+
+    pD = P / Δp_i, qD = Q / Q̄. Удобно для интерполяции/фильтрации вдоль Y.
+    """
+    pD = dimensionless.pressure / dimensionless.delta_p_i if dimensionless.delta_p_i != 0 else np.zeros_like(dimensionless.pressure)
+    q_mean = dimensionless.Q if dimensionless.Q != 0 else 1.0
+    qD = dimensionless.flow_rate / q_mean
+    Y = dimensionless.Y
+    return {"Y": Y, "logY": np.log10(np.clip(Y, 1e-30, None)), "pD": pD, "qD": qD}
+
+
+class DimensionlessCurveInterpolator1D:
+    """1D-интерполятор вдоль оси Y (или log10(Y)) для pD(Y) и qD(Y).
+
+    Использует UnivariateSpline в логарифмическом масштабе по умолчанию и опционально
+    сглаживание Савицкого–Голея для устойчивости к шуму.
+    """
+
+    def __init__(self, use_logY: bool = True, spline_smooth: Optional[float] = None,
+                 apply_savgol: bool = True, window: int = 7, polyorder: int = 2):
+        self.use_logY = use_logY
+        self.spline_smooth = spline_smooth
+        self.apply_savgol = apply_savgol
+        self.window = window
+        self.polyorder = polyorder
+        self._spline: Optional[UnivariateSpline] = None
+        self._x: Optional[np.ndarray] = None
+        self._y: Optional[np.ndarray] = None
+
+    def fit(self, Y: np.ndarray, values: np.ndarray) -> "DimensionlessCurveInterpolator1D":
+        mask = ~(np.isnan(Y) | np.isnan(values) | np.isinf(Y) | np.isinf(values))
+        Yc = Y[mask]
+        Vc = values[mask]
+        if len(Yc) < 4:
+            # Недостаточно точек для сплайна — оставим как есть
+            self._x = Yc
+            self._spline = None
+            return self
+
+        # Сортировка по возрастанию Y
+        idx = np.argsort(Yc)
+        Yc = Yc[idx]
+        Vc = Vc[idx]
+
+        x = np.log10(np.clip(Yc, 1e-30, None)) if self.use_logY else Yc
+
+        # Опциональная фильтрация значений перед обучением сплайна
+        if self.apply_savgol and len(Vc) >= max(self.window, self.polyorder + 2):
+            try:
+                Vc = savgol_filter(Vc, self.window if self.window % 2 == 1 else self.window + 1, self.polyorder)
+            except Exception:
+                pass
+
+        try:
+            self._spline = UnivariateSpline(x, Vc, s=self.spline_smooth if self.spline_smooth is not None else 0.0)
+            self._x = x
+            self._y = Vc
+        except Exception:
+            self._spline = None
+            self._x = x
+            self._y = Vc
+        return self
+
+    def predict(self, target_Y: np.ndarray) -> np.ndarray:
+        if self._x is None or len(self._x) == 0:
+            return np.full_like(target_Y, np.nan, dtype=float)
+        xt = np.log10(np.clip(target_Y, 1e-30, None)) if self.use_logY else target_Y
+        if self._spline is None:
+            # Линейная интерполяция как фоллбэк
+            return np.interp(xt, self._x, self._y)
+        return self._spline(xt)
+
+
+def resample_dimensionless_series(dimensionless: DimensionlessParameters,
+                                  n_points: int = 64,
+                                  smooth: bool = True) -> Dict[str, np.ndarray]:
+    """Ресэмплинг pD(Y), qD(Y) на равномерной сетке по log10(Y).
+
+    Возвращает словарь с ключами: Y_new, pD_new, qD_new.
+    """
+    series = get_dimensionless_series(dimensionless)
+    Y = series["Y"]
+    pD = series["pD"]
+    qD = series["qD"]
+    if np.any(Y <= 0):
+        Y = np.clip(Y, 1e-30, None)
+    y_min, y_max = np.nanmin(Y), np.nanmax(Y)
+    if not np.isfinite(y_min) or not np.isfinite(y_max) or y_min <= 0 or y_min == y_max:
+        return {"Y_new": Y, "pD_new": pD, "qD_new": qD}
+    log_grid = np.linspace(np.log10(y_min), np.log10(y_max), n_points)
+    Y_new = 10 ** log_grid
+    interp_p = DimensionlessCurveInterpolator1D(use_logY=True, apply_savgol=smooth)
+    interp_q = DimensionlessCurveInterpolator1D(use_logY=True, apply_savgol=smooth)
+    interp_p.fit(Y, pD)
+    interp_q.fit(Y, qD)
+    pD_new = interp_p.predict(Y_new)
+    qD_new = interp_q.predict(Y_new)
+    return {"Y_new": Y_new, "pD_new": pD_new, "qD_new": qD_new}
 
 
 class PhysicsConstrainedDimensionlessInterpolator:

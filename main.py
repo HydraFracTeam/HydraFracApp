@@ -25,6 +25,7 @@ from helpers.dimensionless_plotting import (plot_dimensionless_analysis,
                                             plot_interpolation_comparison,
                                             plot_extrapolation_comparison,
                                             PyQtGraphDimensionlessPlotter)
+from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator                                                                                        
 from schemas.well_data import WellTimeSeries
 
 try:
@@ -806,7 +807,46 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
         except Exception as e:
             QMessageBox.warning(self, "Ошибка", f"Ошибка безразмерного анализа: {str(e)}")
-    
+
+    def on_dimensionless_interpolation(self):
+        if self.well_data is None:
+            QMessageBox.warning(self, "Ошибка", "Нет данных для интерполяции")
+            return
+
+        well_params = {
+            'k': 1.0, 'h': self.well_data.thickness, 'mu': 1.0, 'B': 1.0,
+            'phi': 0.1, 'c_t': 1e-4, 'L': self.well_data.fracture_length,
+            'skin': self.well_data.skin, 'N': self.well_data.fractures_count,
+            'a_L': self.well_data.a_l_ratio
+        }
+
+        time_min = self.well_data.time.min()
+        time_max = self.well_data.time.max()
+        target_times = np.linspace(time_min, time_max, 50)
+
+        target_params = {
+            "Skin": self.well_data.skin,
+            "N": self.well_data.fractures_count,
+            "a_L": self.well_data.a_l_ratio
+        }
+
+        try:
+            fig = plot_interpolation_comparison(
+                self.well_data.time,
+                self.well_data.pressure,
+                self.well_data.flow_rate,
+                well_params,
+                target_times,
+                target_params,
+                method='adaptive'
+            )
+            fig.show()
+            QMessageBox.information(self, "Интерполяция", "Адаптивная интерполяция выполнена")
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Ошибка: {str(e)}")
+
+
+    '''    
     def on_dimensionless_interpolation(self):
         """Интерполяция в пространстве безразмерных кривых"""
         if self.well_data is None:
@@ -849,6 +889,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
         except Exception as e:
             QMessageBox.warning(self, "Ошибка", f"Ошибка безразмерной интерполяции: {str(e)}")
+    '''
     
     def on_dimensionless_extrapolation(self):
         """Экстраполяция безразмерных кривых"""
@@ -1284,17 +1325,28 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 current_well.time, current_well.pressure, current_well.flow_rate, well_params
             )
             
-            # Безразмерное давление (для цвета/размера точек)
-            dimensionless_pressure = dimensionless_data.pressure / dimensionless_data.delta_p_i
-            
-            # Строим в пространстве X-Y, цвет зависит от давления
-            scatter = self.plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, 
-                                           pen=None, symbol='o', symbolSize=8,
-                                           symbolBrush='b')
-            
+            # Безразмерное давление
+            pD = dimensionless_data.pressure / dimensionless_data.delta_p_i if dimensionless_data.delta_p_i != 0 else np.zeros_like(dimensionless_data.pressure)
+            # Цветовая карта
+            try:
+                import pyqtgraph as pg
+                cmap = pg.colormap.get('CET-L4') if hasattr(pg, 'colormap') else None
+                vmin, vmax = np.nanmin(pD), np.nanmax(pD)
+                if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+                    vmin, vmax = 0.0, 1.0
+                colors = cmap.map((pD - vmin) / (vmax - vmin), mode='qcolor') if cmap is not None else None
+                spots = [{"pos": (float(x), float(y)), "brush": (colors[i] if colors is not None else (0, 0, 255, 180)), "size": 8}
+                         for i, (x, y) in enumerate(zip(dimensionless_data.X, dimensionless_data.Y))]
+                scatter = pg.ScatterPlotItem()
+                scatter.addPoints(spots)
+                self.plot_widget.addItem(scatter)
+            except Exception:
+                # Фоллбэк — линия
+                self.plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, pen='b')
+
             self.plot_widget.setLabel('bottom', 'Фильтрационный параметр X (безразмерный)')
             self.plot_widget.setLabel('left', 'Ёмкостной параметр Y (безразмерный)')
-            self.plot_widget.setTitle(f'Безразмерное давление P/Pᵢ | Skin={current_well.skin:.1f}, N={current_well.fractures_count}, a/L={current_well.a_l_ratio:.3f}')
+            self.plot_widget.setTitle(f'P/Pᵢ вдоль траектории (цвет) | Skin={current_well.skin:.1f}, N={current_well.fractures_count}, a/L={current_well.a_l_ratio:.3f}')
             self.plot_widget.setLogMode(x=True, y=True)
             
         except Exception as e:
@@ -1316,17 +1368,26 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 current_well.time, current_well.pressure, current_well.flow_rate, well_params
             )
             
-            # Безразмерный дебит (для цвета/размера точек)
-            dimensionless_flow = dimensionless_data.flow_rate / dimensionless_data.Q
-            
-            # Строим в пространстве X-Y, цвет зависит от дебита
-            scatter = self.plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, 
-                                           pen=None, symbol='s', symbolSize=8,
-                                           symbolBrush='g')
-            
+            # Безразмерный дебит
+            qD = dimensionless_data.flow_rate / (dimensionless_data.Q if dimensionless_data.Q != 0 else 1.0)
+            try:
+                import pyqtgraph as pg
+                cmap = pg.colormap.get('CET-L8') if hasattr(pg, 'colormap') else None
+                vmin, vmax = np.nanmin(qD), np.nanmax(qD)
+                if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+                    vmin, vmax = 0.0, 1.0
+                colors = cmap.map((qD - vmin) / (vmax - vmin), mode='qcolor') if cmap is not None else None
+                spots = [{"pos": (float(x), float(y)), "brush": (colors[i] if colors is not None else (0, 128, 0, 180)), "size": 8}
+                         for i, (x, y) in enumerate(zip(dimensionless_data.X, dimensionless_data.Y))]
+                scatter = pg.ScatterPlotItem()
+                scatter.addPoints(spots)
+                self.plot_widget.addItem(scatter)
+            except Exception:
+                self.plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, pen='g')
+
             self.plot_widget.setLabel('bottom', 'Фильтрационный параметр X (безразмерный)')
             self.plot_widget.setLabel('left', 'Ёмкостной параметр Y (безразмерный)')
-            self.plot_widget.setTitle(f'Безразмерный дебит Q/Q̄ | Skin={current_well.skin:.1f}, N={current_well.fractures_count}, a/L={current_well.a_l_ratio:.3f}')
+            self.plot_widget.setTitle(f'Q/Q̄ вдоль траектории (цвет) | Skin={current_well.skin:.1f}, N={current_well.fractures_count}, a/L={current_well.a_l_ratio:.3f}')
             self.plot_widget.setLogMode(x=True, y=True)
             
         except Exception as e:

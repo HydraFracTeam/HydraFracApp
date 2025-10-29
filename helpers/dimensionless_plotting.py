@@ -177,7 +177,7 @@ class DimensionlessPlotter:
         ax1.semilogy(original_data.t, original_data.pressure, 
                     'ko-', label='Исходные данные', markersize=6)
         ax1.semilogy(target_times, interpolated_pressure, 
-                    'ro-', label=method_name, markersize=4)
+                    'r^', label=method_name, markersize=6)
         ax1.set_xlabel('Время, ч')
         ax1.set_ylabel('Давление, атм')
         ax1.set_title(f'Интерполяция давления - {method_name}')
@@ -268,23 +268,40 @@ class PyQtGraphDimensionlessPlotter:
             plot_type: Тип графика
         """
         plot_widget.clear()
-        plot_widget.setLabel('left', 'Безразмерное давление' if plot_type == 'pressure' else 'Безразмерный дебит')
-        plot_widget.setLabel('bottom', 'Ёмкостной параметр Y')
-        plot_widget.setTitle('Безразмерные кривые МГРП')
+        plot_widget.setLabel('bottom', 'Фильтрационный параметр X (безразмерный)')
+        plot_widget.setLabel('left', 'Ёмкостной параметр Y (безразмерный)')
+        plot_widget.setTitle('Безразмерные кривые МГРП (X–Y пространство)')
         plot_widget.setLogMode(x=True, y=True)
-        
-        if plot_type == 'pressure':
-            dimensionless_pressure = dimensionless_data.pressure / dimensionless_data.delta_p_i
-            plot_widget.plot(dimensionless_data.Y, dimensionless_pressure,
-                           pen=mkPen(color=self.colors['original'], width=2),
-                           symbol='o', symbolSize=6,
-                           name='Безразмерное давление')
-        else:
-            dimensionless_flow = dimensionless_data.flow_rate / dimensionless_data.Q
-            plot_widget.plot(dimensionless_data.Y, dimensionless_flow,
-                           pen=mkPen(color=self.colors['linear'], width=2),
-                           symbol='s', symbolSize=6,
-                           name='Безразмерный дебит')
+        # Отрисовываем траекторию в X–Y пространстве, цветом кодируем величину
+        try:
+            pD = dimensionless_data.pressure / dimensionless_data.delta_p_i if dimensionless_data.delta_p_i != 0 else np.zeros_like(dimensionless_data.pressure)
+            qD = dimensionless_data.flow_rate / (dimensionless_data.Q if dimensionless_data.Q != 0 else 1.0)
+            values = pD if plot_type == 'pressure' else qD
+            # Нормируем для цветовой карты
+            vmin, vmax = np.nanmin(values), np.nanmax(values)
+            if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+                vmin, vmax = 0.0, 1.0
+            cmap = pg.colormap.get('CET-L4') if hasattr(pg, 'colormap') else None
+            brushes = None
+            if cmap is not None:
+                colors = cmap.map((values - vmin) / (vmax - vmin), mode='qcolor')
+                brushes = colors
+            spots = [{"pos": (float(x), float(y)), "brush": (brushes[i] if brushes is not None else (0, 0, 255, 180)), "size": 7} 
+                     for i, (x, y) in enumerate(zip(dimensionless_data.X, dimensionless_data.Y))]
+            scatter = pg.ScatterPlotItem()
+            scatter.addPoints(spots)
+            plot_widget.addItem(scatter)
+            # Добавляем цветовую шкалу при наличии ColorBarItem
+            try:
+                if cmap is not None and hasattr(pg, 'ColorBarItem'):
+                    cbar = pg.ColorBarItem(values=(vmin, vmax), colorMap=cmap, label=("P/Pi" if plot_type == 'pressure' else "Q/Q̄"))
+                    cbar.setImageItem(scatter)
+                    plot_widget.addItem(cbar)
+            except Exception:
+                pass
+        except Exception:
+            # Фоллбэк — простая линия траектории
+            plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, pen=mkPen(color=self.colors['original'], width=2), name='Траектория')
     
     def add_type_curves(self, 
                        plot_widget: PlotWidget,
@@ -382,33 +399,6 @@ def plot_dimensionless_analysis(time: pd.Series,
     plotter = DimensionlessPlotter()
     return plotter.plot_dimensionless_curves(dimensionless_data, plot_type)
 
-
-def plot_interpolation_comparison(time: pd.Series,
-                                 pressure: pd.Series,
-                                 flow_rate: pd.Series,
-                                 well_params: Dict[str, float],
-                                 target_times: np.ndarray,
-                                 target_params: Dict[str, float],
-                                 method: str = 'rbf') -> Figure:
-    """Сравнение методов интерполяции"""
-    # Получаем интерполированные данные
-    interpolated_pressure, interpolated_flow = interpolate_dimensionless_curves(
-        time, pressure, flow_rate, well_params, target_times, target_params, method
-    )
-    
-    # Конвертируем исходные данные
-    dimensionless_data = convert_to_dimensionless_curves(
-        time, pressure, flow_rate, well_params
-    )
-    
-    # Создаем график
-    plotter = DimensionlessPlotter()
-    return plotter.plot_interpolation_results(
-        dimensionless_data, interpolated_pressure, interpolated_flow, 
-        target_times, f'Интерполяция ({method})'
-    )
-
-
 def plot_extrapolation_comparison(time: pd.Series,
                                  pressure: pd.Series,
                                  flow_rate: pd.Series,
@@ -433,3 +423,61 @@ def plot_extrapolation_comparison(time: pd.Series,
         dimensionless_data, extrapolated_pressure, extrapolated_flow,
         future_times, f'Экстраполяция ({method})'
     )
+
+from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
+
+
+def plot_interpolation_comparison(
+    time: pd.Series,
+    pressure: pd.Series,
+    flow_rate: pd.Series,
+    well_params: Dict[str, float],
+    target_times: np.ndarray,
+    target_params: Dict[str, float],
+    method: str = 'adaptive'
+) -> Figure:
+    """
+    Сравнение методов интерполяции (включая физически ограниченные).
+    """
+    # 1️⃣ Конвертируем исходные данные в безразмерные
+    dimensionless_data = convert_to_dimensionless_curves(
+        time, pressure, flow_rate, well_params
+    )
+
+    # 2️⃣ Создаём сетку параметров для обучения
+    param_grid = np.array([
+        [dimensionless_data.skin, dimensionless_data.N, dimensionless_data.a_L]
+    ])
+    Y_grid = np.asarray(dimensionless_data.Y)
+    P_curves = np.asarray([dimensionless_data.pressure / dimensionless_data.delta_p_i])
+
+    # 3️⃣ Обучаем интерполятор (выбирает сам лучший метод)
+    interp = DimensionlessCurveInterpolator(
+        methods=('linear', 'rbf', 'gp'),
+        constraints=dict(monotonic=True, positive=True, smooth=True, clip_range=(0, 5))
+    )
+    interp.fit(param_grid, Y_grid, P_curves)
+
+    # 4️⃣ Предсказываем для заданных параметров
+    skin = target_params.get("Skin", dimensionless_data.skin)
+    N = target_params.get("N", dimensionless_data.N)
+    aL = target_params.get("a_L", dimensionless_data.a_L)
+    interpolated_curve = interp.predict(skin, N, aL)
+
+    # 5️⃣ Визуализируем
+    plotter = DimensionlessPlotter()
+    fig = plotter.plot_interpolation_results(
+        dimensionless_data,
+        interpolated_pressure=interpolated_curve.values * dimensionless_data.delta_p_i,
+        interpolated_flow=np.zeros_like(interpolated_curve.values),  # пока оставим
+        target_times=target_times,
+        method_name=f"Интерполяция ({interp.best_method})"
+    )
+
+    # 6️⃣ Добавим подпись RMSE
+    ax = fig.axes[0]
+    rmse = interp.rmse_scores.get(interp.best_method, None)
+    if rmse is not None:
+        ax.text(0.05, 0.95, f"RMSE={rmse:.4e}", transform=ax.transAxes, fontsize=10, va='top')
+
+    return fig
