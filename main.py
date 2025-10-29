@@ -2,18 +2,18 @@ import sys
 import pandas as pd
 import numpy as np
 from PySide6.QtWidgets import (QLabel, QApplication, QMainWindow, QFileDialog, QMessageBox, 
+<<<<<<< HEAD
                                QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout,
                                QCheckBox)
+=======
+>>>>>>> b7a41d098d2aaa07ad49760b636b8e7dd0d209db
 from ui import Ui_mainWindow
 
-from helpers.parse_well_data import parse_well_csv, analyze_well_groups
-from helpers.physics import compute_transmissivity, compute_pore_volume
-from helpers.timeseries import compute_derivative, interpolate_series, smooth_series
-from helpers.grp_analysis import (analyze_flow_regime, match_type_curves, 
-                                 compute_well_productivity_index, detect_flow_regime_transitions)
+from helpers.parse_well_data import parse_well_data
+from helpers.timeseries import interpolate_series
 from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
-                               clean_data, detect_outliers, AdvancedInterpolator,
+                               detect_outliers,
                                apply_kriging_interpolation, apply_rbf_interpolation,
                                apply_gp_interpolation, apply_physics_constrained_interpolation,
                                apply_adaptive_interpolation)
@@ -27,11 +27,8 @@ from helpers.dimensionless_plotting import (plot_dimensionless_analysis,
                                             PyQtGraphDimensionlessPlotter)
 from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator                                                                                        
 from schemas.well_data import WellTimeSeries
+import pyqtgraph as pg
 
-try:
-    import pyqtgraph as pg
-except Exception:
-    pg = None
 
 
 class MyApp(QMainWindow, Ui_mainWindow):
@@ -41,7 +38,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.load_template_button.clicked.connect(self.load_template)
         self.well_data_list = []  # Список WellTimeSeries объектов
         self.current_well_index = 0  # Индекс текущей скважины
-        self.current_plot_type = "pressure"  # Тип текущего графика
+        # self.current_plot_type = "pressure"  # Тип текущего графика
         
         # Создаем профессиональный интерфейс с вкладками
         self.setup_professional_interface()
@@ -281,7 +278,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         # Парсим данные скважины
         try:
-            well_data_list, error_msg = parse_well_csv(file_path)
+            well_data_list, error_msg = parse_well_data(file_path)
             if error_msg is not None:
                 QMessageBox.warning(self, "Ошибка загрузки", error_msg)
                 return
@@ -637,7 +634,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
             return
         
         # Интерполируем пропуски в данных
+        print(len(self.well_data.pressure))
         self.well_data.pressure = interpolate_series(self.well_data.pressure)
+        print(len(self.well_data.pressure))
         self.well_data.flow_rate = interpolate_series(self.well_data.flow_rate)
         
         self.on_plot_timeseries()
@@ -1249,65 +1248,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка экспорта", f"Не удалось экспортировать отчет: {str(e)}")
 
-    def _get_data(self):
-        """Возвращает время и выбранный показатель (старый метод)"""
-        if self.well_data is None:
-            return None, None
-        return self.well_data.time, self.well_data.pressure
-
-    def _plot_data(self, values, times, title: str = ""):
-        """Отрисовка графика (старый метод)"""
-        if self.plot_widget is None:
-            return
-        self.plot_widget.clear()
-        self.plot_widget.plot(values, times, pen='b')
-        if title:
-            self.plot_widget.setTitle(title)
-
-    def on_plot(self):
-        """Старый метод построения графиков"""
-        if self.well_data is None:
-            return
-        time_data, pressure_data = self._get_data()
-        if time_data is not None and pressure_data is not None:
-            self._plot_data(pressure_data, time_data, "Давление vs Время")
-
-    def on_derivative(self):
-        """Старый метод вычисления производной"""
-        if self.well_data is None:
-            return
-        self.plot_type_combo.setCurrentText("Производная давления")
-        self.on_plot_timeseries()
-
-    def on_interpolate(self):
-        """Старый метод интерполяции"""
-        if self.well_data is None:
-            return
-        self.plot_type_combo.setCurrentText("Давление vs Время")
-        self.on_interpolate_data()
-
-    def on_smooth(self):
-        """Старый метод сглаживания"""
-        if self.well_data is None:
-            return
-        self.plot_type_combo.setCurrentText("Давление vs Время")
-        self.on_smooth_data()
-
-    def setup_grp_analysis(self):
-        """Настройка ГРП-анализа (старый метод)"""
-        pass
-
-    def on_grp_analysis(self):
-        """Старый метод анализа ГРП"""
-        pass
-
-    def on_type_curves(self):
-        """Старый метод эталонных кривых"""
-        pass
-
-    def on_ml_prediction(self):
-        """Старый метод ML прогноза"""
-        pass
+<<<<<<< HEAD
     
     def _plot_dimensionless_pressure(self, current_well):
         """Построение графика безразмерного давления в пространстве X-Y"""
@@ -1452,6 +1393,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Ошибка", f"Ошибка построения сравнения с эталонными кривыми: {str(e)}")
 
+=======
+>>>>>>> b7a41d098d2aaa07ad49760b636b8e7dd0d209db
 
 def compute_dimensionless_parameters(time_series: WellTimeSeries, time_clean, pressure_clean, flow_rate_clean):
         """

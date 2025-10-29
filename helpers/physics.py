@@ -1,6 +1,5 @@
 import numpy as np
-import pandas as pd
-from typing import Tuple, Optional
+from typing import Tuple
 
 
 def compute_transmissivity(permeability_md: np.ndarray, thickness_m: np.ndarray) -> np.ndarray:

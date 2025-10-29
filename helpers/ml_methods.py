@@ -1,17 +1,15 @@
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional, List, Dict, Union
+from typing import Tuple, Dict, Union
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, Matern
 from scipy import signal
-from scipy.interpolate import interp1d, UnivariateSpline, RBFInterpolator, griddata
-from scipy.spatial.distance import pdist, squareform
-from scipy.optimize import minimize
+from scipy.interpolate import interp1d, UnivariateSpline, RBFInterpolator
 import warnings
 
 warnings.filterwarnings('ignore')

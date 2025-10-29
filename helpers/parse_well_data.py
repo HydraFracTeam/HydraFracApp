@@ -43,13 +43,16 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
     missing_columns = [col for col in required_columns if col not in available_columns]
     if missing_columns:
         return None, f"Отсутствуют обязательные колонки: {', '.join(missing_columns)}"
+    
+    extra_columns = [col for col in available_columns if col not in required_columns]
+    if extra_columns:
+        return None, f"Присутствуют дополнительные колонки: {', '.join(extra_columns)}"
 
     try:
         print("Очистка данных...")
         # Очищаем данные от NaN и inf значений
         df = df.replace([np.inf, -np.inf], np.nan)
         initial_rows = len(df)
-        df = df.dropna(subset=['t', 'P', 'Q'])  # Удаляем строки с NaN в ключевых колонках
         
         if len(df) == 0:
             return None, "После очистки данных не осталось валидных строк"
@@ -78,11 +81,6 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
                 
             # Сортируем по времени
             group_data = group_data.sort_values('t')
-            
-            # Проверяем, что данные корректны
-            if group_data['t'].isna().any() or group_data['P'].isna().any() or group_data['Q'].isna().any():
-                print(f"  Пропуск группы {group_id}: содержит NaN значения")
-                continue
             
             try:
                 # Создаем временные ряды
@@ -141,7 +139,6 @@ def group_data_by_well_parameters(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
                 # Для нечисловых параметров просто копируем
                 df_copy[f'{param}_rounded'] = df_copy[param]
         
-        # Получаем список округленных параметров для группировки
         rounded_params = [f'{param}_rounded' for param in grouping_params]
         
         # Группируем данные по уникальным комбинациям параметров
@@ -210,14 +207,6 @@ def analyze_well_groups(df: pd.DataFrame) -> Dict[str, any]:
         analysis['groups_info'].append(group_info)
     
     return analysis
-
-
-def parse_well_csv(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Optional[str]]:
-    """
-    Парсит CSV файл с данными разведки месторождений и создает список WellTimeSeries.
-    Ожидает формат: Skin, h, N, W, L, a/L, ElemIdx, X, Y, t, P, dP, Q
-    """
-    return parse_well_data(file_path)  # Используем общую функцию
 
 
 def parse_well_data_row(row: pd.Series) -> Optional[WellData]:
