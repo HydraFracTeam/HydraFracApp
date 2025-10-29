@@ -568,7 +568,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
             return
         
         # Интерполируем пропуски в данных
+        print(len(self.well_data.pressure))
         self.well_data.pressure = interpolate_series(self.well_data.pressure)
+        print(len(self.well_data.pressure))
         self.well_data.flow_rate = interpolate_series(self.well_data.flow_rate)
         
         self.on_plot_timeseries()
