@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QLabel, QApplication, QMainWindow, QFileDialog, Q
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout)
 from ui import Ui_mainWindow
 
-from helpers.parse_well_data import parse_well_csv
+from helpers.parse_well_data import parse_well_data
 from helpers.timeseries import interpolate_series
 from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
                                detect_outliers,
@@ -25,7 +25,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.load_template_button.clicked.connect(self.load_template)
         self.well_data_list = []  # Список WellTimeSeries объектов
         self.current_well_index = 0  # Индекс текущей скважины
-        self.current_plot_type = "pressure"  # Тип текущего графика
+        # self.current_plot_type = "pressure"  # Тип текущего графика
         
         # Создаем профессиональный интерфейс с вкладками
         self.setup_professional_interface()
@@ -256,7 +256,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         # Парсим данные скважины
         try:
-            well_data_list, error_msg = parse_well_csv(file_path)
+            well_data_list, error_msg = parse_well_data(file_path)
             if error_msg is not None:
                 QMessageBox.warning(self, "Ошибка загрузки", error_msg)
                 return

@@ -43,6 +43,10 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
     missing_columns = [col for col in required_columns if col not in available_columns]
     if missing_columns:
         return None, f"Отсутствуют обязательные колонки: {', '.join(missing_columns)}"
+    
+    extra_columns = [col for col in available_columns if col not in required_columns]
+    if extra_columns:
+        return None, f"Присутствуют дополнительные колонки: {', '.join(extra_columns)}"
 
     try:
         print("Очистка данных...")
@@ -210,14 +214,6 @@ def analyze_well_groups(df: pd.DataFrame) -> Dict[str, any]:
         analysis['groups_info'].append(group_info)
     
     return analysis
-
-
-def parse_well_csv(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Optional[str]]:
-    """
-    Парсит CSV файл с данными разведки месторождений и создает список WellTimeSeries.
-    Ожидает формат: Skin, h, N, W, L, a/L, ElemIdx, X, Y, t, P, dP, Q
-    """
-    return parse_well_data(file_path)  # Используем общую функцию
 
 
 def parse_well_data_row(row: pd.Series) -> Optional[WellData]:
