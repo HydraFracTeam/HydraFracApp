@@ -45,88 +45,96 @@ class DimensionlessConverter:
     
     def __init__(self):
         self.default_params = {
-            'k': 1.0,  # мД
+            'k': 1.0,   # мД
             'mu': 1.0,  # мПа·с
-            'B': 1.0,  # безразмерный
-            'phi': 0.1,  # безразмерный
-            'c_t': 1e-4,  # 1/атм
+            'B': 1.0,   # безразмерный
+            'phi': 0.1, # безразмерный
+            'c_t': 1e-4 # 1/атм
         }
-    
-    def convert_to_dimensionless(self, 
-                                time: pd.Series,
-                                pressure: pd.Series,
-                                flow_rate: pd.Series,
-                                well_params: Dict[str, float]) -> DimensionlessParameters:
-        """
-        Конвертация в безразмерные параметры
         
-        Args:
-            time: Временной ряд, ч
-            pressure: Давление, атм
-            flow_rate: Дебит, м³/сут
-            well_params: Параметры скважины (k, h, mu, B, phi, c_t, L, skin, N, a_L)
+    def convert_to_dimensionless(self,
+                                 time: pd.Series,
+                                 pressure: pd.Series,
+                                 flow_rate: pd.Series,
+                                 well_params: Dict[str, float]) -> DimensionlessParameters:
+        """
+        Конвертация в безразмерные кривые с расчётом X(t) и Y(t) на основе моментного дебита q(t).
+        Формулы:
+            X(t) = (0.00864 * k * h * Δp_i) / (μ * B * q(t))
+            Y(t) = (q(t) * B * t) / (24 * φ * c_t * h * L^2 * Δp_i)
+        Возвращает DimensionlessParameters с массивами X и Y.
         """
         # Извлекаем параметры
         k = well_params.get('k', self.default_params['k'])
-        h = well_params.get('h', 10.0)
+        h = well_params.get('h', 1.0)
         mu = well_params.get('mu', self.default_params['mu'])
         B = well_params.get('B', self.default_params['B'])
         phi = well_params.get('phi', self.default_params['phi'])
         c_t = well_params.get('c_t', self.default_params['c_t'])
-        L = well_params.get('L', 100.0)
-        
-        # Начальное падение давления
-        delta_p_i = pressure.iloc[0] - pressure.iloc[-1] if len(pressure) > 1 else pressure.iloc[0]
-        
-        # Средний дебит
-        Q = flow_rate.mean() if not flow_rate.empty else 1.0
-        
-        # Конвертируем в numpy массивы
-        t = time.values
-        p = pressure.values
-        q = flow_rate.values
-        
-        # Фильтрационный параметр X = (0.00864 * k * h * Δp_i) / (μ * B * Q)
-        X = (0.00864 * k * h * delta_p_i) / (mu * B * Q)
-        
-        # Ёмкостной параметр Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i)
-        Y = (Q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_i)
-        
+        L = well_params.get('L', 1.0)
+
+        # Приводим к numpy
+        t = np.asarray(time, dtype=float)
+        p = np.asarray(pressure, dtype=float)
+        q = np.asarray(flow_rate, dtype=float)
+
+        # Δp_i — используем начальную депрессию или разность max-min
+        if len(p) > 1:
+            delta_p_i = float(p[0] - p[-1])
+            if abs(delta_p_i) < 1e-8:
+                delta_p_i = float(np.nanmax(p) - np.nanmin(p))
+        else:
+            delta_p_i = float(p[0]) if len(p) == 1 else 1.0
+
+        delta_p_i = max(abs(delta_p_i), 1e-9)
+
+        # Защита от нулевого q
+        q_safe = np.where(np.abs(q) < 1e-12, 1e-12, q)
+
+        # Расчёт X(t) и Y(t)
+        X_t = (0.00864 * k * h * delta_p_i) / (mu * B * q_safe)
+        Y_t = (q * B * t) / (24.0 * phi * c_t * h * (L**2) * delta_p_i)
+
+        # Нормирующие величины
+        Q_ref = np.nanmax(np.abs(q)) if q.size > 0 else 1.0
+        Q_ref = max(Q_ref, 1e-12)
+
+        # Безразмерное давление и дебит (опционально, для проверки)
+        pD = (p - np.nanmin(p)) / delta_p_i
+        qD = q / Q_ref
+
         return DimensionlessParameters(
-            X=np.full_like(t, X),  # X постоянен для всех временных точек
-            Y=Y,
-            pressure=p,  # Сохраняем исходные данные
+            X=X_t,
+            Y=Y_t,
+            pressure=p,
             flow_rate=q,
-            k=k, h=h, mu=mu, B=B, phi=phi, c_t=c_t, L=L, 
-            delta_p_i=delta_p_i, Q=Q, t=t
+            k=k, h=h, mu=mu, B=B, phi=phi, c_t=c_t, L=L,
+            delta_p_i=delta_p_i,
+            Q=Q_ref,
+            t=t
         )
     
     def convert_from_dimensionless(self, 
-                                 dimensionless: DimensionlessParameters,
-                                 target_times: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+                                   dimensionless: DimensionlessParameters,
+                                   target_times: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Обратная конвертация из безразмерных параметров в физические
-        
-        Args:
-            dimensionless: Безразмерные параметры
-            target_times: Целевые временные точки
-            
-        Returns:
-            Tuple[pressure, flow_rate]: Восстановленные физические величины
+        Обратная конвертация из безразмерных параметров в физические величины.
         """
-        # Восстанавливаем давление
-        # p = p_i - (X * Y * mu * B * Q) / (0.00864 * k * h)
-        pressure = (dimensionless.delta_p_i - 
-                   (dimensionless.X[0] * dimensionless.Y * dimensionless.mu * dimensionless.B * dimensionless.Q) / 
+        # Восстановление давления (приближённо)
+        pressure = (dimensionless.delta_p_i -
+                   (dimensionless.X[0] * dimensionless.Y * 
+                    dimensionless.mu * dimensionless.B * dimensionless.Q) / 
                    (0.00864 * dimensionless.k * dimensionless.h))
         
-        # Восстанавливаем дебит
-        # Q = (Y * 24 * φ * c_t * h * L² * Δp_i) / (B * t)
-        flow_rate = (dimensionless.Y * 24 * dimensionless.phi * dimensionless.c_t * 
-                    dimensionless.h * dimensionless.L**2 * dimensionless.delta_p_i) / (dimensionless.B * target_times)
+        # Восстановление дебита
+        flow_rate = (dimensionless.Y * 24 * dimensionless.phi * dimensionless.c_t *
+                     dimensionless.h * dimensionless.L**2 * dimensionless.delta_p_i) / \
+                     (dimensionless.B * target_times)
         
         return pressure, flow_rate
+        
 
+    
 
 class DimensionlessInterpolator:
     """Интерполятор в пространстве безразмерных кривых"""

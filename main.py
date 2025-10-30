@@ -1,13 +1,19 @@
 import sys
 import pandas as pd
 import numpy as np
+import pyqtgraph as pg
+from helpers.dimensionless_plotting import (
+    convert_to_dimensionless_curves,
+    interpolate_dimensionless_curves,
+    extrapolate_dimensionless_curves,
+    create_dimensionless_type_curves
+)
+from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
 from PySide6.QtWidgets import (QLabel, QApplication, QMainWindow, QFileDialog, QMessageBox, 
-<<<<<<< HEAD
                                QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout,
                                QCheckBox)
-=======
->>>>>>> b7a41d098d2aaa07ad49760b636b8e7dd0d209db
+
 from ui import Ui_mainWindow
 
 from helpers.parse_well_data import parse_well_data
@@ -35,6 +41,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        
+        self.resize(1400, 900)
         self.load_template_button.clicked.connect(self.load_template)
         self.well_data_list = []  # Список WellTimeSeries объектов
         self.current_well_index = 0  # Индекс текущей скважины
@@ -62,12 +70,11 @@ class MyApp(QMainWindow, Ui_mainWindow):
         """Создает профессиональный интерфейс с вкладками для анализа ГРП"""
         # Основной контейнер с вкладками
         self.tab_widget = QTabWidget(self.centralwidget)
-        self.tab_widget.setGeometry(350, 20, 850, 700)
+        self.tab_widget.setGeometry(350, 20, 1150, 900)
         
         # Вкладка 1: Временные ряды
-        self.timeseries_tab = QWidget()
-        self.tab_widget.addTab(self.timeseries_tab, "Временные ряды")
-        self.setup_timeseries_tab()
+        self.timeseries_tab = self.setup_timeseries_tab()  # ← присваиваем возвращённый QWidget
+        self.tab_widget.addTab(self.timeseries_tab, "Безразмерные кривые")  # можно переименовать вкладку
         
         # Вкладка 2: Анализ ГРП
         self.grp_tab = QWidget()
@@ -85,74 +92,96 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.setup_results_tab()
     
     def setup_timeseries_tab(self):
-        """Настройка вкладки временных рядов"""
-        layout = QVBoxLayout(self.timeseries_tab)
+        """Вкладка для безразмерных графиков в стиле Kappa Sapphire."""
+        tab = QWidget()
         
-        # Панель управления графиками
-        controls_group = QGroupBox("Управление графиками")
-        controls_layout = QGridLayout(controls_group)
-        
-        # Выбор скважины
-        self.well_selection_combo = QComboBox()
-        self.well_selection_combo.setToolTip("Выберите скважину для анализа")
-        
-        # Выбор типа графика
-        self.plot_type_combo = QComboBox()
-        self.plot_type_combo.addItems([
-            "Давление vs Время",
-            "Дебит vs Время", 
-            "Производная давления",
-            "Производная дебита",
-            "Давление vs Дебит",
-            "Безразмерные параметры (X-Y)",
-            "Логарифмический P(t) с инверсией",
-            "Логарифмический Q(t)",
-            "Логарифмическая производная P"
-        ])
-        
-        # Галочка безразмерности
-        self.dimensionless_checkbox = QCheckBox("Безразмерные параметры")
-        self.dimensionless_checkbox.setToolTip("Показать график в безразмерных координатах")
-        self.dimensionless_checkbox.setChecked(False)
-        
-        # Синхронизация с галочкой безразмерности (подключаем после создания)
-        self.dimensionless_checkbox.stateChanged.connect(self.update_plot_types)
-        
-        # Кнопки анализа
+        # ОСНОВНОЙ ЛАЙАУТ С РАЗДЕЛЕНИЕМ ПО ГОРИЗОНТАЛИ
+        main_layout = QHBoxLayout(tab)
+        main_layout.setContentsMargins(5, 5, 5, 5)  # минимальные отступы
+
+        # --- ЛЕВАЯ ПАНЕЛЬ: управление ---
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 5, 0)
+        left_panel.setMaximumWidth(300)  # фиксированная ширина
+
+        # --- Кнопки анализа СВЕРХУ ---
+        buttons_group = QGroupBox("Управление")
+        buttons_layout = QGridLayout(buttons_group)
         self.plot_btn = QPushButton("Построить график")
-        self.smooth_btn = QPushButton("Сгладить данные")
         self.interp_btn = QPushButton("Интерполяция")
         self.ml_interp_btn = QPushButton("ML интерполяция")
         self.ml_filter_btn = QPushButton("ML фильтрация")
         self.outlier_btn = QPushButton("Обнаружить выбросы")
         self.export_btn = QPushButton("Экспорт данных")
+
+        buttons_layout.addWidget(self.plot_btn, 0, 0)
+        buttons_layout.addWidget(self.interp_btn, 0, 1)
+        buttons_layout.addWidget(self.ml_interp_btn, 1, 0)
+        buttons_layout.addWidget(self.ml_filter_btn, 1, 1)
+        buttons_layout.addWidget(self.outlier_btn, 2, 0)
+        buttons_layout.addWidget(self.export_btn, 2, 1)
+        left_layout.addWidget(buttons_group)
+
+        # --- Выбор скважины ---
+        well_group = QGroupBox("Выбор скважины")
+        well_layout = QVBoxLayout(well_group)
+        self.well_combo_dim = QComboBox()
+        well_layout.addWidget(self.well_combo_dim)
+        left_layout.addWidget(well_group)
+
+        # --- Панель чекбоксов ---
+        controls_group = QGroupBox("Отображение")
+        controls_layout = QVBoxLayout(controls_group)
+        self.cb_pressure = QCheckBox("Давление (pD)")
+        self.cb_flowrate = QCheckBox("Дебит (qD)")
+        self.cb_interpolation = QCheckBox("Интерполяция")
+        self.cb_extrapolation = QCheckBox("Экстраполяция")
+        self.cb_typecurves = QCheckBox("Эталонные кривые")
         
-        controls_layout.addWidget(QLabel("Скважина:"), 0, 0)
-        controls_layout.addWidget(self.well_selection_combo, 0, 1)
-        controls_layout.addWidget(QLabel("Тип графика:"), 0, 2)
-        controls_layout.addWidget(self.plot_type_combo, 0, 3)
-        controls_layout.addWidget(self.dimensionless_checkbox, 0, 4)
-        controls_layout.addWidget(self.plot_btn, 1, 0)
-        controls_layout.addWidget(self.smooth_btn, 1, 1)
-        controls_layout.addWidget(self.interp_btn, 1, 2)
-        controls_layout.addWidget(self.ml_interp_btn, 1, 3)
-        controls_layout.addWidget(self.ml_filter_btn, 2, 0)
-        controls_layout.addWidget(self.outlier_btn, 2, 1)
-        controls_layout.addWidget(self.export_btn, 2, 2)
+        # Устанавливаем галочки по умолчанию
+        self.cb_pressure.setChecked(True)
+        self.cb_flowrate.setChecked(True)
         
-        layout.addWidget(controls_group)
+        for cb in [self.cb_pressure, self.cb_flowrate, self.cb_interpolation, self.cb_extrapolation, self.cb_typecurves]:
+            controls_layout.addWidget(cb)
+        left_layout.addWidget(controls_group)
+
+        # --- Отчёт ПОД ЧЕКБОКСАМИ ---
+        report_group = QGroupBox("Отчёт")
+        report_layout = QVBoxLayout(report_group)
+        self.text_report = QTextEdit()
+        self.text_report.setReadOnly(True)
+        self.text_report.setPlaceholderText("Здесь появится отчёт...")
+        report_layout.addWidget(self.text_report)
+        left_layout.addWidget(report_group)
+
+        # Растягиваем отчёт вниз
+        left_layout.addStretch()
+
+        # --- ПРАВАЯ ПАНЕЛЬ: график ---
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Область для графиков
-        if pg is not None:
-            self.plot_widget = pg.PlotWidget()
-            self.plot_widget.setLabel('bottom', 'Значение')
-            self.plot_widget.setLabel('left', 'Время, ч')
-            self.plot_widget.showGrid(x=True, y=True)
-            layout.addWidget(self.plot_widget)
-        else:
-            self.plot_widget = None
-            layout.addWidget(QLabel("pyqtgraph не установлен"))
-    
+        # График занимает всё доступное пространство
+        self.dimensionless_plot = pg.PlotWidget()
+        self.dimensionless_plot.showGrid(x=True, y=True)
+        
+
+        self.dimensionless_plot.setLabel('bottom', 'X  безразмерный фильтрационный параметр')  # ← СНИЗУ X
+        self.dimensionless_plot.setLabel('left', '•	Y  безразмерный ёмкостной параметр')  # ← СЛЕВА Y
+        self.dimensionless_plot.setTitle("Безразмерные кривые МГРП")
+        
+        right_layout.addWidget(self.dimensionless_plot)
+
+        # --- Собираем основной интерфейс ---
+        main_layout.addWidget(left_panel)
+        main_layout.addWidget(right_panel, stretch=1)  # график растягивается
+
+        tab.setLayout(main_layout)
+        return tab
+
     def setup_grp_tab(self):
         """Настройка вкладки анализа ГРП"""
         layout = QVBoxLayout(self.grp_tab)
@@ -194,7 +223,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         # Область для результатов
         self.grp_results_text = QTextEdit()
-        self.grp_results_text.setMaximumHeight(200)
+        self.grp_results_text.setMaximumHeight(300)
         layout.addWidget(self.grp_results_text)
     
     def setup_type_curves_tab(self):
@@ -245,9 +274,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
     def setup_event_handlers(self):
         """Настройка обработчиков событий"""
         # Временные ряды
-        self.well_selection_combo.currentIndexChanged.connect(self.on_well_selection_changed)
-        self.plot_btn.clicked.connect(self.on_plot_timeseries)
-        self.smooth_btn.clicked.connect(self.on_smooth_data)
+        # self.well_combo_dim.currentIndexChanged.connect(self.on_well_selection_changed)
+        self.plot_btn.clicked.connect(self.on_plot_dimensionless_selected)
+        #self.smooth_btn.clicked.connect(self.on_smooth_data)
         self.interp_btn.clicked.connect(self.on_interpolate_data)
         self.ml_interp_btn.clicked.connect(self.on_ml_interpolate)
         self.ml_filter_btn.clicked.connect(self.on_ml_filter)
@@ -267,6 +296,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         # Результаты
         self.export_report_btn.clicked.connect(self.on_export_report)
+
 
     def load_template(self):
         """Загрузка CSV файла с данными разведки месторождений"""
@@ -305,10 +335,15 @@ class MyApp(QMainWindow, Ui_mainWindow):
         QMessageBox.information(self, "Данные загружены", 
                               f"Загружено {len(well_data_list)} групп данных\n"
                               f"Всего измерений: {total_points}\n"
-                              f"Текущая скважина: {self.well_selection_combo.currentText()}")
+                              f"Текущая скважина: {self.well_combo_dim.currentText()}")
         
-        # Автоматически строим первый график
-        self.on_plot_timeseries()
+        # ФИКС: Автоматически строим безразмерный график
+        self.on_plot_dimensionless_selected()
+        
+        # Обновляем комбо в новой вкладке
+        self.well_combo_dim.clear()
+        for i, well in enumerate(self.well_data_list):
+            self.well_combo_dim.addItem(f"Скважина {i+1} (Skin={well.skin:.2f})")
     
     def update_interface_parameters(self):
         self.thickness_doubleSpinBox.setValue(self.current_well_data.thickness)
@@ -319,14 +354,14 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
     def update_well_selection(self):
         """Обновляет список выбора скважин"""
-        self.well_selection_combo.clear()
+        self.well_combo_dim.clear()
         
         for i, well_data in enumerate(self.well_data_list):
             well_name = f"Скважина {i+1} (Skin={well_data.skin:.3f}, N={well_data.fractures_count})"
-            self.well_selection_combo.addItem(well_name)
+            self.well_combo_dim.addItem(well_name)
         
         if self.well_data_list:
-            self.well_selection_combo.setCurrentIndex(self.current_well_index)
+            self.well_combo_dim.setCurrentIndex(self.current_well_index)
     
     def on_well_selection_changed(self, index):
         """Обработчик изменения выбора скважины"""
@@ -336,6 +371,11 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.update_interface_parameters()
             # Автоматически обновляем график
             self.on_plot_timeseries()
+    
+    def on_well_selection_dim_changed(self, index):
+        if 0 <= index < len(self.well_data_list):
+            self.current_well_index = index
+            # Можно автоматически перестроить график, если нужно
     
     def update_grp_parameters(self):
         """Обновляет отображение параметров ГРП"""
@@ -380,235 +420,14 @@ class MyApp(QMainWindow, Ui_mainWindow):
     
     # Обработчики событий для временных рядов
     def on_plot_timeseries(self):
-        """Построение графиков временных рядов"""
+        """Построение графиков временных рядов - ТОЛЬКО БЕЗРАЗМЕРНЫЕ"""
         current_well = self.current_well_data
-        if current_well is None or self.plot_widget is None:
+        if current_well is None:
             return
             
-        plot_type = self.plot_type_combo.currentText()
-        is_dimensionless = self.dimensionless_checkbox.isChecked()
-        self.plot_widget.clear()
-        
-        try:
-            # Обработка безразмерных графиков
-            if is_dimensionless:
-                if plot_type == "Безразмерное давление vs Y":
-                    self._plot_dimensionless_pressure(current_well)
-                elif plot_type == "Безразмерный дебит vs Y":
-                    self._plot_dimensionless_flow(current_well)
-                elif plot_type == "Безразмерные параметры (X-Y)":
-                    self._plot_dimensionless_xy(current_well)
-                elif plot_type == "Сравнение с эталонными кривыми":
-                    self._plot_type_curves_comparison(current_well)
-                else:
-                    QMessageBox.warning(self, "Ошибка", f"Неизвестный тип безразмерного графика: {plot_type}")
-                    return
-            
-            # Обработка обычных графиков
-            elif plot_type == "Давление vs Время":
-                # Проверяем данные на корректность
-                if current_well.pressure.isna().all():
-                    QMessageBox.warning(self, "Ошибка", "Данные давления содержат только NaN значения")
-                    return
-                
-                # Убираем NaN значения
-                valid_mask = ~(current_well.time.isna() | current_well.pressure.isna())
-                time_clean = current_well.time[valid_mask]
-                pressure_clean = current_well.pressure[valid_mask]
-                
-                if len(time_clean) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
-                    return
-                
-                self.plot_widget.plot(pressure_clean, time_clean, pen='b', symbol='o')
-                self.plot_widget.setLabel('bottom', 'Давление, атм')
-                self.plot_widget.setLabel('left', 'Время, ч')
-                self.plot_widget.setTitle('Давление vs Время')
-                
-            elif plot_type == "Дебит vs Время":
-                # Проверяем данные на корректность
-                if current_well.flow_rate.isna().all():
-                    QMessageBox.warning(self, "Ошибка", "Данные дебита содержат только NaN значения")
-                    return
-                
-                # Убираем NaN значения
-                valid_mask = ~(current_well.time.isna() | current_well.flow_rate.isna())
-                time_clean = current_well.time[valid_mask]
-                flow_rate_clean = current_well.flow_rate[valid_mask]
-                
-                if len(time_clean) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
-                    return
-                
-                self.plot_widget.plot(flow_rate_clean, time_clean, pen='g', symbol='s')
-                self.plot_widget.setLabel('bottom', 'Дебит, м³/сут')
-                self.plot_widget.setLabel('left', 'Время, ч')
-                self.plot_widget.setTitle('Дебит vs Время')
-                
-            elif plot_type == "Производная давления":
-                from helpers.grp_analysis import compute_pressure_derivative
-                try:
-                    dp_dt = compute_pressure_derivative(current_well)
-                    
-                    # Проверяем, что производная была вычислена
-                    if dp_dt.empty:
-                        QMessageBox.warning(self, "Ошибка", "Не удалось вычислить производную давления. Проверьте данные.")
-                        return
-                    
-                    # Убираем NaN значения
-                    valid_mask = ~(current_well.time.isna() | dp_dt.isna() | np.isinf(dp_dt))
-                    time_clean = current_well.time[valid_mask]
-                    dp_dt_clean = dp_dt[valid_mask]
-                    
-                    if len(time_clean) == 0:
-                        QMessageBox.warning(self, "Ошибка", "Нет корректных данных для производной давления")
-                        return
-                    
-                    # Используем более безопасный символ для графика
-                    self.plot_widget.plot(dp_dt_clean, time_clean, pen='r', symbol='o', symbolSize=4)
-                    self.plot_widget.setLabel('bottom', 'dP/dt, атм/ч')
-                    self.plot_widget.setLabel('left', 'Время, ч')
-                    self.plot_widget.setTitle('Производная давления')
-                except Exception as e:
-                    QMessageBox.warning(self, "Ошибка", f"Ошибка вычисления производной давления: {str(e)}")
-                    
-            elif plot_type == "Производная дебита":
-                from helpers.grp_analysis import compute_flow_rate_derivative
-                try:
-                    dq_dt = compute_flow_rate_derivative(current_well)
-                    
-                    # Проверяем, что производная была вычислена
-                    if dq_dt.empty:
-                        QMessageBox.warning(self, "Ошибка", "Не удалось вычислить производную дебита. Проверьте данные.")
-                        return
-                    
-                    # Убираем NaN значения
-                    valid_mask = ~(current_well.time.isna() | dq_dt.isna() | np.isinf(dq_dt))
-                    time_clean = current_well.time[valid_mask]
-                    dq_dt_clean = dq_dt[valid_mask]
-                    
-                    if len(time_clean) == 0:
-                        QMessageBox.warning(self, "Ошибка", "Нет корректных данных для производной дебита")
-                        return
-                    
-                    # Используем более безопасный символ для графика
-                    self.plot_widget.plot(dq_dt_clean, time_clean, pen='m', symbol='s', symbolSize=4)
-                    self.plot_widget.setLabel('bottom', 'dQ/dt, м³/сут/ч')
-                    self.plot_widget.setLabel('left', 'Время, ч')
-                    self.plot_widget.setTitle('Производная дебита')
-                except Exception as e:
-                    QMessageBox.warning(self, "Ошибка", f"Ошибка вычисления производной дебита: {str(e)}")
-                    
-            elif plot_type == "Давление vs Дебит":
-                # Проверяем данные на корректность
-                valid_mask = ~(current_well.pressure.isna() | current_well.flow_rate.isna() | 
-                              np.isinf(current_well.pressure) | np.isinf(current_well.flow_rate))
-                pressure_clean = current_well.pressure[valid_mask]
-                flow_rate_clean = current_well.flow_rate[valid_mask]
-                
-                if len(pressure_clean) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
-                    return
-                
-                # Используем более безопасный символ для графика
-                self.plot_widget.plot(pressure_clean, flow_rate_clean, pen='c', symbol='o', symbolSize=4)
-                self.plot_widget.setLabel('bottom', 'Давление, атм')
-                self.plot_widget.setLabel('left', 'Дебит, м³/сут')
-                self.plot_widget.setTitle('Давление vs Дебит')
-                
-            elif plot_type == "Безразмерные параметры (X-Y)":
-                # Убираем NaN значения
-                valid_mask = ~(current_well.time.isna() | current_well.pressure.isna() | current_well.flow_rate.isna())
-                time_clean = current_well.time[valid_mask]
-                pressure_clean = current_well.pressure[valid_mask]
-                flow_rate_clean = current_well.flow_rate[valid_mask]
+        self.on_plot_dimensionless_selected()
+         
 
-                if len(time_clean) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
-                    return
-
-                # Вычисляем безразмерные параметры
-                X, Y = compute_dimensionless_parameters(current_well, time_clean, pressure_clean, flow_rate_clean)
-
-                # Устанавливаем логарифмические оси
-                set_logarithmic_axes(self.plot_widget)
-
-                # Строим график
-                self.plot_widget.plot(X, Y, pen='m', symbol='o', symbolSize=4)
-                self.plot_widget.setLabel('bottom', 'X - безразмерный фильтрационный параметр')
-                self.plot_widget.setLabel('left', 'Y - безразмерный ёмкостной параметр')
-                self.plot_widget.setTitle('Безразмерные параметры ГРП (логарифмический масштаб)')
-
-            elif plot_type == "Логарифмический P(t) с инверсией":
-                # Убираем NaN значения
-                valid_mask = ~(current_well.time.isna() | current_well.pressure.isna())
-                time_clean = current_well.time[valid_mask]
-                pressure_clean = current_well.pressure[valid_mask]
-
-                if len(time_clean) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
-                    return
-
-                # Устанавливаем логарифмические оси
-                set_logarithmic_axes(self.plot_widget)
-
-                # Строим график давления по времени
-                self.plot_widget.plot(time_clean, pressure_clean, pen='b', symbol='o')
-
-                # Инвертируем Y-ось (давление уменьшается со временем)
-                invert_y_axis(self.plot_widget)
-
-                self.plot_widget.setLabel('bottom', 'Время, ч (лог)')
-                self.plot_widget.setLabel('left', 'Давление, атм (лог, инвертировано)')
-                self.plot_widget.setTitle('Логарифмический график давления с инверсией')
-
-            elif plot_type == "Логарифмический Q(t)":
-                # Убираем NaN значения
-                valid_mask = ~(current_well.time.isna() | current_well.flow_rate.isna())
-                time_clean = current_well.time[valid_mask]
-                flow_rate_clean = current_well.flow_rate[valid_mask]
-
-                if len(time_clean) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Нет корректных данных для построения графика")
-                    return
-
-                # Устанавливаем логарифмические оси
-                set_logarithmic_axes(self.plot_widget)
-
-                # Строим график дебита по времени
-                self.plot_widget.plot(time_clean, flow_rate_clean, pen='g', symbol='s')
-                self.plot_widget.setLabel('bottom', 'Время, ч (лог)')
-                self.plot_widget.setLabel('left', 'Дебит, м³/сут (лог)')
-                self.plot_widget.setTitle('Логарифмический график дебита')
-
-            elif plot_type == "Логарифмическая производная P":
-                from helpers.grp_analysis import compute_pressure_derivative
-                try:
-                    dp_dt = compute_pressure_derivative(current_well)
-
-                    # Убираем NaN значения
-                    valid_mask = ~(current_well.time.isna() | dp_dt.isna() | np.isinf(dp_dt))
-                    time_clean = current_well.time[valid_mask]
-                    dp_dt_clean = dp_dt[valid_mask]
-
-                    if len(time_clean) == 0:
-                        QMessageBox.warning(self, "Ошибка", "Нет корректных данных для производной давления")
-                        return
-
-                    # Устанавливаем логарифмические оси
-                    set_logarithmic_axes(self.plot_widget)
-
-                    # Строим график производной давления
-                    self.plot_widget.plot(time_clean, dp_dt_clean, pen='r', symbol='o', symbolSize=4)
-                    self.plot_widget.setLabel('bottom', 'Время, ч (лог)')
-                    self.plot_widget.setLabel('left', 'dP/dt, атм/ч (лог)')
-                    self.plot_widget.setTitle('Логарифмическая производная давления')
-                except Exception as e:
-                    QMessageBox.warning(self, "Ошибка", f"Ошибка вычисления производной давления: {str(e)}")
-                
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка построения графика", f"Ошибка: {str(e)}")
-    
     def on_smooth_data(self):
         """Сглаживание данных"""
         if self.well_data is None:
@@ -843,7 +662,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             QMessageBox.information(self, "Интерполяция", "Адаптивная интерполяция выполнена")
         except Exception as e:
             QMessageBox.warning(self, "Ошибка", f"Ошибка: {str(e)}")
-
+    
 
     '''    
     def on_dimensionless_interpolation(self):
@@ -979,51 +798,166 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 self.plot_widget.clear()
                 plotter.create_dimensionless_plot(self.plot_widget, dimensionless_data, 'pressure')
             
+            plot_widget.setLogMode(True, True)
             QMessageBox.information(self, "PyQtGraph график", 
                                   "Безразмерный график построен в PyQtGraph")
             
         except Exception as e:
             QMessageBox.warning(self, "Ошибка", f"Ошибка построения PyQtGraph графика: {str(e)}")
     
+    def on_plot_dimensionless_selected(self):
+        """Обработка нажатия на кнопку 'Построить график'."""
+        self.dimensionless_plot.clear()
+        self.text_report.clear()
+
+        current_well = self.current_well_data
+        if current_well is None:
+            self.text_report.setText("❌ Нет данных для построения.")
+            return
+
+        try:
+            # Параметры скважины
+            well_params = {
+                'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
+                'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
+                'skin': current_well.skin, 'N': current_well.fractures_count,
+                'a_L': current_well.a_l_ratio
+            }
+            
+            # 1️⃣ Конвертация в безразмерные параметры
+            dim_data = convert_to_dimensionless_curves(
+                current_well.time, current_well.pressure, current_well.flow_rate, well_params
+            )
+
+            # Безразмерные величины
+            pD = dim_data.pressure / dim_data.delta_p_i
+            qD = dim_data.flow_rate / dim_data.Q
+
+            # 2️⃣ Отображение базовых кривых pD(Y) / qD(Y)
+            if self.cb_pressure.isChecked() or self.cb_flowrate.isChecked():
+                if self.cb_pressure.isChecked():
+                    # Маска для логшкалы: X>0 и pD>0
+                    mask = (~np.isnan(dim_data.X)) & (~np.isnan(pD)) & (dim_data.X > 0) & (pD > 0)
+                    if np.any(mask):
+                        self.dimensionless_plot.plot(dim_data.X[mask], pD[mask],
+                                                     pen=pg.mkPen(color=(200, 50, 50), width=2),
+                                                     name="pD(X)")
+                    else:
+                        # фоллбэк: рисуем без маски
+                        self.dimensionless_plot.plot(dim_data.X, pD,
+                                                     pen=pg.mkPen(color=(200, 50, 50), width=2),
+                                                     name="pD(X)")
+                if self.cb_flowrate.isChecked():
+                    mask = (~np.isnan(dim_data.X)) & (~np.isnan(qD)) & (dim_data.X > 0) & (qD > 0)
+                    if np.any(mask):
+                        self.dimensionless_plot.plot(dim_data.X[mask], qD[mask],
+                                                     pen=pg.mkPen(color=(50, 50, 200), width=2),
+                                                     name="qD(X)")
+                    else:
+                        self.dimensionless_plot.plot(dim_data.X, qD,
+                                                     pen=pg.mkPen(color=(50, 50, 200), width=2),
+                                                     name="qD(X)")
+
+            # 3️⃣ Отображение в пространстве X-Y (траектория)
+            if self.cb_interpolation.isChecked():
+                # Траектория в X-Y пространстве: X по X оси, Y по Y оси
+                self.dimensionless_plot.plot(dim_data.X, dim_data.Y,
+                                           pen=pg.mkPen(color=(255, 165, 0), width=2),
+                                           symbol='o', symbolSize=5,
+                                           name="Траектория X-Y")
+                self.text_report.append("🔍 Отображена траектория в X-Y пространстве")
+
+            # 4️⃣ Экстраполяция
+            if self.cb_extrapolation.isChecked():
+                try:
+                    if len(dim_data.Y) > 1 and (self.cb_pressure.isChecked() or self.cb_flowrate.isChecked()):
+                        last_y = dim_data.Y[-1]
+                        
+                        # Экстраполируем по Y
+                        extrap_y = np.linspace(last_y, last_y * 1.2, 10)
+                        
+                        if self.cb_pressure.isChecked():
+                            last_p = pD[-1]
+                            self.dimensionless_plot.plot(extrap_y, [last_p] * len(extrap_y),
+                                                       pen=pg.mkPen(color=(0, 150, 0), width=2, style=pg.QtCore.Qt.DashLine),
+                                                       name="Экстраполяция pD")
+                        
+                        if self.cb_flowrate.isChecked():
+                            last_q = qD[-1]
+                            self.dimensionless_plot.plot(extrap_y, [last_q] * len(extrap_y),
+                                                       pen=pg.mkPen(color=(0, 150, 0), width=2, style=pg.QtCore.Qt.DashLine),
+                                                       name="Экстраполяция qD")
+                        
+                        self.text_report.append("📈 Простая экстраполяция выполнена")
+                except Exception as e:
+                    self.text_report.append(f"⚠️ Ошибка экстраполяции: {e}")
+
+            # 5️⃣ Эталонные кривые
+            if self.cb_typecurves.isChecked():
+                try:
+                    # Эталонные кривые pD(Y) 
+                    y_ref = np.logspace(-3, 2, 50)  # значения Y
+                    
+                    # Билинейное течение: pD ~ 1/sqrt(Y)
+                    p_bilinear = 1.0 / np.sqrt(y_ref)
+                    self.dimensionless_plot.plot(y_ref, p_bilinear,
+                                               pen=pg.mkPen(color=(150, 150, 150, 120), width=1),
+                                               name="Билинейное течение")
+                    
+                    # Линейное течение: pD ~ 1/Y^0.5  
+                    p_linear = 0.8 / y_ref**0.5
+                    self.dimensionless_plot.plot(y_ref, p_linear,
+                                               pen=pg.mkPen(color=(150, 150, 150, 120), width=1),
+                                               name="Линейное течение")
+                    
+                    self.text_report.append("📘 Простые эталонные кривые добавлены")
+                except Exception as e:
+                    self.text_report.append(f"⚠️ Ошибка эталонных кривых: {e}")
+
+            # ПРАВИЛЬНЫЕ ПОДПИСИ ОСЕЙ
+            self.dimensionless_plot.setLabel('bottom', 'X безразмерный фильтрационный')
+            self.dimensionless_plot.setLabel('left', 'Y безразмерный ёмкостной параметр)')
+            self.dimensionless_plot.setTitle("Безразмерные кривые МГРП")
+            self.dimensionless_plot.showGrid(x=True, y=True)
+            self.dimensionless_plot.setLogMode(x=True, y=True)
+            
+            self.dimensionless_plot.addLegend()
+            self.text_report.append("✅ График построен успешно")
+            
+        except Exception as e:
+            self.text_report.setText(f"❌ Ошибка построения графика: {str(e)}")
+            import traceback
+            print(traceback.format_exc())        
+
     def on_ml_filter(self):
         """ML-фильтрация данных"""
         if self.well_data is None:
             return
             
-        plot_type = self.plot_type_combo.currentText()
-        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
-            try:
-                if plot_type == "Давление vs Время":
-                    filtered = apply_ml_filter(self.well_data.pressure, 'savitzky_golay', window_length=5, polyorder=2)
-                    self.well_data.pressure = filtered
-                else:
-                    filtered = apply_ml_filter(self.well_data.flow_rate, 'savitzky_golay', window_length=5, polyorder=2)
-                    self.well_data.flow_rate = filtered
-                    
-                self.on_plot_timeseries()
-                QMessageBox.information(self, "ML фильтрация", "Данные отфильтрованы с помощью ML")
-            except Exception as e:
-                QMessageBox.warning(self, "Ошибка", f"Ошибка ML фильтрации: {str(e)}")
-    
+        try:
+            filtered = apply_ml_filter(self.well_data.pressure, 'savitzky_golay', window_length=5, polyorder=2)
+            self.well_data.pressure = filtered
+                        
+            self.on_plot_dimensionless_selected()
+            QMessageBox.information(self, "ML фильтрация", "Данные отфильтрованы с помощью ML")
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Ошибка ML фильтрации: {str(e)}")
+            
     def on_detect_outliers(self):
         """Обнаружение выбросов"""
         if self.well_data is None:
             return
 
-        plot_type = self.plot_type_combo.currentText()
-        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
-            try:
-                if plot_type == "Давление vs Время":
-                    outliers = detect_outliers(self.well_data.pressure, 'iqr', threshold=1.5)
-                    outlier_count = outliers.sum()
-                else:
-                    outliers = detect_outliers(self.well_data.flow_rate, 'iqr', threshold=1.5)
-                    outlier_count = outliers.sum()
-                
-                    self.plot_outliers_with_highlight(outliers, plot_type)
-                QMessageBox.information(self, "Обнаружение выбросов", f"Найдено {outlier_count} выбросов")
-            except Exception as e:
-                QMessageBox.warning(self, "Ошибка", f"Ошибка обнаружения выбросов: {str(e)}")
+        try:
+            outliers = detect_outliers(self.well_data.pressure, 'iqr', threshold=1.5)
+            outlier_count = outliers.sum()
+            
+            QMessageBox.information(self, "Обнаружение выбросов", f"Найдено {outlier_count} выбросов")
+            
+            # Обновляем график
+            self.on_plot_dimensionless_selected()
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Ошибка обнаружения выбросов: {str(e)}")
     
     def plot_outliers_with_highlight(self, outliers: pd.Series, plot_type: str):
         """Построение графика с выделенными выбросами"""
@@ -1248,12 +1182,55 @@ class MyApp(QMainWindow, Ui_mainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка экспорта", f"Не удалось экспортировать отчет: {str(e)}")
 
-<<<<<<< HEAD
+
+    def _get_data(self):
+        """Возвращает время и выбранный показатель (старый метод)"""
+        if self.well_data is None:
+            return None, None
+        return self.well_data.time, self.well_data.pressure
+
+    def _plot_data(self, values, times, title: str = ""):
+        """Отрисовка графика (старый метод)"""
+        if self.plot_widget is None:
+            return
+        self.plot_widget.clear()
+        self.plot_widget.plot(values, times, pen='b')
+        if title:
+            self.plot_widget.setTitle(title)
+
+    def on_plot(self):
+        """Старый метод построения графиков"""
+        if self.well_data is None:
+            return
+        time_data, pressure_data = self._get_data()
+        if time_data is not None and pressure_data is not None:
+            self._plot_data(pressure_data, time_data, "Давление vs Время")
+
+    def on_derivative(self):
+        """Старый метод вычисления производной"""
+        if self.well_data is None:
+            return
+        self.plot_type_combo.setCurrentText("Производная давления")
+        self.on_plot_timeseries()
+
+    def on_interpolate(self):
+        """Старый метод интерполяции"""
+        if self.well_data is None:
+            return
+        self.plot_type_combo.setCurrentText("Давление vs Время")
+        self.on_interpolate_data()
+
+    def on_smooth(self):
+        """Старый метод сглаживания"""
+        if self.well_data is None:
+            return
+        self.plot_type_combo.setCurrentText("Давление vs Время")
+        self.on_smooth_data()
     
     def _plot_dimensionless_pressure(self, current_well):
         """Построение графика безразмерного давления в пространстве X-Y"""
         try:
-            # Параметры скважины
+            # Используем существующий конвертер из dimensionless_analysis
             well_params = {
                 'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
                 'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
@@ -1262,41 +1239,49 @@ class MyApp(QMainWindow, Ui_mainWindow):
             }
             
             # Конвертируем в безразмерные параметры
+            from helpers.dimensionless_analysis import convert_to_dimensionless_curves
             dimensionless_data = convert_to_dimensionless_curves(
                 current_well.time, current_well.pressure, current_well.flow_rate, well_params
             )
             
             # Безразмерное давление
-            pD = dimensionless_data.pressure / dimensionless_data.delta_p_i if dimensionless_data.delta_p_i != 0 else np.zeros_like(dimensionless_data.pressure)
-            # Цветовая карта
+            pD = dimensionless_data.pressure / dimensionless_data.delta_p_i
+            
+            # Отображаем
+            self.dimensionless_plot.clear()
+            self.dimensionless_plot.setLogMode(x=True, y=True)
+            
+            # Цветовая карта по величине pD
             try:
-                import pyqtgraph as pg
                 cmap = pg.colormap.get('CET-L4') if hasattr(pg, 'colormap') else None
                 vmin, vmax = np.nanmin(pD), np.nanmax(pD)
                 if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
                     vmin, vmax = 0.0, 1.0
                 colors = cmap.map((pD - vmin) / (vmax - vmin), mode='qcolor') if cmap is not None else None
-                spots = [{"pos": (float(x), float(y)), "brush": (colors[i] if colors is not None else (0, 0, 255, 180)), "size": 8}
+                
+                spots = [{"pos": (float(x), float(y)), "brush": (colors[i] if colors is not None else (200, 50, 50, 180)), "size": 6}
                          for i, (x, y) in enumerate(zip(dimensionless_data.X, dimensionless_data.Y))]
                 scatter = pg.ScatterPlotItem()
                 scatter.addPoints(spots)
-                self.plot_widget.addItem(scatter)
+                self.dimensionless_plot.addItem(scatter)
             except Exception:
-                # Фоллбэк — линия
-                self.plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, pen='b')
+                # Фоллбэк - обычные точки
+                self.dimensionless_plot.plot(dimensionless_data.X, dimensionless_data.Y, 
+                                           pen=None, symbol='o', symbolSize=6, symbolBrush='b')
 
-            self.plot_widget.setLabel('bottom', 'Фильтрационный параметр X (безразмерный)')
-            self.plot_widget.setLabel('left', 'Ёмкостной параметр Y (безразмерный)')
-            self.plot_widget.setTitle(f'P/Pᵢ вдоль траектории (цвет) | Skin={current_well.skin:.1f}, N={current_well.fractures_count}, a/L={current_well.a_l_ratio:.3f}')
-            self.plot_widget.setLogMode(x=True, y=True)
-            
+            self.dimensionless_plot.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
+            self.dimensionless_plot.setLabel('left', 'Y (безразмерный ёмкостной параметр)')
+            self.dimensionless_plot.setTitle(f'Безразмерное давление pD | Skin={current_well.skin:.1f}')
+            self.dimensionless_plot.showGrid(x=True, y=True)
+        
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка построения безразмерного графика давления: {str(e)}")
-    
+            QMessageBox.warning(self, "Ошибка", f"Ошибка построения графика: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+
     def _plot_dimensionless_flow(self, current_well):
         """Построение графика безразмерного дебита в пространстве X-Y"""
         try:
-            # Параметры скважины
             well_params = {
                 'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
                 'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
@@ -1304,40 +1289,46 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 'a_L': current_well.a_l_ratio
             }
             
-            # Конвертируем в безразмерные параметры
+            from helpers.dimensionless_analysis import convert_to_dimensionless_curves
             dimensionless_data = convert_to_dimensionless_curves(
                 current_well.time, current_well.pressure, current_well.flow_rate, well_params
             )
             
             # Безразмерный дебит
-            qD = dimensionless_data.flow_rate / (dimensionless_data.Q if dimensionless_data.Q != 0 else 1.0)
+            qD = dimensionless_data.flow_rate / dimensionless_data.Q
+            
+            self.dimensionless_plot.clear()
+            self.dimensionless_plot.setLogMode(x=True, y=True)
+            
             try:
-                import pyqtgraph as pg
                 cmap = pg.colormap.get('CET-L8') if hasattr(pg, 'colormap') else None
                 vmin, vmax = np.nanmin(qD), np.nanmax(qD)
                 if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
                     vmin, vmax = 0.0, 1.0
                 colors = cmap.map((qD - vmin) / (vmax - vmin), mode='qcolor') if cmap is not None else None
-                spots = [{"pos": (float(x), float(y)), "brush": (colors[i] if colors is not None else (0, 128, 0, 180)), "size": 8}
+                
+                spots = [{"pos": (float(x), float(y)), "brush": (colors[i] if colors is not None else (50, 150, 50, 180)), "size": 6}
                          for i, (x, y) in enumerate(zip(dimensionless_data.X, dimensionless_data.Y))]
                 scatter = pg.ScatterPlotItem()
                 scatter.addPoints(spots)
-                self.plot_widget.addItem(scatter)
+                self.dimensionless_plot.addItem(scatter)
             except Exception:
-                self.plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, pen='g')
+                self.dimensionless_plot.plot(dimensionless_data.X, dimensionless_data.Y, 
+                                           pen=None, symbol='s', symbolSize=6, symbolBrush='g')
 
-            self.plot_widget.setLabel('bottom', 'Фильтрационный параметр X (безразмерный)')
-            self.plot_widget.setLabel('left', 'Ёмкостной параметр Y (безразмерный)')
-            self.plot_widget.setTitle(f'Q/Q̄ вдоль траектории (цвет) | Skin={current_well.skin:.1f}, N={current_well.fractures_count}, a/L={current_well.a_l_ratio:.3f}')
-            self.plot_widget.setLogMode(x=True, y=True)
+            self.dimensionless_plot.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
+            self.dimensionless_plot.setLabel('left', 'Y (безразмерный ёмкостной параметр)')
+            self.dimensionless_plot.setTitle(f'Безразмерный дебит qD | Skin={current_well.skin:.1f}')
+            self.dimensionless_plot.showGrid(x=True, y=True)
             
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка построения безразмерного графика дебита: {str(e)}")
-    
+            QMessageBox.warning(self, "Ошибка", f"Ошибка построения графика: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+
     def _plot_dimensionless_xy(self, current_well):
         """Построение траектории в пространстве безразмерных параметров X-Y"""
         try:
-            # Параметры скважины
             well_params = {
                 'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
                 'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
@@ -1345,98 +1336,64 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 'a_L': current_well.a_l_ratio
             }
             
-            # Конвертируем в безразмерные параметры
+            from helpers.dimensionless_analysis import convert_to_dimensionless_curves
             dimensionless_data = convert_to_dimensionless_curves(
                 current_well.time, current_well.pressure, current_well.flow_rate, well_params
             )
             
-            # Строим траекторию в пространстве X-Y
-            self.plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, 
-                                pen='r', symbol='o', symbolSize=6)
+            # Просто траектория в X-Y пространстве
+            self.dimensionless_plot.clear()
+            self.dimensionless_plot.setLogMode(x=True, y=True)
             
-            self.plot_widget.setLabel('bottom', 'Фильтрационный параметр X (безразмерный)')
-            self.plot_widget.setLabel('left', 'Ёмкостной параметр Y (безразмерный)')
-            self.plot_widget.setTitle(f'Траектория в пространстве X-Y | Skin={current_well.skin:.1f}, N={current_well.fractures_count}, a/L={current_well.a_l_ratio:.3f}')
-            self.plot_widget.setLogMode(x=True, y=True)
+            self.dimensionless_plot.plot(dimensionless_data.X, dimensionless_data.Y, 
+                                       pen=pg.mkPen(color=(100, 100, 200), width=2),
+                                       symbol='o', symbolSize=5, symbolBrush=(100, 100, 200))
             
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка построения графика X vs Y: {str(e)}")
-    
-    def _plot_type_curves_comparison(self, current_well):
-        """Построение сравнения с эталонными кривыми в пространстве X-Y"""
-        try:
-            # Параметры скважины
-            well_params = {
-                'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
-                'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
-                'skin': current_well.skin, 'N': current_well.fractures_count,
-                'a_L': current_well.a_l_ratio
-            }
-            
-            # Конвертируем в безразмерные параметры
-            dimensionless_data = convert_to_dimensionless_curves(
-                current_well.time, current_well.pressure, current_well.flow_rate, well_params
-            )
-            
-            # Основные данные в пространстве X-Y
-            self.plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, 
-                                pen=None, symbol='o', symbolSize=8,
-                                symbolBrush='b', name='Данные')
-            
-            # Добавляем информацию о параметрах
-            param_text = f"Skin={current_well.skin:.1f}, N={current_well.fractures_count}, a/L={current_well.a_l_ratio:.3f}"
-            self.plot_widget.setTitle(f'Эталонные кривые (давление) | {param_text}')
-            self.plot_widget.setLabel('bottom', 'Фильтрационный параметр X (безразмерный)')
-            self.plot_widget.setLabel('left', 'Ёмкостной параметр Y (безразмерный)')
-            self.plot_widget.setLogMode(x=True, y=True)
+            self.dimensionless_plot.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
+            self.dimensionless_plot.setLabel('left', 'Y (безразмерный ёмкостной параметр)')
+            self.dimensionless_plot.setTitle(f'Траектория в X-Y пространстве | Skin={current_well.skin:.1f}')
+            self.dimensionless_plot.showGrid(x=True, y=True)
             
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка построения сравнения с эталонными кривыми: {str(e)}")
-
-=======
->>>>>>> b7a41d098d2aaa07ad49760b636b8e7dd0d209db
-
+            QMessageBox.warning(self, "Ошибка", f"Ошибка построения графика: {str(e)}")
+        
+        
 def compute_dimensionless_parameters(time_series: WellTimeSeries, time_clean, pressure_clean, flow_rate_clean):
-        """
-        Вычисляет безразмерные параметры для анализа ГРП.
+    """Вычисляет безразмерные параметры X и Y по правильным формулам."""
+    
+    # Параметры из данных скважины
+    k = 10e-15  # проницаемость, м² (10 мД)
+    mu = 0.001  # вязкость, Па*с (1 сП)
+    B = 1.2     # объемный коэффициент нефти
+    phi = 0.15  # пористость
+    ct = 1e-5   # общая сжимаемость, 1/атм
 
-        X = (0.00864 * k * h * ∆p_i) / (μ * B * Q)
-        Y = Q * B * t / (24 * φ * c_t * h * L² * ∆p_i)
+    h = time_series.thickness  # толщина пласта
+    L = time_series.fracture_length  # длина трещины
 
-        Использует типичные значения для нефти:
-        k = 10 мД, μ = 1 сП, B = 1.2, φ = 0.15, c_t = 10^-5 1/атм
-        """
-        # Типичные значения для нефти
-        k = 10e-15  # проницаемость, м² (10 мД)
-        mu = 0.001  # вязкость, Па*с (1 сП)
-        B = 1.2     # объемный коэффициент нефти
-        phi = 0.15  # пористость
-        ct = 1e-5   # общая сжимаемость, 1/атм
+    # Начальное изменение давления
+    delta_p_i = pressure_clean.mean() if len(pressure_clean) > 0 else 1.0
+    delta_p_i = max(delta_p_i, 1.0)  # защита от деления на ноль
 
-        h = time_series.thickness  # толщина пласта
-        L = time_series.fracture_length  # длина трещины
+    # Средний дебит
+    Q = flow_rate_clean.mean() if len(flow_rate_clean) > 0 else 1.0
+    Q = max(Q, 1e-10)  # защита от нуля
 
-        # Начальное изменение давления (используем среднее давление как приближение)
-        delta_p_i = pressure_clean.mean() if len(pressure_clean) > 0 else 1.0
+    # ФИКС: Правильные формулы
+    # X = (0.00864 * k * h * Δp_i) / (μ * B * Q) - постоянный
+    denominator = mu * B * Q
+    X_value = (0.00864 * k * h * delta_p_i) / denominator
+    
+    # Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i) - зависит от времени
+    denominator_y = 24 * phi * ct * h * L**2 * delta_p_i
+    denominator_y = max(denominator_y, 1e-10)
+    
+    Y = (Q * B * time_clean) / denominator_y
 
-        # Защита от деления на ноль
-        delta_p_i = max(delta_p_i, 1.0)
-
-        # Безразмерный фильтрационный параметр X
-        denominator = mu * B * flow_rate_clean
-        denominator = np.where(denominator == 0, 1e-10, denominator)
-
-        X = (0.00864 * k * h * delta_p_i) / denominator
-
-        # Безразмерный ёмкостной параметр Y
-        numerator = flow_rate_clean * B * time_clean
-        denominator_y = 24 * phi * ct * h * L**2 * delta_p_i
-        denominator_y = max(denominator_y, 1e-10)  # защита от нуля
-
-        Y = numerator / denominator_y
-
-        return X, Y
-
+    # X одинаков для всех точек
+    X = np.full_like(Y, X_value)
+    
+    return X, Y
 
 def set_logarithmic_axes(plot_widget):
         """Устанавливает логарифмические оси для графика."""
