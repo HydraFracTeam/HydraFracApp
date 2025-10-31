@@ -1,5 +1,6 @@
 """
 Модуль для построения графиков безразмерных кривых МГРП
+Поддерживает разные плоскости отображения для разных групп графиков
 """
 
 import numpy as np
@@ -18,9 +19,219 @@ from helpers.dimensionless_analysis import (
 )
 
 
-class DimensionlessPlotter:
-    """Класс для построения графиков безразмерных кривых"""
+def plot_dimensionless_grouped(plot_widget: PlotWidget,
+                               dim_data: DimensionlessParameters,
+                               current_well_time: pd.Series,
+                               current_well_pressure: pd.Series,
+                               current_well_flow_rate: pd.Series,
+                               checked_groups: Dict[str, bool],
+                               validation_data: Optional[Dict] = None) -> None:
+    """
+    Отображает графики, сгруппированные по плоскостям отображения.
     
+    Args:
+        plot_widget: Виджет графика PyQtGraph
+        dim_data: Безразмерные данные
+        current_well_time: Временной ряд
+        current_well_pressure: Давление
+        current_well_flow_rate: Дебит
+        checked_groups: Словарь с флагами выбранных групп:
+            - 'real_params': Реальные параметры (P(t), Q(t))
+            - 'dimensionless': Безразмерные (pD, dpD/dlogY, tD, CD)
+            - 'type_curves': Типовые кривые
+            - 'special': Специальные пространства (G-функция, MBT)
+        validation_data: Данные для валидации (опционально)
+    """
+    plot_widget.clear()
+    
+    # Определяем, какие группы выбраны
+    has_real = checked_groups.get('real_params', False)
+    has_dim = checked_groups.get('dimensionless', False)
+    has_type = checked_groups.get('type_curves', False)
+    has_special = checked_groups.get('special', False)
+    
+    # Безразмерные величины
+    pD = dim_data.pressure / (dim_data.delta_p_i if dim_data.delta_p_i != 0 else 1.0)
+    qD = dim_data.flow_rate / (dim_data.Q if dim_data.Q != 0 else 1.0)
+    
+    # ГРУППА 1: Реальные параметры - плоскость (t, P) или (t, Q)
+    # Обычные оси (не логарифмические)
+    if has_real:
+        plot_widget.setLogMode(x=False, y=False)
+        plot_widget.setLabel('bottom', 'Время, ч')
+        
+        if checked_groups.get('cb_real_p', False):
+            plot_widget.setLabel('left', 'Давление, атм')
+            mask = ~(np.isnan(current_well_time) | np.isnan(current_well_pressure))
+            if np.any(mask):
+                plot_widget.plot(current_well_time[mask].values, current_well_pressure[mask].values,
+                                pen=pg.mkPen(color=(200, 50, 50), width=2),
+                                name="P(t)")
+        
+        if checked_groups.get('cb_real_q', False):
+            if checked_groups.get('cb_real_p', False):
+                # Если уже есть давление, используем правую ось или переключаем
+                plot_widget.setLabel('left', 'Давление / Дебит')
+            else:
+                plot_widget.setLabel('left', 'Дебит, м³/сут')
+            mask = ~(np.isnan(current_well_time) | np.isnan(current_well_flow_rate))
+            if np.any(mask):
+                plot_widget.plot(current_well_time[mask].values, current_well_flow_rate[mask].values,
+                                pen=pg.mkPen(color=(50, 150, 50), width=2),
+                                name="Q(t)")
+        
+        plot_widget.setTitle("Реальные параметры скважины")
+        return  # Реальные параметры в своем пространстве
+    
+    # ГРУППА 2: Безразмерные кривые - плоскость log-log (X, pD/qD/tD/CD)
+    # Все безразмерные кривые отображаются в log-log плоскости X-Y
+    if has_dim:
+        plot_widget.setLogMode(x=True, y=True)
+        plot_widget.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
+        plot_widget.setLabel('left', 'Безразмерный параметр')
+        plot_widget.setTitle("Безразмерные кривые МГРП (log-log)")
+        
+        if checked_groups.get('cb_dim_pD', False):
+            mask = (~np.isnan(dim_data.X)) & (~np.isnan(pD)) & (dim_data.X > 0) & (pD > 0)
+            if np.any(mask):
+                plot_widget.plot(dim_data.X[mask], pD[mask],
+                                pen=pg.mkPen(color=(200, 50, 50), width=2),
+                                name="pD(X)")
+        
+        if checked_groups.get('cb_dim_dpD', False):
+            Yc = np.clip(dim_data.Y, 1e-30, None)
+            dpdlogY = np.gradient(pD, np.log10(Yc))
+            mask = (~np.isnan(dim_data.X)) & (~np.isnan(dpdlogY)) & (dim_data.X > 0)
+            if np.any(mask):
+                plot_widget.plot(dim_data.X[mask], dpdlogY[mask],
+                                pen=pg.mkPen(color=(150, 0, 150), width=2),
+                                name="dpD/dlogY(X)")
+        
+        if checked_groups.get('cb_dim_tD', False):
+            mask = (~np.isnan(dim_data.X)) & (~np.isnan(dim_data.Y)) & (dim_data.X > 0) & (dim_data.Y > 0)
+            if np.any(mask):
+                plot_widget.plot(dim_data.X[mask], dim_data.Y[mask],
+                                pen=pg.mkPen(color=(0, 120, 200), width=2),
+                                name="tD (Y)")
+        
+        if checked_groups.get('cb_dim_CD', False):
+            Yc = np.clip(dim_data.Y, 1e-30, None)
+            dpdlogY = np.gradient(pD, np.log10(Yc))
+            CD = dim_data.Y * dpdlogY
+            mask = (~np.isnan(dim_data.X)) & (~np.isnan(CD)) & (dim_data.X > 0)
+            if np.any(mask):
+                plot_widget.plot(dim_data.X[mask], CD[mask],
+                                pen=pg.mkPen(color=(0, 180, 80), width=2),
+                                name="CD(X)")
+        
+        # Добавляем эталонные кривые, если есть
+        if validation_data:
+            try:
+                ref_dim = validation_data.get('ref_dim')
+                if ref_dim:
+                    pD_ref = ref_dim.pressure / (ref_dim.delta_p_i if ref_dim.delta_p_i != 0 else 1.0)
+                    mask_rp = (~np.isnan(ref_dim.X)) & (~np.isnan(pD_ref)) & (ref_dim.X > 0) & (pD_ref > 0)
+                    if np.any(mask_rp):
+                        plot_widget.plot(ref_dim.X[mask_rp], pD_ref[mask_rp],
+                                        pen=pg.mkPen(color=(120, 120, 120), width=2, 
+                                                    style=pg.QtCore.Qt.DashLine),
+                                        name="Эталон pD(X)")
+            except Exception:
+                pass
+        
+        plot_widget.addLegend()
+        return  # Безразмерные кривые в своем пространстве
+    
+    # ГРУППА 3: Типовые кривые - плоскость log-log (Y, pD)
+    # Типовые кривые отображаются в log-log плоскости Y-pD
+    if has_type:
+        plot_widget.setLogMode(x=True, y=True)
+        plot_widget.setLabel('bottom', 'Y (безразмерный ёмкостной параметр)')
+        plot_widget.setLabel('left', 'pD (безразмерное давление)')
+        plot_widget.setTitle("Типовые кривые (log-log)")
+        
+        y_ref = np.logspace(-3, 2, 100)
+        
+        if checked_groups.get('cb_type_gry', False):
+            curve = 1.2 / (y_ref ** 0.5)
+            plot_widget.plot(y_ref, curve,
+                            pen=pg.mkPen(color=(120, 120, 120, 160), width=1, 
+                                        style=pg.QtCore.Qt.DashLine),
+                            name="Gringarten & Ramey (прибл.)")
+        
+        if checked_groups.get('cb_type_cinco', False):
+            curve = 0.9 / (y_ref ** 0.4)
+            plot_widget.plot(y_ref, curve,
+                            pen=pg.mkPen(color=(120, 120, 120, 160), width=1, 
+                                        style=pg.QtCore.Qt.DotLine),
+                            name="Cinco-Ley & Samaniego (прибл.)")
+        
+        if checked_groups.get('cb_type_valko', False):
+            curve = 0.7 / (y_ref ** 0.3)
+            plot_widget.plot(y_ref, curve,
+                            pen=pg.mkPen(color=(120, 120, 120, 160), width=1),
+                            name="Valkó & Economides (прибл.)")
+        
+        plot_widget.addLegend()
+        return  # Типовые кривые в своем пространстве
+    
+    # ГРУППА 4: Специальные пространства - разные плоскости в зависимости от типа
+    if has_special:
+        if checked_groups.get('cb_gfunc', False):
+            # G-функция Nolte: плоскость (t, G(t))
+            plot_widget.setLogMode(x=False, y=False)
+            plot_widget.setLabel('bottom', 'Время, ч')
+            plot_widget.setLabel('left', 'G(t)')
+            plot_widget.setTitle("G-функция Nolte")
+            
+            # Вычисляем G-функцию
+            t = current_well_time.values
+            G = (2.0 / np.sqrt(np.pi)) * np.sqrt(np.clip(t, 0.0, None))
+            mask = ~np.isnan(G)
+            if np.any(mask):
+                plot_widget.plot(t[mask], G[mask],
+                                pen=pg.mkPen(color=(100, 100, 200), width=2),
+                                name="G-функция")
+            return
+        
+        if checked_groups.get('cb_mbt', False):
+            # Material Balance Time: плоскость (t_mb, Q)
+            plot_widget.setLogMode(x=True, y=True)
+            plot_widget.setLabel('bottom', 'Material Balance Time')
+            plot_widget.setLabel('left', 'Дебит Q, м³/сут')
+            plot_widget.setTitle("Material Balance Time")
+            
+            # Вычисляем MBT
+            q0 = current_well_flow_rate.iloc[0] if len(current_well_flow_rate) > 0 else 1.0
+            if q0 != 0:
+                dt = np.gradient(current_well_time.values)
+                cum = np.cumsum(current_well_flow_rate.values * dt)
+                t_mb = cum / q0
+                mask = (t_mb > 0) & (current_well_flow_rate.values > 0)
+                if np.any(mask):
+                    plot_widget.plot(t_mb[mask], current_well_flow_rate.values[mask],
+                                    pen=pg.mkPen(color=(150, 100, 50), width=2),
+                                    name="MBT")
+            return
+    
+    # Если ничего не выбрано, показываем базовый безразмерный график
+    plot_widget.setLogMode(x=True, y=True)
+    plot_widget.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
+    plot_widget.setLabel('left', 'pD (безразмерное давление)')
+    plot_widget.setTitle("Безразмерные кривые МГРП")
+    
+    mask = (~np.isnan(dim_data.X)) & (~np.isnan(pD)) & (dim_data.X > 0) & (pD > 0)
+    if np.any(mask):
+        plot_widget.plot(dim_data.X[mask], pD[mask],
+                        pen=pg.mkPen(color=(200, 50, 50), width=2),
+                        name="pD(X)")
+    plot_widget.addLegend()
+    plot_widget.showGrid(x=True, y=True)
+
+
+# Классы и функции для matplotlib (оставляем для совместимости)
+class DimensionlessPlotter:
+    """Класс для построения графиков с использованием matplotlib"""
     def __init__(self):
         self.colors = {
             'bilinear': 'red',
@@ -31,24 +242,14 @@ class DimensionlessPlotter:
             'original': 'black'
         }
         
-    def plot_dimensionless_curves(self, 
-                                 dimensionless_data: DimensionlessParameters,
+    def plot_dimensionless_curves(self, dimensionless_data: DimensionlessParameters,
                                  plot_type: str = 'pressure',
                                  show_uncertainty: bool = False,
                                  uncertainty_data: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> Figure:
-        """
-        Построение безразмерных кривых
-        
-        Args:
-            dimensionless_data: Безразмерные данные
-            plot_type: Тип графика ('pressure', 'flow_rate', 'both')
-            show_uncertainty: Показывать ли неопределенность
-            uncertainty_data: Данные неопределенности (mean, std)
-        """
+        """Построение безразмерных кривых с matplotlib"""
         fig, ax = plt.subplots(figsize=(12, 8))
         
         if plot_type in ['pressure', 'both']:
-            # Безразмерное давление
             dimensionless_pressure = dimensionless_data.pressure / dimensionless_data.delta_p_i
             ax.loglog(dimensionless_data.Y, dimensionless_pressure, 
                      'o-', color=self.colors['original'], 
@@ -62,325 +263,85 @@ class DimensionlessPlotter:
                               label='95% доверительный интервал')
         
         if plot_type in ['flow_rate', 'both']:
-            # Безразмерный дебит
             dimensionless_flow = dimensionless_data.flow_rate / dimensionless_data.Q
-            ax2 = ax.twinx() if plot_type == 'both' else ax
-            ax2.loglog(dimensionless_data.Y, dimensionless_flow,
-                      's-', color=self.colors['linear'],
+            ax.loglog(dimensionless_data.Y, dimensionless_flow,
+                     's-', color=self.colors['original'],
                       label='Безразмерный дебит', markersize=4)
-            
-            if plot_type == 'both':
-                ax2.set_ylabel('Безразмерный дебит', color=self.colors['linear'])
-                ax2.tick_params(axis='y', labelcolor=self.colors['linear'])
         
-        ax.set_ylabel('Ёмкостной параметр Y (безразмерный)')
-        ax.set_xlabel('Безразмерное давление' if plot_type != 'both' else 'Безразмерное давление')
+        ax.set_xlabel('Y (безразмерный ёмкостной параметр)')
+        ax.set_ylabel('Безразмерная величина')
         ax.set_title('Безразмерные кривые МГРП')
-        ax.grid(True, alpha=0.3)
         ax.legend()
+        ax.grid(True, alpha=0.3)
         
         return fig
     
-    def plot_type_curves_comparison(self, 
-                                   dimensionless_data: DimensionlessParameters,
-                                   type_curves: Dict[str, Dict],
-                                   best_match: Optional[str] = None) -> Figure:
-        """
-        Сравнение с эталонными кривыми
-        
-        Args:
-            dimensionless_data: Безразмерные данные
-            type_curves: Библиотека эталонных кривых
-            best_match: Лучшее совпадение
-        """
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-        
-        # График давления
-        dimensionless_pressure = dimensionless_data.pressure / dimensionless_data.delta_p_i
-        ax1.loglog(dimensionless_data.Y, dimensionless_pressure, 
-                  'ko-', label='Данные', markersize=6, linewidth=2)
-        
-        # График дебита
-        dimensionless_flow = dimensionless_data.flow_rate / dimensionless_data.Q
-        ax2.loglog(dimensionless_data.Y, dimensionless_flow,
-                  'ko-', label='Данные', markersize=6, linewidth=2)
-        
-        # Добавляем эталонные кривые
-        for i, (curve_id, curve_data) in enumerate(type_curves.items()):
-            if i >= 5:  # Ограничиваем количество для читаемости
-                break
-                
-            color = self.colors['bilinear'] if i % 3 == 0 else \
-                   self.colors['linear'] if i % 3 == 1 else self.colors['pseudoradial']
-            
-            # Конвертируем время в безразмерный параметр Y для эталонных кривых
-            # Используем те же параметры, что и для исходных данных
-            Y_curve = (dimensionless_data.Q * dimensionless_data.B * curve_data['time']) / \
-                     (24 * dimensionless_data.phi * dimensionless_data.c_t * 
-                      dimensionless_data.h * dimensionless_data.L**2 * dimensionless_data.delta_p_i)
-            
-            # Давление
-            ax1.loglog(Y_curve, curve_data['bilinear_pressure'] / 100,
-                      '--', color=color, alpha=0.7, linewidth=1)
-            
-            # Дебит
-            ax2.loglog(Y_curve, curve_data['bilinear_flow'] / 50,
-                      '--', color=color, alpha=0.7, linewidth=1)
-        
-        # Выделяем лучшее совпадение
-        if best_match and best_match in type_curves:
-            curve_data = type_curves[best_match]
-            # Конвертируем время в безразмерный параметр Y
-            Y_best = (dimensionless_data.Q * dimensionless_data.B * curve_data['time']) / \
-                    (24 * dimensionless_data.phi * dimensionless_data.c_t * 
-                     dimensionless_data.h * dimensionless_data.L**2 * dimensionless_data.delta_p_i)
-            
-            ax1.loglog(Y_best, curve_data['bilinear_pressure'] / 100,
-                      '-', color='red', linewidth=3, label='Лучшее совпадение')
-            ax2.loglog(Y_best, curve_data['bilinear_flow'] / 50,
-                      '-', color='red', linewidth=3, label='Лучшее совпадение')
-        
-        ax1.set_ylabel('Ёмкостной параметр Y (безразмерный)')
-        ax1.set_xlabel('Безразмерное давление')
-        ax1.set_title('Сравнение с эталонными кривыми (давление)')
-        ax1.grid(True, alpha=0.3)
-        ax1.legend()
-        
-        ax2.set_ylabel('Ёмкостной параметр Y (безразмерный)')
-        ax2.set_xlabel('Безразмерный дебит')
-        ax2.set_title('Сравнение с эталонными кривыми (дебит)')
-        ax2.grid(True, alpha=0.3)
-        ax2.legend()
-        
-        plt.tight_layout()
-        return fig
-    
-    def plot_interpolation_results(self, 
-                                  original_data: DimensionlessParameters,
+    def plot_interpolation_results(self, original_data: DimensionlessParameters,
                                   interpolated_pressure: np.ndarray,
                                   interpolated_flow: np.ndarray,
                                   target_times: np.ndarray,
                                   method_name: str = 'Интерполяция') -> Figure:
-        """
-        Результаты интерполяции
+        """Построение результатов интерполяции"""
+        fig, ax = plt.subplots(figsize=(12, 8))
         
-        Args:
-            original_data: Исходные данные
-            interpolated_pressure: Интерполированное давление
-            interpolated_flow: Интерполированный дебит
-            target_times: Целевые временные точки
-            method_name: Название метода
-        """
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+        pD_orig = original_data.pressure / original_data.delta_p_i
+        ax.loglog(original_data.Y, pD_orig, 'o-', color='black', 
+                 label='Исходные данные', markersize=4)
+        ax.loglog(target_times, interpolated_pressure / original_data.delta_p_i,
+                 '--', color='orange', label=f'{method_name} (давление)', linewidth=2)
         
-        # Давление
-        ax1.semilogy(original_data.t, original_data.pressure, 
-                    'ko-', label='Исходные данные', markersize=6)
-        ax1.semilogy(target_times, interpolated_pressure, 
-                    'r^', label=method_name, markersize=6)
-        ax1.set_xlabel('Время, ч')
-        ax1.set_ylabel('Давление, атм')
-        ax1.set_title(f'Интерполяция давления - {method_name}')
-        ax1.grid(True, alpha=0.3)
-        ax1.legend()
+        ax.set_xlabel('Y (безразмерный ёмкостной параметр)')
+        ax.set_ylabel('pD (безразмерное давление)')
+        ax.set_title('Сравнение интерполяции')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
         
-        # Дебит
-        ax2.semilogy(original_data.t, original_data.flow_rate, 
-                    'ko-', label='Исходные данные', markersize=6)
-        ax2.semilogy(target_times, interpolated_flow, 
-                    'ro-', label=method_name, markersize=4)
-        ax2.set_xlabel('Время, ч')
-        ax2.set_ylabel('Дебит, м³/сут')
-        ax2.set_title(f'Интерполяция дебита - {method_name}')
-        ax2.grid(True, alpha=0.3)
-        ax2.legend()
-        
-        plt.tight_layout()
-        return fig
-    
-    def plot_extrapolation_results(self, 
-                                  original_data: DimensionlessParameters,
-                                  extrapolated_pressure: np.ndarray,
-                                  extrapolated_flow: np.ndarray,
-                                  future_times: np.ndarray,
-                                  method_name: str = 'Экстраполяция') -> Figure:
-        """
-        Результаты экстраполяции
-        
-        Args:
-            original_data: Исходные данные
-            extrapolated_pressure: Экстраполированное давление
-            extrapolated_flow: Экстраполированный дебит
-            future_times: Будущие временные точки
-            method_name: Название метода
-        """
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-        
-        # Давление
-        ax1.semilogy(original_data.t, original_data.pressure, 
-                    'ko-', label='Исходные данные', markersize=6)
-        ax1.semilogy(future_times, extrapolated_pressure, 
-                    'go-', label=method_name, markersize=4)
-        ax1.set_xlabel('Время, ч')
-        ax1.set_ylabel('Давление, атм')
-        ax1.set_title(f'Экстраполяция давления - {method_name}')
-        ax1.grid(True, alpha=0.3)
-        ax1.legend()
-        
-        # Дебит
-        ax2.semilogy(original_data.t, original_data.flow_rate, 
-                    'ko-', label='Исходные данные', markersize=6)
-        ax2.semilogy(future_times, extrapolated_flow, 
-                    'go-', label=method_name, markersize=4)
-        ax2.set_xlabel('Время, ч')
-        ax2.set_ylabel('Дебит, м³/сут')
-        ax2.set_title(f'Экстраполяция дебита - {method_name}')
-        ax2.grid(True, alpha=0.3)
-        ax2.legend()
-        
-        plt.tight_layout()
         return fig
 
 
 class PyQtGraphDimensionlessPlotter:
-    """PyQtGraph версия построителя безразмерных графиков"""
-    
+    """Класс для построения графиков с использованием PyQtGraph"""
     def __init__(self):
         self.colors = {
-            'bilinear': (255, 0, 0),      # Красный
-            'linear': (0, 0, 255),        # Синий
-            'pseudoradial': (0, 255, 0),  # Зеленый
-            'interpolated': (255, 165, 0), # Оранжевый
-            'extrapolated': (128, 0, 128), # Фиолетовый
-            'original': (0, 0, 0)         # Черный
+            'original': (0, 0, 255, 180),
+            'interpolated': (255, 165, 0, 180),
+            'extrapolated': (128, 0, 128, 180)
         }
     
-    def create_dimensionless_plot(self, 
-                                 plot_widget: PlotWidget,
+    def create_dimensionless_plot(self, plot_widget: PlotWidget,
                                  dimensionless_data: DimensionlessParameters,
                                  plot_type: str = 'pressure') -> None:
-        """
-        Создание графика безразмерных кривых в PyQtGraph
-        
-        Args:
-            plot_widget: Виджет для отображения
-            dimensionless_data: Безразмерные данные
-            plot_type: Тип графика
-        """
+        """Создание безразмерного графика в PyQtGraph"""
         plot_widget.clear()
-        plot_widget.setLabel('bottom', 'Фильтрационный параметр X (безразмерный)')
-        plot_widget.setLabel('left', 'Ёмкостной параметр Y (безразмерный)')
-        plot_widget.setTitle('Безразмерные кривые МГРП (X–Y пространство)')
+        plot_widget.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
+        plot_widget.setLabel('left', 'Y (безразмерный ёмкостной параметр)')
+        plot_widget.setTitle('Безразмерные кривые МГРП')
         plot_widget.setLogMode(x=True, y=True)
-        # Отрисовываем траекторию в X–Y пространстве, цветом кодируем величину
+        
         try:
             pD = dimensionless_data.pressure / dimensionless_data.delta_p_i if dimensionless_data.delta_p_i != 0 else np.zeros_like(dimensionless_data.pressure)
             qD = dimensionless_data.flow_rate / (dimensionless_data.Q if dimensionless_data.Q != 0 else 1.0)
             values = pD if plot_type == 'pressure' else qD
-            # Нормируем для цветовой карты
+            
             vmin, vmax = np.nanmin(values), np.nanmax(values)
             if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
                 vmin, vmax = 0.0, 1.0
+            
             cmap = pg.colormap.get('CET-L4') if hasattr(pg, 'colormap') else None
             brushes = None
             if cmap is not None:
                 colors = cmap.map((values - vmin) / (vmax - vmin), mode='qcolor')
                 brushes = colors
+            
             spots = [{"pos": (float(x), float(y)), "brush": (brushes[i] if brushes is not None else (0, 0, 255, 180)), "size": 7} 
                      for i, (x, y) in enumerate(zip(dimensionless_data.X, dimensionless_data.Y))]
             scatter = pg.ScatterPlotItem()
             scatter.addPoints(spots)
             plot_widget.addItem(scatter)
-            # Добавляем цветовую шкалу при наличии ColorBarItem
-            try:
-                if cmap is not None and hasattr(pg, 'ColorBarItem'):
-                    cbar = pg.ColorBarItem(values=(vmin, vmax), colorMap=cmap, label=("P/Pi" if plot_type == 'pressure' else "Q/Q̄"))
-                    cbar.setImageItem(scatter)
-                    plot_widget.addItem(cbar)
-            except Exception:
-                pass
         except Exception:
-            # Фоллбэк — простая линия траектории
-            plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, pen=mkPen(color=self.colors['original'], width=2), name='Траектория')
-    
-    def add_type_curves(self, 
-                       plot_widget: PlotWidget,
-                       type_curves: Dict[str, Dict],
-                       max_curves: int = 5) -> None:
-        """
-        Добавление эталонных кривых на график
-        
-        Args:
-            plot_widget: Виджет для отображения
-            type_curves: Библиотека эталонных кривых
-            max_curves: Максимальное количество кривых
-        """
-        colors = [self.colors['bilinear'], self.colors['linear'], self.colors['pseudoradial']]
-        
-        for i, (curve_id, curve_data) in enumerate(type_curves.items()):
-            if i >= max_curves:
-                break
-                
-            color = colors[i % len(colors)]
-            
-            # Давление
-            plot_widget.plot(curve_data['time'], curve_data['bilinear_pressure'] / 100,
-                           pen=mkPen(color=color, width=1, style=2),  # Пунктир
-                           name=f'Эталонная кривая {i+1}')
-    
-    def add_interpolation_results(self, 
-                                 plot_widget: PlotWidget,
-                                 target_times: np.ndarray,
-                                 interpolated_pressure: np.ndarray,
-                                 interpolated_flow: np.ndarray,
-                                 plot_type: str = 'pressure') -> None:
-        """
-        Добавление результатов интерполяции
-        
-        Args:
-            plot_widget: Виджет для отображения
-            target_times: Целевые временные точки
-            interpolated_pressure: Интерполированное давление
-            interpolated_flow: Интерполированный дебит
-            plot_type: Тип графика
-        """
-        if plot_type == 'pressure':
-            plot_widget.plot(target_times, interpolated_pressure,
-                           pen=mkPen(color=self.colors['interpolated'], width=2),
-                           symbol='o', symbolSize=4,
-                           name='Интерполированные данные')
-        else:
-            plot_widget.plot(target_times, interpolated_flow,
-                           pen=mkPen(color=self.colors['interpolated'], width=2),
-                           symbol='s', symbolSize=4,
-                           name='Интерполированные данные')
-    
-    def add_extrapolation_results(self, 
-                                 plot_widget: PlotWidget,
-                                 future_times: np.ndarray,
-                                 extrapolated_pressure: np.ndarray,
-                                 extrapolated_flow: np.ndarray,
-                                 plot_type: str = 'pressure') -> None:
-        """
-        Добавление результатов экстраполяции
-        
-        Args:
-            plot_widget: Виджет для отображения
-            future_times: Будущие временные точки
-            extrapolated_pressure: Экстраполированное давление
-            extrapolated_flow: Экстраполированный дебит
-            plot_type: Тип графика
-        """
-        if plot_type == 'pressure':
-            plot_widget.plot(future_times, extrapolated_pressure,
-                           pen=mkPen(color=self.colors['extrapolated'], width=2),
-                           symbol='^', symbolSize=4,
-                           name='Экстраполированные данные')
-        else:
-            plot_widget.plot(future_times, extrapolated_flow,
-                           pen=mkPen(color=self.colors['extrapolated'], width=2),
-                           symbol='^', symbolSize=4,
-                           name='Экстраполированные данные')
+            plot_widget.plot(dimensionless_data.X, dimensionless_data.Y, 
+                           pen=mkPen(color=self.colors['original'], width=2), 
+                           name='Траектория')
 
 
 # Функции для удобного использования
@@ -390,14 +351,12 @@ def plot_dimensionless_analysis(time: pd.Series,
                                well_params: Dict[str, float],
                                plot_type: str = 'pressure') -> Figure:
     """Быстрое построение анализа безразмерных кривых"""
-    # Конвертируем в безразмерные параметры
     dimensionless_data = convert_to_dimensionless_curves(
         time, pressure, flow_rate, well_params
     )
-    
-    # Создаем график
     plotter = DimensionlessPlotter()
     return plotter.plot_dimensionless_curves(dimensionless_data, plot_type)
+
 
 def plot_extrapolation_comparison(time: pd.Series,
                                  pressure: pd.Series,
@@ -406,25 +365,17 @@ def plot_extrapolation_comparison(time: pd.Series,
                                  future_times: np.ndarray,
                                  extrapolation_params: Dict[str, float],
                                  method: str = 'physics_constrained') -> Figure:
-    """Сравнение методов экстраполяции"""
-    # Получаем экстраполированные данные
-    extrapolated_pressure, extrapolated_flow = extrapolate_dimensionless_curves(
-        time, pressure, flow_rate, well_params, future_times, extrapolation_params, method
-    )
-    
-    # Конвертируем исходные данные
+    """Сравнение экстраполяции"""
     dimensionless_data = convert_to_dimensionless_curves(
         time, pressure, flow_rate, well_params
     )
     
-    # Создаем график
-    plotter = DimensionlessPlotter()
-    return plotter.plot_extrapolation_results(
-        dimensionless_data, extrapolated_pressure, extrapolated_flow,
-        future_times, f'Экстраполяция ({method})'
+    extrapolated_pressure, extrapolated_flow = extrapolate_dimensionless_curves(
+        time, pressure, flow_rate, well_params, future_times, extrapolation_params, method
     )
-
-from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
+    
+    plotter = DimensionlessPlotter()
+    return plotter.plot_dimensionless_curves(dimensionless_data, 'pressure')
 
 
 def plot_interpolation_comparison(
@@ -436,48 +387,34 @@ def plot_interpolation_comparison(
     target_params: Dict[str, float],
     method: str = 'adaptive'
 ) -> Figure:
-    """
-    Сравнение методов интерполяции (включая физически ограниченные).
-    """
-    # 1️⃣ Конвертируем исходные данные в безразмерные
+    """Сравнение методов интерполяции"""
+    from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
+    
     dimensionless_data = convert_to_dimensionless_curves(
         time, pressure, flow_rate, well_params
     )
 
-    # 2️⃣ Создаём сетку параметров для обучения
-    param_grid = np.array([
-        [dimensionless_data.skin, dimensionless_data.N, dimensionless_data.a_L]
-    ])
+    skin = target_params.get("Skin", well_params.get('skin', 0.0))
+    N = target_params.get("N", well_params.get('N', 1))
+    aL = target_params.get("a_L", well_params.get('a_L', 0.1))
+    
+    param_grid = np.array([[skin, N, aL]])
     Y_grid = np.asarray(dimensionless_data.Y)
     P_curves = np.asarray([dimensionless_data.pressure / dimensionless_data.delta_p_i])
 
-    # 3️⃣ Обучаем интерполятор (выбирает сам лучший метод)
     interp = DimensionlessCurveInterpolator(
         methods=('linear', 'rbf', 'gp'),
         constraints=dict(monotonic=True, positive=True, smooth=True, clip_range=(0, 5))
     )
     interp.fit(param_grid, Y_grid, P_curves)
 
-    # 4️⃣ Предсказываем для заданных параметров
-    skin = target_params.get("Skin", dimensionless_data.skin)
-    N = target_params.get("N", dimensionless_data.N)
-    aL = target_params.get("a_L", dimensionless_data.a_L)
     interpolated_curve = interp.predict(skin, N, aL)
 
-    # 5️⃣ Визуализируем
     plotter = DimensionlessPlotter()
-    fig = plotter.plot_interpolation_results(
-        dimensionless_data,
-        interpolated_pressure=interpolated_curve.values * dimensionless_data.delta_p_i,
-        interpolated_flow=np.zeros_like(interpolated_curve.values),  # пока оставим
-        target_times=target_times,
-        method_name=f"Интерполяция ({interp.best_method})"
-    )
-
-    # 6️⃣ Добавим подпись RMSE
+    fig = plotter.plot_dimensionless_curves(dimensionless_data, 'pressure')
     ax = fig.axes[0]
-    rmse = interp.rmse_scores.get(interp.best_method, None)
-    if rmse is not None:
-        ax.text(0.05, 0.95, f"RMSE={rmse:.4e}", transform=ax.transAxes, fontsize=10, va='top')
+    ax.loglog(interpolated_curve.index.values, interpolated_curve.values,
+              '--', color='orange', label='Интерполированная кривая', linewidth=2)
+    ax.legend()
 
     return fig
