@@ -62,11 +62,11 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
         
         if checked_groups.get('cb_real_p', False):
             plot_widget.setLabel('left', 'Давление, атм')
-            mask = ~(np.isnan(current_well_time) | np.isnan(current_well_pressure))
-            if np.any(mask):
-                plot_widget.plot(current_well_time[mask].values, current_well_pressure[mask].values,
-                                pen=pg.mkPen(color=(200, 50, 50), width=2),
-                                name="P(t)")
+            # Используем connect='finite' для правильного отображения пропусков
+            plot_widget.plot(current_well_time.values, current_well_pressure.values,
+                            pen=pg.mkPen(color=(200, 50, 50), width=2),
+                            name="P(t)", 
+                            connect='finite')
         
         if checked_groups.get('cb_real_q', False):
             if checked_groups.get('cb_real_p', False):
@@ -74,55 +74,100 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
                 plot_widget.setLabel('left', 'Давление / Дебит')
             else:
                 plot_widget.setLabel('left', 'Дебит, м³/сут')
-            mask = ~(np.isnan(current_well_time) | np.isnan(current_well_flow_rate))
-            if np.any(mask):
-                plot_widget.plot(current_well_time[mask].values, current_well_flow_rate[mask].values,
-                                pen=pg.mkPen(color=(50, 150, 50), width=2),
-                                name="Q(t)")
+            # Используем connect='finite' для правильного отображения пропусков
+            plot_widget.plot(current_well_time.values, current_well_flow_rate.values,
+                            pen=pg.mkPen(color=(50, 150, 50), width=2),
+                            name="Q(t)", 
+                            connect='finite')
         
         plot_widget.setTitle("Реальные параметры скважины")
+        plot_widget.addLegend()
         return  # Реальные параметры в своем пространстве
     
     # ГРУППА 2: Безразмерные кривые - плоскость log-log (X, pD/qD/tD/CD)
     # Все безразмерные кривые отображаются в log-log плоскости X-Y
     if has_dim:
+                # --- Проверка и нормализация диапазонов ---
+        # Убираем нули, NaN, отрицательные
+        X = np.clip(dim_data.X.astype(float), 1e-12, None)
+        Y = np.clip(dim_data.Y.astype(float), 1e-12, None)
+        pD = np.clip(pD.astype(float), 1e-12, None)
+        qD = np.clip(qD.astype(float), 1e-12, None)
+
+        # Нормализация к 1 при необходимости (чтобы избежать вылетов)
+        def normalize_if_flat(arr):
+            rng = np.nanmax(arr) - np.nanmin(arr)
+            if not np.isfinite(rng) or rng < 1e-6:
+                arr = arr / (np.nanmax(arr) if np.nanmax(arr) != 0 else 1.0)
+            return arr
+
+        X = normalize_if_flat(X)
+        Y = normalize_if_flat(Y)
+        pD = normalize_if_flat(pD)
+        qD = normalize_if_flat(qD)
+
+        # Для производных – фильтруем шумы и NaN
+        if np.any(np.isnan(pD)) or np.any(np.isnan(Y)) or np.any(np.isnan(qD)):
+            mask_valid = (~np.isnan(pD)) & (~np.isnan(Y)) & (~np.isnan(qD))
+            pD = pD[mask_valid]
+            qD = qD[mask_valid]
+            Y = Y[mask_valid]
+            X = X[mask_valid]
+
+        # Гарантируем, что диапазон данных не коллапсирует в логарифме
+        if np.allclose(np.nanmin(X), np.nanmax(X)) or np.allclose(np.nanmin(pD), np.nanmax(pD)):
+            print("⚠️ Предупреждение: диапазон X или pD слишком узкий для log-log отображения")
+
         plot_widget.setLogMode(x=True, y=True)
         plot_widget.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
         plot_widget.setLabel('left', 'Безразмерный параметр')
         plot_widget.setTitle("Безразмерные кривые МГРП (log-log)")
         
         if checked_groups.get('cb_dim_pD', False):
-            mask = (~np.isnan(dim_data.X)) & (~np.isnan(pD)) & (dim_data.X > 0) & (pD > 0)
+            # Используем отфильтрованные массивы X и pD
+            mask = (X > 0) & (pD > 0) & np.isfinite(X) & np.isfinite(pD)
             if np.any(mask):
-                plot_widget.plot(dim_data.X[mask], pD[mask],
+                plot_widget.plot(X[mask], pD[mask],
                                 pen=pg.mkPen(color=(200, 50, 50), width=2),
-                                name="pD(X)")
+                                name="pD(X)",
+                                connect='finite')
         
         if checked_groups.get('cb_dim_dpD', False):
-            Yc = np.clip(dim_data.Y, 1e-30, None)
+            # Вычисляем производную на отфильтрованных данных
+            Yc = np.clip(Y, 1e-30, None)
             dpdlogY = np.gradient(pD, np.log10(Yc))
-            mask = (~np.isnan(dim_data.X)) & (~np.isnan(dpdlogY)) & (dim_data.X > 0)
+            mask = (X > 0) & np.isfinite(X) & np.isfinite(dpdlogY)
             if np.any(mask):
-                plot_widget.plot(dim_data.X[mask], dpdlogY[mask],
+                plot_widget.plot(X[mask], dpdlogY[mask],
                                 pen=pg.mkPen(color=(150, 0, 150), width=2),
-                                name="dpD/dlogY(X)")
+                                name="dpD/dlogY(X)",
+                                connect='finite')
         
         if checked_groups.get('cb_dim_tD', False):
-            mask = (~np.isnan(dim_data.X)) & (~np.isnan(dim_data.Y)) & (dim_data.X > 0) & (dim_data.Y > 0)
+            # Используем отфильтрованные массивы X и Y
+            mask = (X > 0) & (Y > 0) & np.isfinite(X) & np.isfinite(Y)
             if np.any(mask):
-                plot_widget.plot(dim_data.X[mask], dim_data.Y[mask],
+                plot_widget.plot(X[mask], Y[mask],
                                 pen=pg.mkPen(color=(0, 120, 200), width=2),
-                                name="tD (Y)")
+                                name="tD (Y)",
+                                connect='finite')
         
         if checked_groups.get('cb_dim_CD', False):
-            Yc = np.clip(dim_data.Y, 1e-30, None)
-            dpdlogY = np.gradient(pD, np.log10(Yc))
-            CD = dim_data.Y * dpdlogY
-            mask = (~np.isnan(dim_data.X)) & (~np.isnan(CD)) & (dim_data.X > 0)
+            # Вычисляем CD на отфильтрованных данных
+            Yc = np.clip(Y, 1e-30, None)
+            pD_clip = np.clip(pD, 1e-30, None)
+            
+            dpdlogY = np.gradient(np.log10(pD_clip), np.log10(Yc))
+            CD = np.abs(Yc * dpdlogY)
+            CD = np.clip(CD, 1e-10, 1e10)  # ограничиваем диапазон
+            CD /= np.nanmax(CD) if np.nanmax(CD) != 0 else 1  # нормализация
+
+            mask = (X > 0) & np.isfinite(X) & np.isfinite(CD)
             if np.any(mask):
-                plot_widget.plot(dim_data.X[mask], CD[mask],
+                plot_widget.plot(X[mask], CD[mask],
                                 pen=pg.mkPen(color=(0, 180, 80), width=2),
-                                name="CD(X)")
+                                name="CD(X)",
+                                connect='finite')
         
         # Добавляем эталонные кривые, если есть
         if validation_data:
@@ -220,11 +265,14 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
     plot_widget.setLabel('left', 'pD (безразмерное давление)')
     plot_widget.setTitle("Безразмерные кривые МГРП")
     
-    mask = (~np.isnan(dim_data.X)) & (~np.isnan(pD)) & (dim_data.X > 0) & (pD > 0)
+    # Пересчитываем pD для fallback (без фильтрации)
+    pD_fallback = dim_data.pressure / (dim_data.delta_p_i if dim_data.delta_p_i != 0 else 1.0)
+    mask = (~np.isnan(dim_data.X)) & (~np.isnan(pD_fallback)) & (dim_data.X > 0) & (pD_fallback > 0) & np.isfinite(dim_data.X) & np.isfinite(pD_fallback)
     if np.any(mask):
-        plot_widget.plot(dim_data.X[mask], pD[mask],
+        plot_widget.plot(dim_data.X[mask], pD_fallback[mask],
                         pen=pg.mkPen(color=(200, 50, 50), width=2),
-                        name="pD(X)")
+                        name="pD(X)",
+                        connect='finite')
     plot_widget.addLegend()
     plot_widget.showGrid(x=True, y=True)
 

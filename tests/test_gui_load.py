@@ -41,13 +41,17 @@ def app_with_data(qapp):
     """Создает приложение с загруженными тестовыми данными"""
     from main import MyApp
     
-    app = MyApp()
+        app = MyApp(test_mode=True)  # Отключаем QMessageBox в тестах
     
-    # Создаем тестовые данные
+    # Создаем тестовые данные с пропусками для тестирования интерполяции
     n_points = 50
     time_data = np.linspace(0, 100, n_points)
     pressure_data = 300 - time_data * 0.5 + np.random.normal(0, 5, n_points)
     flow_rate_data = 100 - time_data * 0.2 + np.random.normal(0, 3, n_points)
+    
+    # Добавляем несколько пропусков (NaN) для тестирования интерполяции
+    pressure_data[10:15] = np.nan
+    flow_rate_data[20:25] = np.nan
     
     well_data = WellTimeSeries(
         time=pd.Series(time_data),

@@ -272,6 +272,30 @@ class DimensionlessCurveInterpolator:
         
         self.is_fitted = True
         return self
+    
+    def get_interpolation_info(self) -> dict:
+        """
+        Возвращает информацию о результатах интерполяции.
+        
+        Returns:
+            dict: Словарь с информацией о выбранном методе и RMSE всех методов
+        """
+        if not self.is_fitted:
+            return {
+                "fitted": False,
+                "best_method": None,
+                "rmse_scores": {},
+                "message": "Модель не обучена"
+            }
+        
+        return {
+            "fitted": True,
+            "best_method": self.best_method,
+            "rmse_scores": self.rmse_scores,
+            "n_samples": self.param_grid.shape[0] if hasattr(self, 'param_grid') else 0,
+            "n_points": len(self.Y_grid) if hasattr(self, 'Y_grid') else 0,
+            "message": f"Выбран метод '{self.best_method}' с RMSE={self.rmse_scores.get(self.best_method, 0):.4f}"
+        }
 
     def predict(self, skin: float, N: float, a_L: float) -> pd.Series:
         """Получение интерполированной безразмерной кривой для заданных параметров."""
@@ -284,9 +308,9 @@ class DimensionlessCurveInterpolator:
         if self.training_params is not None and self.training_curves is not None:
             for i, params in enumerate(self.training_params):
                 if np.allclose(params, X_pred[0], rtol=1e-9, atol=1e-9):
-                    # Точное совпадение - возвращаем обучающие данные
+                    # Точное совпадение - возвращаем обучающие данные без дополнительных ограничений
+                    # (ограничения уже были применены при fit)
                     P_curve = self.training_curves[i, :]
-                    P_curve = self._apply_physical_constraints_to_series(P_curve)
                     return pd.Series(P_curve, index=self.Y_grid, name=f"P_D(s={skin}, N={N}, a/L={a_L})")
         
         # Нет точного совпадения - используем модели

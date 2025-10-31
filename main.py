@@ -171,10 +171,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.grp_special = QGroupBox("Спец-пространства/типовые")
         sp_lay = QVBoxLayout(self.grp_special)
         self.cb_gfunc = QCheckBox("G-функция (Nolte)")
-        self.cb_mbt = QCheckBox("Material Balance Time")
-        self.cb_type_gry = QCheckBox("Gringarten & Ramey")
-        self.cb_type_cinco = QCheckBox("Cinco-Ley & Samaniego")
-        self.cb_type_valko = QCheckBox("Valkó & Economides")
+        self.cb_mbt = QCheckBox("Время материального баланса")
+        self.cb_type_gry = QCheckBox("Билинейный режим")
+        self.cb_type_cinco = QCheckBox("Линейный режим течения")
+        self.cb_type_valko = QCheckBox("Псевдорадиальный режим")
         sp_lay.addWidget(self.cb_gfunc)
         sp_lay.addWidget(self.cb_mbt)
         sp_lay.addWidget(self.cb_type_gry)
@@ -376,6 +376,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
                               f"Всего измерений: {total_points}\n"
                               f"Текущая скважина: {self.well_combo_dim.currentText()}")
         
+        # Запускаем диагностику асинхронно
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(100, lambda: self.run_data_diagnostics(file_path))
+        
         # ФИКС: Автоматически строим безразмерный график
         self.on_plot_dimensionless_selected()
         
@@ -405,6 +409,61 @@ class MyApp(QMainWindow, Ui_mainWindow):
         QMessageBox.information(self, "Файл для проверки", 
                               f"Загружено {len(well_data_list)} групп данных для проверки\n"
                               f"Всего измерений: {sum(len(w.time) for w in well_data_list)}")
+    
+    def run_data_diagnostics(self, file_path):
+        """Запускает диагностику загруженных данных"""
+        try:
+            print("\n" + "="*60)
+            print(f"ДИАГНОСТИКА ДАННЫХ: {file_path}")
+            print("="*60)
+            
+            # Импортируем функцию диагностики
+            from helpers.input_test import diag_dimensional
+            
+            # Читаем CSV для диагностики
+            import pandas as pd
+            df = pd.read_csv(file_path)
+            
+            # Конвертируем в формат для diag_dimensional если нужно
+            # Функция ожидает колонки: 'X', 'Y', 'P', 'Q', 't'
+            if not all(col in df.columns for col in ['X', 'Y', 'P', 'Q', 't']):
+                # Преобразуем из формата WellTimeSeries
+                if self.well_data_list and len(self.well_data_list) > 0:
+                    well = self.well_data_list[0]
+                    # Конвертируем в безразмерные параметры
+                    from helpers.dimensionless_analysis import convert_to_dimensionless_curves
+                    well_params = {
+                        'k': 1.0, 'h': well.thickness, 'mu': 1.0, 'B': 1.0,
+                        'phi': 0.1, 'c_t': 1e-4, 'L': well.fracture_length,
+                        'skin': well.skin, 'N': well.fractures_count,
+                        'a_L': well.a_l_ratio
+                    }
+                    dim_data = convert_to_dimensionless_curves(
+                        well.time, well.pressure, well.flow_rate, well_params
+                    )
+                    
+                    # Создаем DataFrame в нужном формате
+                    df_diag = pd.DataFrame({
+                        'X': dim_data.X,
+                        'Y': dim_data.Y,
+                        'P': dim_data.pressure,
+                        'Q': dim_data.flow_rate,
+                        't': well.time
+                    })
+                else:
+                    print("⚠️ Не удалось преобразовать данные для диагностики")
+                    return
+            else:
+                df_diag = df
+            
+            # Запускаем диагностику (вывод идет в консоль)
+            diag_dimensional(df_diag)
+            print("="*60 + "\n")
+            
+        except Exception as e:
+            print(f"⚠️ Ошибка диагностики: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def update_interface_parameters(self):
         self.thickness_doubleSpinBox.setValue(self.current_well_data.thickness)
@@ -513,7 +572,34 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.well_data is None:
             return
         
+        # Проверяем, есть ли пропуски в данных
+        has_nan = (self.well_data.pressure.isna().any() or 
+                   self.well_data.flow_rate.isna().any())
+        
+        if not has_nan:
+            # Данные уже полные, интерполяция не требуется
+            report = "=" * 60 + "\n"
+            report += "ИНТЕРПОЛЯЦИЯ НЕ ТРЕБУЕТСЯ\n"
+            report += "=" * 60 + "\n\n"
+            report += "Данные не содержат пропущенных значений (NaN).\n"
+            report += f"Точек данных по давлению: {len(self.well_data.pressure)}\n"
+            report += f"Точек данных по дебиту: {len(self.well_data.flow_rate)}\n"
+            report += "\nВсе данные присутствуют, интерполяция не нужна.\n"
+            report += "=" * 60 + "\n"
+            
+            if hasattr(self, 'results_text'):
+                self.results_text.setPlainText(report)
+            
+            if not self.test_mode:
+                QMessageBox.information(self, "Интерполяция", 
+                    "Данные уже полные, интерполяция не требуется")
+            return
+        
         try:
+            # Подсчитываем количество пропусков
+            n_nan_pressure = self.well_data.pressure.isna().sum()
+            n_nan_flow = self.well_data.flow_rate.isna().sum()
+            
             # Используем интерполяцию безразмерных кривых вместо простой математики
             well_params = {
                 'k': 1.0, 'h': self.well_data.thickness, 'mu': 1.0, 'B': 1.0,
@@ -550,10 +636,105 @@ class MyApp(QMainWindow, Ui_mainWindow):
             pressure_values = pred_series.values if hasattr(pred_series, 'values') else np.asarray(pred_series)
             self.well_data.pressure = pd.Series(pressure_values * dim_data.delta_p_i, index=self.well_data.time)
             
+            # Получаем информацию о результатах интерполяции
+            interp_info = interp.get_interpolation_info()
+            
+            # Сохраняем информацию для отображения в резюме графика
+            self.last_interpolation_info = interp_info
+            
+            # Формируем отчёт для вывода
+            method_names = {
+                'linear': 'Линейная регрессия',
+                'rbf': 'RBF интерполяция (Thin Plate Spline)',
+                'gp': 'Гауссовский процесс'
+            }
+            
+            # Определяем, что было интерполировано
+            interpolated_items = []
+            if n_nan_pressure > 0:
+                interpolated_items.append(f"давление ({n_nan_pressure} точек)")
+            if n_nan_flow > 0:
+                interpolated_items.append(f"дебит ({n_nan_flow} точек)")
+            
+            report = "=" * 60 + "\n"
+            report += "РЕЗУЛЬТАТЫ ИНТЕРПОЛЯЦИИ БЕЗРАЗМЕРНЫХ КРИВЫХ\n"
+            report += "=" * 60 + "\n\n"
+            
+            # Что было интерполировано
+            report += "Интерполировано:\n"
+            if interpolated_items:
+                report += "  ✓ Безразмерная кривая pD(Y)\n"
+                for item in interpolated_items:
+                    report += f"  ✓ {item}\n"
+            report += "\n"
+            
+            # Исходные данные
+            report += "Исходные данные:\n"
+            report += f"  Всего точек: {len(self.well_data.time)}\n"
+            total_possible = len(self.well_data.time) * 2  # давление + дебит
+            total_nan = n_nan_pressure + n_nan_flow
+            coverage = (1 - total_nan / total_possible) * 100 if total_possible > 0 else 0
+            report += f"  Полнота данных: {coverage:.1f}%\n"
+            report += f"  Заполнено пропусков:\n"
+            if n_nan_pressure > 0:
+                report += f"    - Давление: {n_nan_pressure} точек ({n_nan_pressure/len(self.well_data.time)*100:.1f}%)\n"
+            if n_nan_flow > 0:
+                report += f"    - Дебит: {n_nan_flow} точек ({n_nan_flow/len(self.well_data.time)*100:.1f}%)\n"
+            report += "\n"
+            
+            # Параметры скважины (не интерполировались)
+            report += "Параметры скважины (использованы для интерполяции):\n"
+            report += f"  Skin: {self.well_data.skin:.4f}\n"
+            report += f"  N (кол-во трещин): {self.well_data.fractures_count}\n"
+            report += f"  a/L: {self.well_data.a_l_ratio:.4f}\n"
+            report += f"  L (длина трещины): {self.well_data.fracture_length:.2f} м\n"
+            report += f"  h (толщина пласта): {self.well_data.thickness:.2f} м\n"
+            report += "\n"
+            
+            # Параметры интерполяции
+            report += "Параметры метода:\n"
+            report += f"  Обучающих примеров: {interp_info['n_samples']}\n"
+            report += f"  Точек на безразмерной кривой: {interp_info['n_points']}\n\n"
+            
+            # Сравнение методов
+            report += "СРАВНЕНИЕ МЕТОДОВ ИНТЕРПОЛЯЦИИ\n"
+            report += "-" * 60 + "\n"
+            report += f"{'Метод':<42} {'RMSE':<12} {'Статус'}\n"
+            report += "-" * 60 + "\n"
+            
+            # Сортируем методы по RMSE
+            sorted_methods = sorted(interp_info['rmse_scores'].items(), key=lambda x: x[1])
+            
+            for i, (method, rmse) in enumerate(sorted_methods, 1):
+                method_display = method_names.get(method, method)
+                marker = "✓ ВЫБРАН" if method == interp_info['best_method'] else f"#{i}"
+                report += f"{method_display:<42} {rmse:<12.3f} {marker}\n"
+            
+            report += "-" * 60 + "\n\n"
+            
+            # Итоговая информация
+            best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
+            report += "ИТОГОВЫЙ РЕЗУЛЬТАТ:\n"
+            report += f"  Метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
+            report += f"  RMSE: {best_rmse:.3f}\n"
+            report += f"  Качество: {'Отлично' if best_rmse < 0.01 else 'Хорошо' if best_rmse < 0.1 else 'Удовлетворительно'}\n"
+            report += "\n" + "=" * 60 + "\n"
+            
+            # Выводим в текстовое поле результатов
+            if hasattr(self, 'results_text'):
+                self.results_text.setPlainText(report)
+            
             self.on_plot_dimensionless_selected()
-            QMessageBox.information(self, "Интерполяция", "Данные интерполированы методом безразмерных кривых")
+            if not self.test_mode:
+                best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
+                QMessageBox.information(self, "Интерполяция", 
+                    f"Данные интерполированы методом безразмерных кривых\n\n"
+                    f"Выбранный метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
+                    f"RMSE: {best_rmse:.3f}\n"
+                    f"Качество: {'Отлично' if best_rmse < 0.01 else 'Хорошо' if best_rmse < 0.1 else 'Удовлетворительно'}")
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка интерполяции: {str(e)}")
+            if not self.test_mode:
+                QMessageBox.warning(self, "Ошибка", f"Ошибка интерполяции: {str(e)}")
             import traceback
             print(traceback.format_exc())
     
@@ -940,11 +1121,26 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             self.text_report.append("✅ График построен успешно")
             
+            # Добавляем краткое резюме, если была проведена интерполяция
+            if hasattr(self, 'last_interpolation_info') and self.last_interpolation_info:
+                interp_info = self.last_interpolation_info
+                method_names = {
+                    'linear': 'Линейная регрессия',
+                    'rbf': 'RBF',
+                    'gp': 'GP'
+                }
+                best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
+                quality = 'отлично' if best_rmse < 0.01 else 'хорошо' if best_rmse < 0.1 else 'удовл.'
+                self.text_report.append(
+                    f"📊 Интерполяция: {method_names.get(interp_info['best_method'], interp_info['best_method'])}, "
+                    f"RMSE={best_rmse:.3f} ({quality})"
+                )
+            
         except Exception as e:
             self.text_report.setText(f"❌ Ошибка построения графика: {str(e)}")
             import traceback
-            print(traceback.format_exc())
-    
+            print(traceback.format_exc())        
+
     def on_ml_filter(self):
         """ML-фильтрация данных"""
         if self.well_data is None:
@@ -957,7 +1153,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             QMessageBox.information(self, "ML фильтрация", "Данные отфильтрованы с помощью ML")
         except Exception as e:
             QMessageBox.warning(self, "Ошибка", f"Ошибка ML фильтрации: {str(e)}")
-    
+            
     def on_detect_outliers(self):
         """Обнаружение выбросов"""
         if self.well_data is None:
