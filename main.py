@@ -69,6 +69,21 @@ class MyApp(QMainWindow, Ui_mainWindow):
     def well_data(self):
         """Алиас для current_well_data для совместимости"""
         return self.current_well_data
+    
+    def show_info(self, title, message):
+        """Показывает информационное сообщение (только если не test_mode)"""
+        if not self.test_mode:
+            QMessageBox.information(self, title, message)
+    
+    def show_warning(self, title, message):
+        """Показывает предупреждение (только если не test_mode)"""
+        if not self.test_mode:
+            QMessageBox.warning(self, title, message)
+    
+    def show_error(self, title, message):
+        """Показывает сообщение об ошибке (только если не test_mode)"""
+        if not self.test_mode:
+            QMessageBox.critical(self, title, message)
 
     def setup_professional_interface(self):
         """Создает профессиональный интерфейс с вкладками для анализа ГРП"""
@@ -371,10 +386,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         # Показываем информацию о загруженных данных
         total_points = sum(len(well.time) for well in well_data_list)
-        QMessageBox.information(self, "Данные загружены", 
-                              f"Загружено {len(well_data_list)} групп данных\n"
-                              f"Всего измерений: {total_points}\n"
-                              f"Текущая скважина: {self.well_combo_dim.currentText()}")
+        self.show_info("Данные загружены", 
+                      f"Загружено {len(well_data_list)} групп данных\n"
+                      f"Всего измерений: {total_points}\n"
+                      f"Текущая скважина: {self.well_combo_dim.currentText()}")
         
         # Запускаем диагностику асинхронно
         from PySide6.QtCore import QTimer
@@ -399,16 +414,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
         try:
             well_data_list, error_msg = parse_well_data(file_path)
             if error_msg is not None:
-                QMessageBox.warning(self, "Ошибка загрузки", error_msg)
+                self.show_warning("Ошибка загрузки", error_msg)
                 return
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка загрузки", f"Неожиданная ошибка при загрузке файла: {str(e)}")
+            self.show_warning("Ошибка загрузки", f"Неожиданная ошибка при загрузке файла: {str(e)}")
             return
 
         self.validation_well_data_list = well_data_list
-        QMessageBox.information(self, "Файл для проверки", 
-                              f"Загружено {len(well_data_list)} групп данных для проверки\n"
-                              f"Всего измерений: {sum(len(w.time) for w in well_data_list)}")
+        self.show_info("Файл для проверки", 
+                      f"Загружено {len(well_data_list)} групп данных для проверки\n"
+                      f"Всего измерений: {sum(len(w.time) for w in well_data_list)}")
     
     def run_data_diagnostics(self, file_path):
         """Запускает диагностику загруженных данных"""
@@ -565,7 +580,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 self.well_data.flow_rate = smoothed
                 
             self.on_plot_timeseries()
-            QMessageBox.information(self, "Сглаживание", "Данные сглажены")
+            self.show_info("Сглаживание", "Данные сглажены")
     
     def on_interpolate_data(self):
         """Интерполяция данных безразмерных кривых"""
@@ -590,9 +605,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
             if hasattr(self, 'results_text'):
                 self.results_text.setPlainText(report)
             
-            if not self.test_mode:
-                QMessageBox.information(self, "Интерполяция", 
-                    "Данные уже полные, интерполяция не требуется")
+            self.show_info("Интерполяция", 
+                          "Данные уже полные, интерполяция не требуется")
             return
         
         try:
@@ -725,16 +739,14 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 self.results_text.setPlainText(report)
             
             self.on_plot_dimensionless_selected()
-            if not self.test_mode:
-                best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
-                QMessageBox.information(self, "Интерполяция", 
-                    f"Данные интерполированы методом безразмерных кривых\n\n"
-                    f"Выбранный метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
-                    f"RMSE: {best_rmse:.3f}\n"
-                    f"Качество: {'Отлично' if best_rmse < 0.01 else 'Хорошо' if best_rmse < 0.1 else 'Удовлетворительно'}")
+            best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
+            self.show_info("Интерполяция", 
+                          f"Данные интерполированы методом безразмерных кривых\n\n"
+                          f"Выбранный метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
+                          f"RMSE: {best_rmse:.3f}\n"
+                          f"Качество: {'Отлично' if best_rmse < 0.01 else 'Хорошо' if best_rmse < 0.1 else 'Удовлетворительно'}")
         except Exception as e:
-            if not self.test_mode:
-                QMessageBox.warning(self, "Ошибка", f"Ошибка интерполяции: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка интерполяции: {str(e)}")
             import traceback
             print(traceback.format_exc())
     
@@ -746,9 +758,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.well_data.pressure = apply_kriging_interpolation(self.well_data.time, self.well_data.pressure)
             self.well_data.flow_rate = apply_kriging_interpolation(self.well_data.time, self.well_data.flow_rate)
             self.on_plot_dimensionless_selected()
-            QMessageBox.information(self, "Кригинг интерполяция", "Данные интерполированы с помощью кригинга")
+            self.show_info("Кригинг интерполяция", "Данные интерполированы с помощью кригинга")
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка кригинг интерполяции: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка кригинг интерполяции: {str(e)}")
     
     def on_rbf_interpolate(self):
         """RBF-интерполяция данных"""
@@ -774,9 +786,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.well_data.pressure_std = std_p
             self.well_data.flow_rate_std = std_q
             self.on_plot_dimensionless_selected()
-            QMessageBox.information(self, "GP интерполяция", "Данные интерполированы с помощью гауссовских процессов")
+            self.show_info("GP интерполяция", "Данные интерполированы с помощью гауссовских процессов")
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка GP интерполяции: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка GP интерполяции: {str(e)}")
     
     def on_physics_constrained_interpolate(self):
         """Физически ограниченная интерполяция"""
@@ -788,10 +800,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.well_data.flow_rate = apply_physics_constrained_interpolation(
                 self.well_data.time, self.well_data.flow_rate, 'flow_rate')
             self.on_plot_dimensionless_selected()
-            QMessageBox.information(self, "Физически ограниченная интерполяция", 
-                                  "Данные интерполированы с учетом физических ограничений")
+            self.show_info("Физически ограниченная интерполяция", 
+                          "Данные интерполированы с учетом физических ограничений")
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка физически ограниченной интерполяции: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка физически ограниченной интерполяции: {str(e)}")
     
     def on_adaptive_interpolate(self):
         """Адаптивная интерполяция с автоматическим выбором метода"""
@@ -801,15 +813,15 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.well_data.pressure = apply_adaptive_interpolation(self.well_data.time, self.well_data.pressure)
             self.well_data.flow_rate = apply_adaptive_interpolation(self.well_data.time, self.well_data.flow_rate)
             self.on_plot_dimensionless_selected()
-            QMessageBox.information(self, "Адаптивная интерполяция", 
-                                  "Данные интерполированы с автоматическим выбором лучшего метода")
+            self.show_info("Адаптивная интерполяция", 
+                          "Данные интерполированы с автоматическим выбором лучшего метода")
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка адаптивной интерполяции: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка адаптивной интерполяции: {str(e)}")
     
     def on_dimensionless_analysis(self):
         """Анализ безразмерных кривых"""
         if self.well_data is None:
-            QMessageBox.warning(self, "Ошибка", "Нет данных для анализа")
+            self.show_warning("Ошибка", "Нет данных для анализа")
             return
         
         try:
@@ -838,15 +850,15 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # Отображаем график
             fig.show()
-            QMessageBox.information(self, "Безразмерный анализ", 
-                                  "График безразмерных кривых построен")
+            self.show_info("Безразмерный анализ", 
+                          "График безразмерных кривых построен")
             
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка безразмерного анализа: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка безразмерного анализа: {str(e)}")
 
     def on_dimensionless_interpolation(self):
         if self.well_data is None:
-            QMessageBox.warning(self, "Ошибка", "Нет данных для интерполяции")
+            self.show_warning("Ошибка", "Нет данных для интерполяции")
             return
 
         well_params = {
@@ -877,7 +889,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 method='adaptive'
             )
             fig.show()
-            QMessageBox.information(self, "Интерполяция", "Адаптивная интерполяция выполнена")
+            self.show_info("Интерполяция", "Адаптивная интерполяция выполнена")
 
             # Оценка качества на валидационном файле, если загружен
             if self.validation_well_data_list:
@@ -920,19 +932,19 @@ class MyApp(QMainWindow, Ui_mainWindow):
                         P_ref=pD_val,
                     )
                     self.text_report.append(f"Метрики валидации: RMSE={metrics['rmse']:.4e}, MAE={metrics['mae']:.4e}, MAPE={metrics['mape']:.2f}%")
-                    QMessageBox.information(self, "Качество интерполяции",
-                                            f"RMSE={metrics['rmse']:.4e}\nMAE={metrics['mae']:.4e}\nMAPE={metrics['mape']:.2f}%")
+                    self.show_info("Качество интерполяции",
+                                   f"RMSE={metrics['rmse']:.4e}\nMAE={metrics['mae']:.4e}\nMAPE={metrics['mape']:.2f}%")
                 except Exception as e:
                     self.text_report.append(f"⚠️ Ошибка оценки качества: {e}")
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка: {str(e)}")
     
 
     '''    
     def on_dimensionless_interpolation(self):
         """Интерполяция в пространстве безразмерных кривых"""
         if self.well_data is None:
-            QMessageBox.warning(self, "Ошибка", "Нет данных для интерполяции")
+            self.show_warning("Ошибка", "Нет данных для интерполяции")
             return
         
         try:
@@ -966,17 +978,17 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # Отображаем график
             fig.show()
-            QMessageBox.information(self, "Безразмерная интерполяция", 
-                                  "Интерполяция в пространстве безразмерных кривых выполнена")
+            self.show_info("Безразмерная интерполяция", 
+                          "Интерполяция в пространстве безразмерных кривых выполнена")
             
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка безразмерной интерполяции: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка безразмерной интерполяции: {str(e)}")
     '''
     
     def on_dimensionless_extrapolation(self):
         """Экстраполяция безразмерных кривых"""
         if self.well_data is None:
-            QMessageBox.warning(self, "Ошибка", "Нет данных для экстраполяции")
+            self.show_warning("Ошибка", "Нет данных для экстраполяции")
             return
         
         try:
@@ -1009,11 +1021,11 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # Отображаем график
             fig.show()
-            QMessageBox.information(self, "Безразмерная экстраполяция", 
-                                  "Экстраполяция безразмерных кривых выполнена")
+            self.show_info("Безразмерная экстраполяция", 
+                          "Экстраполяция безразмерных кривых выполнена")
             
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка безразмерной экстраполяции: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка безразмерной экстраполяции: {str(e)}")
     
     def on_create_type_curves(self):
         """Создание библиотеки эталонных кривых"""
@@ -1029,11 +1041,11 @@ class MyApp(QMainWindow, Ui_mainWindow):
             # Сохраняем в атрибут класса
             self.type_curves = type_curves
             
-            QMessageBox.information(self, "Эталонные кривые", 
-                                  f"Создана библиотека из {len(type_curves)} эталонных кривых")
+            self.show_info("Эталонные кривые", 
+                          f"Создана библиотека из {len(type_curves)} эталонных кривых")
             
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка создания эталонных кривых: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка создания эталонных кривых: {str(e)}")
     
     
     
@@ -1150,9 +1162,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
             filtered = apply_ml_filter(self.well_data.pressure, 'savitzky_golay', window_length=5, polyorder=2)
             self.well_data.pressure = filtered
             self.on_plot_dimensionless_selected()
-            QMessageBox.information(self, "ML фильтрация", "Данные отфильтрованы с помощью ML")
+            self.show_info("ML фильтрация", "Данные отфильтрованы с помощью ML")
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка ML фильтрации: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка ML фильтрации: {str(e)}")
             
     def on_detect_outliers(self):
         """Обнаружение выбросов"""
@@ -1163,12 +1175,12 @@ class MyApp(QMainWindow, Ui_mainWindow):
             outliers = detect_outliers(self.well_data.pressure, 'iqr', threshold=1.5)
             outlier_count = outliers.sum()
             
-            QMessageBox.information(self, "Обнаружение выбросов", f"Найдено {outlier_count} выбросов")
+            self.show_info("Обнаружение выбросов", f"Найдено {outlier_count} выбросов")
             
             # Обновляем график
             self.on_plot_dimensionless_selected()
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка обнаружения выбросов: {str(e)}")
+            self.show_warning("Ошибка", f"Ошибка обнаружения выбросов: {str(e)}")
     
     def plot_outliers_with_highlight(self, outliers: pd.Series, plot_type: str):
         """Построение графика с выделенными выбросами"""
@@ -1222,9 +1234,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     'FlowRate': self.well_data.flow_rate
                 })
                 export_df.to_csv(file_path, index=False)
-                QMessageBox.information(self, "Экспорт", "Данные успешно экспортированы")
+                self.show_info("Экспорт", "Данные успешно экспортированы")
             except Exception as e:
-                QMessageBox.warning(self, "Ошибка экспорта", f"Не удалось экспортировать данные: {str(e)}")
+                self.show_warning("Ошибка экспорта", f"Не удалось экспортировать данные: {str(e)}")
     
     def on_analyze_flow_regime(self):
         """Анализ режима течения"""
@@ -1243,8 +1255,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 Параметры:
 {chr(10).join([f'{k}: {v}' for k, v in analysis.parameters.items()])}
 """
-
-        QMessageBox.information(self, "Анализ режима течения", result_text)
+        self.show_info("Анализ режима течения", result_text)
 
     def on_compute_productivity(self):
         """Вычисление индекса продуктивности"""
