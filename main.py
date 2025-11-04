@@ -13,26 +13,11 @@ from ui import Ui_mainWindow
 
 from helpers.parse_well_data import parse_well_data
 from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
-                               detect_outliers,
-                               apply_kriging_interpolation, apply_rbf_interpolation,
-                               apply_gp_interpolation, apply_physics_constrained_interpolation,
-                               apply_adaptive_interpolation)
-from helpers.dimensionless_analysis import (
-    convert_to_dimensionless_curves,
-    interpolate_dimensionless_curves,
-    extrapolate_dimensionless_curves,
-    create_dimensionless_type_curves,
-)
-from helpers.dimensionless_plotting import (
-    plot_dimensionless_analysis,
-    plot_interpolation_comparison,
-    plot_extrapolation_comparison,
-    PyQtGraphDimensionlessPlotter,
-    plot_dimensionless_grouped,
-)
+                               detect_outliers)
+from helpers.dimensionless_analysis import convert_to_dimensionless_curves
+from helpers.dimensionless_plotting import plot_dimensionless_grouped
 from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator                                                                                         
 from schemas.well_data import WellTimeSeries
-import pyqtgraph as pg
 
 
 
@@ -52,7 +37,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.well_data_list = []  # Список WellTimeSeries объектов
         self.current_well_index = 0  # Индекс текущей скважины
         self.validation_well_data_list = []  # Данные для проверки качества интерполяции
-        # self.current_plot_type = "pressure"  # Тип текущего графика
         
         # Создаем профессиональный интерфейс с вкладками
         self.setup_professional_interface()
@@ -86,6 +70,26 @@ class MyApp(QMainWindow, Ui_mainWindow):
         """Показывает сообщение об ошибке (только если не test_mode)"""
         if not self.test_mode:
             QMessageBox.critical(self, title, message)
+    
+    def _get_well_params(self, well: WellTimeSeries, 
+                        default_k: float = 1.0, 
+                        default_mu: float = 1.0, 
+                        default_B: float = 1.0,
+                        default_phi: float = 0.1, 
+                        default_c_t: float = 1e-4) -> dict:
+        """Создает словарь параметров скважины для безразмерного анализа"""
+        return {
+            'k': default_k,
+            'h': well.thickness,
+            'mu': default_mu,
+            'B': default_B,
+            'phi': default_phi,
+            'c_t': default_c_t,
+            'L': well.fracture_length,
+            'skin': well.skin,
+            'N': well.fractures_count,
+            'a_L': well.a_l_ratio
+        }
 
     def setup_professional_interface(self):
         """Создает профессиональный интерфейс с вкладками для анализа ГРП"""
@@ -334,7 +338,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         # Таблица для отображения данных
         self.data_table = QTableView()
-        # self.data_table.setEditTriggers(self.data_table.)  # запрет редактирования
         self.data_table.setAlternatingRowColors(True)
         self.data_table.setSelectionBehavior(self.data_table.SelectionBehavior.SelectRows)
         self.data_table.horizontalHeader().setStretchLastSection(True)
@@ -351,9 +354,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
     def setup_event_handlers(self):
         """Настройка обработчиков событий"""
         # Временные ряды
-        # self.well_combo_dim.currentIndexChanged.connect(self.on_well_selection_changed)
         self.plot_btn.clicked.connect(self.on_plot_dimensionless_selected)
-        #self.smooth_btn.clicked.connect(self.on_smooth_data)
         self.interp_btn.clicked.connect(self.on_interpolate_data)
         self.ml_filter_btn.clicked.connect(self.on_ml_filter)
         self.outlier_btn.clicked.connect(self.on_detect_outliers)
@@ -389,10 +390,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
         try:
             well_data_list, error_msg = parse_well_data(file_path)
             if error_msg is not None:
-                QMessageBox.warning(self, "Ошибка загрузки", error_msg)
+                self.show_warning("Ошибка загрузки", error_msg)
                 return
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка загрузки", f"Неожиданная ошибка при загрузке файла: {str(e)}")
+            self.show_warning("Ошибка загрузки", f"Неожиданная ошибка при загрузке файла: {str(e)}")
             return
 
         self.well_data_list = well_data_list
@@ -475,12 +476,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     well = self.well_data_list[0]
                     # Конвертируем в безразмерные параметры
                     from helpers.dimensionless_analysis import convert_to_dimensionless_curves
-                    well_params = {
-                        'k': 1.0, 'h': well.thickness, 'mu': 1.0, 'B': 1.0,
-                        'phi': 0.1, 'c_t': 1e-4, 'L': well.fracture_length,
-                        'skin': well.skin, 'N': well.fractures_count,
-                        'a_L': well.a_l_ratio
-                    }
+                    well_params = self._get_well_params(well)
                     dim_data = convert_to_dimensionless_curves(
                         well.time, well.pressure, well.flow_rate, well_params
                     )
@@ -554,20 +550,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.well_data_list:
             self.well_combo_dim.setCurrentIndex(self.current_well_index)
     
-    def on_well_selection_changed(self, index):
-        """Обработчик изменения выбора скважины"""
-        if 0 <= index < len(self.well_data_list):
-            self.current_well_index = index
-            self.update_grp_parameters()
-            self.update_interface_parameters()
-            # Автоматически обновляем график
-            self.on_plot_timeseries()
-    
-    def on_well_selection_dim_changed(self, index):
-        if 0 <= index < len(self.well_data_list):
-            self.current_well_index = index
-            # Можно автоматически перестроить график, если нужно
-    
     def update_grp_parameters(self):
         """Обновляет отображение параметров ГРП"""
         current_well = self.current_well_data
@@ -580,63 +562,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.fracture_width_label.setText(f"Ширина трещины: {current_well.fracture_width:.3f} м")
         self.fracture_length_label.setText(f"Длина трещины: {current_well.fracture_length:.1f} м")
         self.al_ratio_label.setText(f"a/L: {current_well.a_l_ratio:.3f}")
-    
-    def update_plot_types(self):
-        """Обновление типов графиков в зависимости от галочки безразмерности"""
-        is_dimensionless = hasattr(self, 'dimensionless_checkbox') and self.dimensionless_checkbox.isChecked()
-        
-        if is_dimensionless:
-            # Для безразмерных графиков обновляем список
-            self.plot_type_combo.clear()
-            self.plot_type_combo.addItems([
-                "Безразмерное давление vs Y",
-                "Безразмерный дебит vs Y",
-                "Безразмерные параметры (X-Y)",
-                "Сравнение с эталонными кривыми"
-            ])
-        else:
-            # Для обычных графиков стандартный список
-            self.plot_type_combo.clear()
-            self.plot_type_combo.addItems([
-                "Давление vs Время",
-                "Дебит vs Время", 
-                "Производная давления",
-                "Производная дебита",
-                "Давление vs Дебит",
-                "Безразмерные параметры (X-Y)",
-                "Логарифмический P(t) с инверсией",
-                "Логарифмический Q(t)",
-                "Логарифмическая производная P"
-            ])
-    
-    # Обработчики событий для временных рядов
-    def on_plot_timeseries(self):
-        """Построение графиков временных рядов - ТОЛЬКО БЕЗРАЗМЕРНЫЕ"""
-        current_well = self.current_well_data
-        if current_well is None:
-            return
-            
-        self.on_plot_dimensionless_selected()
-         
-
-    def on_smooth_data(self):
-        """Сглаживание данных"""
-        if self.well_data is None:
-            return
-            
-        plot_type = self.plot_type_combo.currentText()
-        if plot_type in ["Давление vs Время", "Дебит vs Время"]:
-            from helpers.timeseries import smooth_series
-            
-            if plot_type == "Давление vs Время":
-                smoothed = smooth_series(self.well_data.pressure, window=5)
-                self.well_data.pressure = smoothed
-            else:
-                smoothed = smooth_series(self.well_data.flow_rate, window=5)
-                self.well_data.flow_rate = smoothed
-                
-            self.on_plot_timeseries()
-            self.show_info("Сглаживание", "Данные сглажены")
     
     def on_interpolate_data(self):
         """Интерполяция данных безразмерных кривых"""
@@ -671,12 +596,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             n_nan_flow = self.well_data.flow_rate.isna().sum()
             
             # Используем интерполяцию безразмерных кривых вместо простой математики
-            well_params = {
-                'k': 1.0, 'h': self.well_data.thickness, 'mu': 1.0, 'B': 1.0,
-                'phi': 0.1, 'c_t': 1e-4, 'L': self.well_data.fracture_length,
-                'skin': self.well_data.skin, 'N': self.well_data.fractures_count,
-                'a_L': self.well_data.a_l_ratio
-            }
+            well_params = self._get_well_params(self.well_data)
             
             # Конвертируем в безразмерные параметры
             from helpers.dimensionless_analysis import convert_to_dimensionless_curves
@@ -806,305 +726,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
             import traceback
             print(traceback.format_exc())
     
-    def on_kriging_interpolate(self):
-        """Кригинг-интерполяция данных"""
-        if self.well_data is None:
-            return
-        try:
-            self.well_data.pressure = apply_kriging_interpolation(self.well_data.time, self.well_data.pressure)
-            self.well_data.flow_rate = apply_kriging_interpolation(self.well_data.time, self.well_data.flow_rate)
-            self.on_plot_dimensionless_selected()
-            self.show_info("Кригинг интерполяция", "Данные интерполированы с помощью кригинга")
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка кригинг интерполяции: {str(e)}")
-    
-    def on_rbf_interpolate(self):
-        """RBF-интерполяция данных"""
-        if self.well_data is None:
-            return
-        try:
-            self.well_data.pressure = apply_rbf_interpolation(self.well_data.time, self.well_data.pressure)
-            self.well_data.flow_rate = apply_rbf_interpolation(self.well_data.time, self.well_data.flow_rate)
-            self.on_plot_dimensionless_selected()
-            QMessageBox.information(self, "RBF интерполяция", "Данные интерполированы с помощью RBF")
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка RBF интерполяции: {str(e)}")
-    
-    def on_gp_interpolate(self):
-        """GP-интерполяция данных с оценкой неопределенности"""
-        if self.well_data is None:
-            return
-        try:
-            interpolated_p, std_p = apply_gp_interpolation(self.well_data.time, self.well_data.pressure, return_std=True)
-            interpolated_q, std_q = apply_gp_interpolation(self.well_data.time, self.well_data.flow_rate, return_std=True)
-            self.well_data.pressure = interpolated_p
-            self.well_data.flow_rate = interpolated_q
-            self.well_data.pressure_std = std_p
-            self.well_data.flow_rate_std = std_q
-            self.on_plot_dimensionless_selected()
-            self.show_info("GP интерполяция", "Данные интерполированы с помощью гауссовских процессов")
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка GP интерполяции: {str(e)}")
-    
-    def on_physics_constrained_interpolate(self):
-        """Физически ограниченная интерполяция"""
-        if self.well_data is None:
-            return
-        try:
-            self.well_data.pressure = apply_physics_constrained_interpolation(
-                self.well_data.time, self.well_data.pressure, 'pressure')
-            self.well_data.flow_rate = apply_physics_constrained_interpolation(
-                self.well_data.time, self.well_data.flow_rate, 'flow_rate')
-            self.on_plot_dimensionless_selected()
-            self.show_info("Физически ограниченная интерполяция", 
-                          "Данные интерполированы с учетом физических ограничений")
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка физически ограниченной интерполяции: {str(e)}")
-    
-    def on_adaptive_interpolate(self):
-        """Адаптивная интерполяция с автоматическим выбором метода"""
-        if self.well_data is None:
-            return
-        try:
-            self.well_data.pressure = apply_adaptive_interpolation(self.well_data.time, self.well_data.pressure)
-            self.well_data.flow_rate = apply_adaptive_interpolation(self.well_data.time, self.well_data.flow_rate)
-            self.on_plot_dimensionless_selected()
-            self.show_info("Адаптивная интерполяция", 
-                          "Данные интерполированы с автоматическим выбором лучшего метода")
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка адаптивной интерполяции: {str(e)}")
-    
-    def on_dimensionless_analysis(self):
-        """Анализ безразмерных кривых"""
-        if self.well_data is None:
-            self.show_warning("Ошибка", "Нет данных для анализа")
-            return
-        
-        try:
-            # Параметры скважины
-            well_params = {
-                'k': 1.0,  # Проницаемость, мД
-                'h': self.well_data.thickness,
-                'mu': 1.0,  # Вязкость, мПа·с
-                'B': 1.0,  # Объемный коэффициент
-                'phi': 0.1,  # Пористость
-                'c_t': 1e-4,  # Общая сжимаемость, 1/атм
-                'L': self.well_data.fracture_length,
-                'skin': self.well_data.skin,
-                'N': self.well_data.fractures_count,
-                'a_L': self.well_data.a_l_ratio
-            }
-            
-            # Создаем график безразмерного анализа
-            fig = plot_dimensionless_analysis(
-                self.well_data.time, 
-                self.well_data.pressure, 
-                self.well_data.flow_rate,
-                well_params,
-                'pressure'
-            )
-            
-            # Отображаем график
-            fig.show()
-            self.show_info("Безразмерный анализ", 
-                          "График безразмерных кривых построен")
-            
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка безразмерного анализа: {str(e)}")
-
-    def on_dimensionless_interpolation(self):
-        if self.well_data is None:
-            self.show_warning("Ошибка", "Нет данных для интерполяции")
-            return
-
-        well_params = {
-            'k': 1.0, 'h': self.well_data.thickness, 'mu': 1.0, 'B': 1.0,
-            'phi': 0.1, 'c_t': 1e-4, 'L': self.well_data.fracture_length,
-            'skin': self.well_data.skin, 'N': self.well_data.fractures_count,
-            'a_L': self.well_data.a_l_ratio
-        }
-
-        time_min = self.well_data.time.min()
-        time_max = self.well_data.time.max()
-        target_times = np.linspace(time_min, time_max, 50)
-
-        target_params = {
-            "Skin": self.well_data.skin,
-            "N": self.well_data.fractures_count,
-            "a_L": self.well_data.a_l_ratio
-        }
-
-        try:
-            fig = plot_interpolation_comparison(
-                self.well_data.time,
-                self.well_data.pressure,
-                self.well_data.flow_rate,
-                well_params,
-                target_times,
-                target_params,
-                method='adaptive'
-            )
-            fig.show()
-            self.show_info("Интерполяция", "Адаптивная интерполяция выполнена")
-
-            # Оценка качества на валидационном файле, если загружен
-            if self.validation_well_data_list:
-                try:
-                    val_well = self.validation_well_data_list[0]
-                    val_params = {
-                        'k': 1.0, 'h': val_well.thickness, 'mu': 1.0, 'B': 1.0,
-                        'phi': 0.1, 'c_t': 1e-4, 'L': val_well.fracture_length,
-                        'skin': val_well.skin, 'N': val_well.fractures_count,
-                        'a_L': val_well.a_l_ratio
-                    }
-
-                    # Конвертация в безразмерные для обучающего и валидационного наборов
-                    train_dim = convert_to_dimensionless_curves(
-                        self.well_data.time, self.well_data.pressure, self.well_data.flow_rate, well_params
-                    )
-                    val_dim = convert_to_dimensionless_curves(
-                        val_well.time, val_well.pressure, val_well.flow_rate, val_params
-                    )
-
-                    # Обучение интерполятора и сравнение с эталоном
-                    from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator as DCI
-                    interp = DCI(methods=('linear', 'rbf', 'gp'),
-                                 constraints=dict(monotonic=True, positive=True, smooth=True, clip_range=(0, 5)))
-                    param_grid = np.array([[train_dim.skin, train_dim.N, train_dim.a_L]])
-                    Y_grid = np.asarray(train_dim.Y)
-                    P_curves = np.asarray([train_dim.pressure / train_dim.delta_p_i])
-                    interp.fit(param_grid, Y_grid, P_curves)
-                    pred_series = interp.predict(
-                        skin=target_params.get("Skin", train_dim.skin),
-                        N=target_params.get("N", train_dim.N),
-                        a_L=target_params.get("a_L", train_dim.a_L)
-                    )
-                    # Приводим валидационный pD к сетке предсказания по Y
-                    pD_val = val_dim.pressure / (val_dim.delta_p_i if val_dim.delta_p_i != 0 else 1.0)
-                    metrics = interp.compare_with_reference(
-                        Y_pred=pred_series.index.values,
-                        P_pred=pred_series.values,
-                        Y_ref=np.asarray(val_dim.Y),
-                        P_ref=pD_val,
-                    )
-                    self.text_report.append(f"Метрики валидации: RMSE={metrics['rmse']:.4e}, MAE={metrics['mae']:.4e}, MAPE={metrics['mape']:.2f}%")
-                    self.show_info("Качество интерполяции",
-                                   f"RMSE={metrics['rmse']:.4e}\nMAE={metrics['mae']:.4e}\nMAPE={metrics['mape']:.2f}%")
-                except Exception as e:
-                    self.text_report.append(f"⚠️ Ошибка оценки качества: {e}")
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка: {str(e)}")
-    
-
-    '''    
-    def on_dimensionless_interpolation(self):
-        """Интерполяция в пространстве безразмерных кривых"""
-        if self.well_data is None:
-            self.show_warning("Ошибка", "Нет данных для интерполяции")
-            return
-        
-        try:
-            # Параметры скважины
-            well_params = {
-                'k': 1.0, 'h': self.well_data.thickness, 'mu': 1.0, 'B': 1.0,
-                'phi': 0.1, 'c_t': 1e-4, 'L': self.well_data.fracture_length,
-                'skin': self.well_data.skin, 'N': self.well_data.fractures_count,
-                'a_L': self.well_data.a_l_ratio
-            }
-            
-            # Создаем целевые временные точки
-            time_min = self.well_data.time.min()
-            time_max = self.well_data.time.max()
-            target_times = np.linspace(time_min, time_max, 50)
-            
-            # Параметры для интерполяции
-            target_params = well_params.copy()
-            
-            # Интерполируем
-            interpolated_pressure, interpolated_flow = interpolate_dimensionless_curves(
-                self.well_data.time, self.well_data.pressure, self.well_data.flow_rate,
-                well_params, target_times, target_params, 'rbf'
-            )
-            
-            # Создаем график сравнения
-            fig = plot_interpolation_comparison(
-                self.well_data.time, self.well_data.pressure, self.well_data.flow_rate,
-                well_params, target_times, target_params, 'rbf'
-            )
-            
-            # Отображаем график
-            fig.show()
-            self.show_info("Безразмерная интерполяция", 
-                          "Интерполяция в пространстве безразмерных кривых выполнена")
-            
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка безразмерной интерполяции: {str(e)}")
-    '''
-    
-    def on_dimensionless_extrapolation(self):
-        """Экстраполяция безразмерных кривых"""
-        if self.well_data is None:
-            self.show_warning("Ошибка", "Нет данных для экстраполяции")
-            return
-        
-        try:
-            # Параметры скважины
-            well_params = {
-                'k': 1.0, 'h': self.well_data.thickness, 'mu': 1.0, 'B': 1.0,
-                'phi': 0.1, 'c_t': 1e-4, 'L': self.well_data.fracture_length,
-                'skin': self.well_data.skin, 'N': self.well_data.fractures_count,
-                'a_L': self.well_data.a_l_ratio
-            }
-            
-            # Создаем будущие временные точки
-            time_max = self.well_data.time.max()
-            future_times = np.linspace(time_max, time_max * 2, 30)
-            
-            # Параметры для экстраполяции
-            extrapolation_params = well_params.copy()
-            
-            # Экстраполируем
-            extrapolated_pressure, extrapolated_flow = extrapolate_dimensionless_curves(
-                self.well_data.time, self.well_data.pressure, self.well_data.flow_rate,
-                well_params, future_times, extrapolation_params, 'physics_constrained'
-            )
-            
-            # Создаем график экстраполяции
-            fig = plot_extrapolation_comparison(
-                self.well_data.time, self.well_data.pressure, self.well_data.flow_rate,
-                well_params, future_times, extrapolation_params, 'physics_constrained'
-            )
-            
-            # Отображаем график
-            fig.show()
-            self.show_info("Безразмерная экстраполяция", 
-                          "Экстраполяция безразмерных кривых выполнена")
-            
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка безразмерной экстраполяции: {str(e)}")
-    
-    def on_create_type_curves(self):
-        """Создание библиотеки эталонных кривых"""
-        try:
-            # Создаем библиотеку эталонных кривых
-            type_curves = create_dimensionless_type_curves(
-                skin_range=(-5, 20),
-                n_fractures_range=(1, 50),
-                a_l_range=(0.01, 0.5),
-                n_points=100
-            )
-            
-            # Сохраняем в атрибут класса
-            self.type_curves = type_curves
-            
-            self.show_info("Эталонные кривые", 
-                          f"Создана библиотека из {len(type_curves)} эталонных кривых")
-            
-        except Exception as e:
-            self.show_warning("Ошибка", f"Ошибка создания эталонных кривых: {str(e)}")
-    
-    
-    
     def on_plot_dimensionless_selected(self):
         """Обработка нажатия на кнопку 'Построить график'."""
         self.dimensionless_plot.clear()
@@ -1117,12 +738,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         try:
             # Параметры скважины
-            well_params = {
-                'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
-                'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
-                'skin': current_well.skin, 'N': current_well.fractures_count,
-                'a_L': current_well.a_l_ratio
-            }
+            well_params = self._get_well_params(current_well)
             
             # 1️⃣ Конвертация в безразмерные параметры
             dim_data = convert_to_dimensionless_curves(
@@ -1163,12 +779,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             if self.validation_well_data_list:
                 try:
                     ref_well = self.validation_well_data_list[0]
-                    ref_params = {
-                        'k': 1.0, 'h': ref_well.thickness, 'mu': 1.0, 'B': 1.0,
-                        'phi': 0.1, 'c_t': 1e-4, 'L': ref_well.fracture_length,
-                        'skin': ref_well.skin, 'N': ref_well.fractures_count,
-                        'a_L': ref_well.a_l_ratio
-                    }
+                    ref_params = self._get_well_params(ref_well)
                     ref_dim = convert_to_dimensionless_curves(
                         ref_well.time, ref_well.pressure, ref_well.flow_rate, ref_params
                     )
@@ -1331,7 +942,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 Общая длина трещин: {productivity['total_fracture_length']:.2f} м
 """
 
-        QMessageBox.information(self, "Индекс продуктивности", result_text)
+        self.show_info("Индекс продуктивности", result_text)
 
     def on_detect_transitions(self):
         """Обнаружение переходов режимов"""
@@ -1352,7 +963,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         else:
             result_text = "Переходы режимов течения не обнаружены"
 
-        QMessageBox.information(self, "Переходы режимов", result_text)
+        self.show_info("Переходы режимов", result_text)
 
     def on_plot_bilinear(self):
         """Построение кривой билинейного течения"""
@@ -1422,7 +1033,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 {chr(10).join([f'{k}: {v}' for k, v in match_result.estimated_parameters.items()])}
 """
 
-        QMessageBox.information(self, "Сопоставление кривых", result_text)
+        self.show_info("Сопоставление кривых", result_text)
 
     def on_export_report(self):
         """Экспорт отчета"""
@@ -1456,215 +1067,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     f.write(f"  Средний дебит: {productivity['average_flow_rate']:.2f} м³/сут\n")
                     f.write(f"  Среднее давление: {productivity['average_pressure']:.2f} атм\n\n")
 
-                QMessageBox.information(self, "Экспорт отчета", "Отчет успешно экспортирован")
+                self.show_info("Экспорт отчета", "Отчет успешно экспортирован")
             except Exception as e:
-                QMessageBox.warning(self, "Ошибка экспорта", f"Не удалось экспортировать отчет: {str(e)}")
-
-
-    def _get_data(self):
-        """Возвращает время и выбранный показатель (старый метод)"""
-        if self.well_data is None:
-            return None, None
-        return self.well_data.time, self.well_data.pressure
-
-    def _plot_data(self, values, times, title: str = ""):
-        """Отрисовка графика (старый метод)"""
-        if self.plot_widget is None:
-            return
-        self.plot_widget.clear()
-        self.plot_widget.plot(values, times, pen='b')
-        if title:
-            self.plot_widget.setTitle(title)
-
-
-    
-    def _plot_dimensionless_pressure(self, current_well):
-        """Построение графика безразмерного давления в пространстве X-Y"""
-        try:
-            # Используем существующий конвертер из dimensionless_analysis
-            well_params = {
-                'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
-                'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
-                'skin': current_well.skin, 'N': current_well.fractures_count,
-                'a_L': current_well.a_l_ratio
-            }
-            
-            # Конвертируем в безразмерные параметры
-            from helpers.dimensionless_analysis import convert_to_dimensionless_curves
-            dimensionless_data = convert_to_dimensionless_curves(
-                current_well.time, current_well.pressure, current_well.flow_rate, well_params
-            )
-            
-            # Безразмерное давление
-            pD = dimensionless_data.pressure / dimensionless_data.delta_p_i
-            
-            # Отображаем
-            self.dimensionless_plot.clear()
-            self.dimensionless_plot.setLogMode(x=True, y=True)
-            
-            # Цветовая карта по величине pD
-            try:
-                cmap = pg.colormap.get('CET-L4') if hasattr(pg, 'colormap') else None
-                vmin, vmax = np.nanmin(pD), np.nanmax(pD)
-                if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
-                    vmin, vmax = 0.0, 1.0
-                colors = cmap.map((pD - vmin) / (vmax - vmin), mode='qcolor') if cmap is not None else None
-                
-                spots = [{"pos": (float(x), float(y)), "brush": (colors[i] if colors is not None else (200, 50, 50, 180)), "size": 6}
-                         for i, (x, y) in enumerate(zip(dimensionless_data.X, dimensionless_data.Y))]
-                scatter = pg.ScatterPlotItem()
-                scatter.addPoints(spots)
-                self.dimensionless_plot.addItem(scatter)
-            except Exception:
-                # Фоллбэк - обычные точки
-                self.dimensionless_plot.plot(dimensionless_data.X, dimensionless_data.Y, 
-                                           pen=None, symbol='o', symbolSize=6, symbolBrush='b')
-
-            self.dimensionless_plot.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
-            self.dimensionless_plot.setLabel('left', 'Y (безразмерный ёмкостной параметр)')
-            self.dimensionless_plot.setTitle(f'Безразмерное давление pD | Skin={current_well.skin:.1f}')
-            self.dimensionless_plot.showGrid(x=True, y=True)
-        
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка построения графика: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-
-    def _plot_dimensionless_flow(self, current_well):
-        """Построение графика безразмерного дебита в пространстве X-Y"""
-        try:
-            well_params = {
-                'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
-                'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
-                'skin': current_well.skin, 'N': current_well.fractures_count,
-                'a_L': current_well.a_l_ratio
-            }
-            
-            from helpers.dimensionless_analysis import convert_to_dimensionless_curves
-            dimensionless_data = convert_to_dimensionless_curves(
-                current_well.time, current_well.pressure, current_well.flow_rate, well_params
-            )
-            
-            # Безразмерный дебит
-            qD = dimensionless_data.flow_rate / dimensionless_data.Q
-            
-            self.dimensionless_plot.clear()
-            self.dimensionless_plot.setLogMode(x=True, y=True)
-            
-            try:
-                cmap = pg.colormap.get('CET-L8') if hasattr(pg, 'colormap') else None
-                vmin, vmax = np.nanmin(qD), np.nanmax(qD)
-                if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
-                    vmin, vmax = 0.0, 1.0
-                colors = cmap.map((qD - vmin) / (vmax - vmin), mode='qcolor') if cmap is not None else None
-                
-                spots = [{"pos": (float(x), float(y)), "brush": (colors[i] if colors is not None else (50, 150, 50, 180)), "size": 6}
-                         for i, (x, y) in enumerate(zip(dimensionless_data.X, dimensionless_data.Y))]
-                scatter = pg.ScatterPlotItem()
-                scatter.addPoints(spots)
-                self.dimensionless_plot.addItem(scatter)
-            except Exception:
-                self.dimensionless_plot.plot(dimensionless_data.X, dimensionless_data.Y, 
-                                           pen=None, symbol='s', symbolSize=6, symbolBrush='g')
-
-            self.dimensionless_plot.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
-            self.dimensionless_plot.setLabel('left', 'Y (безразмерный ёмкостной параметр)')
-            self.dimensionless_plot.setTitle(f'Безразмерный дебит qD | Skin={current_well.skin:.1f}')
-            self.dimensionless_plot.showGrid(x=True, y=True)
-            
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка построения графика: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-
-    def _plot_dimensionless_xy(self, current_well):
-        """Построение траектории в пространстве безразмерных параметров X-Y"""
-        try:
-            well_params = {
-                'k': 1.0, 'h': current_well.thickness, 'mu': 1.0, 'B': 1.0,
-                'phi': 0.1, 'c_t': 1e-4, 'L': current_well.fracture_length,
-                'skin': current_well.skin, 'N': current_well.fractures_count,
-                'a_L': current_well.a_l_ratio
-            }
-            
-            from helpers.dimensionless_analysis import convert_to_dimensionless_curves
-            dimensionless_data = convert_to_dimensionless_curves(
-                current_well.time, current_well.pressure, current_well.flow_rate, well_params
-            )
-            
-            # Просто траектория в X-Y пространстве
-            self.dimensionless_plot.clear()
-            self.dimensionless_plot.setLogMode(x=True, y=True)
-            
-            self.dimensionless_plot.plot(dimensionless_data.X, dimensionless_data.Y, 
-                                       pen=pg.mkPen(color=(100, 100, 200), width=2),
-                                       symbol='o', symbolSize=5, symbolBrush=(100, 100, 200))
-            
-            self.dimensionless_plot.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
-            self.dimensionless_plot.setLabel('left', 'Y (безразмерный ёмкостной параметр)')
-            self.dimensionless_plot.setTitle(f'Траектория в X-Y пространстве | Skin={current_well.skin:.1f}')
-            self.dimensionless_plot.showGrid(x=True, y=True)
-            
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Ошибка построения графика: {str(e)}")
-        
-        
-def compute_dimensionless_parameters(time_series: WellTimeSeries, time_clean, pressure_clean, flow_rate_clean):
-    """Вычисляет безразмерные параметры X и Y по правильным формулам."""
-    
-    # Параметры из данных скважины
-    k = 10e-15  # проницаемость, м² (10 мД)
-    mu = 0.001  # вязкость, Па*с (1 сП)
-    B = 1.2     # объемный коэффициент нефти
-    phi = 0.15  # пористость
-    ct = 1e-5   # общая сжимаемость, 1/атм
-
-    h = time_series.thickness  # толщина пласта
-    L = time_series.fracture_length  # длина трещины
-
-    # Начальное изменение давления
-    delta_p_i = pressure_clean.mean() if len(pressure_clean) > 0 else 1.0
-    delta_p_i = max(delta_p_i, 1.0)  # защита от деления на ноль
-
-    # Средний дебит
-    Q = flow_rate_clean.mean() if len(flow_rate_clean) > 0 else 1.0
-    Q = max(Q, 1e-10)  # защита от нуля
-
-    # ФИКС: Правильные формулы
-    # X = (0.00864 * k * h * Δp_i) / (μ * B * Q) - постоянный
-    denominator = mu * B * Q
-    X_value = (0.00864 * k * h * delta_p_i) / denominator
-    
-    # Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i) - зависит от времени
-    denominator_y = 24 * phi * ct * h * L**2 * delta_p_i
-    denominator_y = max(denominator_y, 1e-10)
-    
-    Y = (Q * B * time_clean) / denominator_y
-
-    # X одинаков для всех точек
-    X = np.full_like(Y, X_value)
-    
-    return X, Y
-
-def set_logarithmic_axes(plot_widget):
-        """Устанавливает логарифмические оси для графика."""
-        try:
-            plot_widget.setLogMode(x=True, y=True)
-        except Exception:
-            # Если не удается установить логарифмический режим
-            pass
-
-
-def invert_y_axis(plot_widget):
-    """Инвертирует Y-ось графика."""
-    try:
-        # Получаем текущий диапазон Y
-        y_range = plot_widget.getAxis('left').range
-        if y_range:
-            # Инвертируем диапазон
-            plot_widget.setYRange(y_range[1], y_range[0])
-    except Exception:
-        pass
+                self.show_warning("Ошибка экспорта", f"Не удалось экспортировать отчет: {str(e)}")
 
 
 if __name__ == "__main__":
