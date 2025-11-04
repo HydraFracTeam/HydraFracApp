@@ -64,8 +64,8 @@ def app_with_data(qapp):
         a_l_ratio=0.2
     )
     
-    app.well_data_list = [well_data]
-    app.current_well_index = 0
+    app.loaded_data = [well_data]
+    app.current_index = 0
     
     yield app
     
@@ -155,7 +155,7 @@ class TestGUIWithRealDialogs:
         app = app_with_data
         
         # Добавляем пропуски для интерполяции
-        app.well_data_list[0].pressure.iloc[10:15] = np.nan
+        app.loaded_data[0].pressure.iloc[10:15] = np.nan
         
         timer = setup_dialog_auto_closer(interval_ms=50)
         
@@ -164,7 +164,7 @@ class TestGUIWithRealDialogs:
         try:
             for _ in range(5):
                 # Восстанавливаем пропуски
-                app.well_data_list[0].pressure.iloc[10:15] = np.nan
+                app.loaded_data[0].pressure.iloc[10:15] = np.nan
                 
                 start = time.perf_counter()
                 app.on_interpolate_data()

@@ -9,11 +9,11 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from schemas.well_data import WellData, WellTimeSeries, FlowRegimeAnalysis, TypeCurveMatch
-from helpers.parse_well_data import parse_well_csv, validate_well_data
+from helpers.parse_well_data import parse_well_data, validate_well_data
 from helpers.grp_analysis import (
     compute_pressure_derivative, compute_flow_rate_derivative,
     analyze_flow_regime, generate_type_curves, match_type_curves,
-    compute_well_productivity_index, detect_flow_regime_transitions
+    compute_productivity_index, detect_flow_regime_transitions
 )
 from helpers.ml_methods import (
     MLInterpolator, MLFilter, AdvancedInterpolator,
@@ -62,7 +62,7 @@ class TestWellDataSchemas:
 class TestParseWellData:
     """Тесты для парсинга данных скважины"""
     
-    def test_parse_well_csv_success(self):
+    def test_parse_well_data_success(self):
         """Тест успешного парсинга CSV"""
         # Создаем тестовый CSV файл
         test_data = {
@@ -85,9 +85,11 @@ class TestParseWellData:
         df.to_csv('test_well_data.csv', index=False)
         
         try:
-            well_data, error = parse_well_csv('test_well_data.csv')
+            well_data_list, error = parse_well_data('test_well_data.csv')
             assert error is None
-            assert well_data is not None
+            assert well_data_list is not None
+            assert len(well_data_list) > 0
+            well_data = well_data_list[0]
             assert len(well_data.time) == 5
             assert well_data.skin == 0.05
         finally:
@@ -95,15 +97,15 @@ class TestParseWellData:
             if os.path.exists('test_well_data.csv'):
                 os.remove('test_well_data.csv')
     
-    def test_parse_well_csv_missing_columns(self):
+    def test_parse_well_data_missing_columns(self):
         """Тест парсинга с отсутствующими колонками"""
         test_data = {'Skin': [0.05], 'h': [10.0]}  # Неполные данные
         df = pd.DataFrame(test_data)
         df.to_csv('test_incomplete.csv', index=False)
         
         try:
-            well_data, error = parse_well_csv('test_incomplete.csv')
-            assert well_data is None
+            well_data_list, error = parse_well_data('test_incomplete.csv')
+            assert well_data_list is None
             assert error is not None
             assert "Отсутствуют обязательные колонки" in error
         finally:
@@ -195,7 +197,7 @@ class TestGRPAnalysis:
             fracture_width=1125.0, fracture_length=280.0, a_l_ratio=0.446429
         )
         
-        productivity = compute_well_productivity_index(ts)
+        productivity = compute_productivity_index(ts)
         assert 'productivity_index' in productivity
         assert 'fracture_efficiency' in productivity
         assert productivity['productivity_index'] > 0
@@ -251,8 +253,15 @@ class TestMLMethods:
         assert not clean_values.isna().any()
         
         # Проверяем физическую адекватность
-        assert clean_values.min() > 0, "Значения должны быть положительными"
-        assert clean_values.max() < 1000, "Значения не должны быть слишком большими"
+        min_val = clean_values.min()
+        max_val = clean_values.max()
+        # Преобразуем в скаляр, если это numpy scalar или pandas scalar
+        if hasattr(min_val, 'item'):
+            min_val = min_val.item()
+        if hasattr(max_val, 'item'):
+            max_val = max_val.item()
+        assert float(min_val) > 0, "Значения должны быть положительными"
+        assert float(max_val) < 1000, "Значения не должны быть слишком большими"
 
 
 class TestIntegration:
@@ -277,7 +286,7 @@ class TestIntegration:
         assert isinstance(flow_regime.regime_type, str)
         
         # 2. Вычисление индекса продуктивности
-        productivity = compute_well_productivity_index(ts)
+        productivity = compute_productivity_index(ts)
         assert productivity['productivity_index'] > 0
         assert isinstance(productivity['productivity_index'], (int, float))
         
@@ -292,8 +301,15 @@ class TestIntegration:
         
         # Проверяем физическую адекватность результатов
         assert 0 <= flow_regime.confidence <= 1, "Уверенность должна быть в диапазоне [0, 1]"
-        assert productivity['average_flow_rate'] > 0, "Средний дебит должен быть положительным"
-        assert productivity['average_pressure'] > 0, "Среднее давление должно быть положительным"
+        avg_flow = productivity['average_flow_rate']
+        avg_pressure = productivity['average_pressure']
+        # Преобразуем в скаляр, если это numpy scalar или pandas scalar
+        if hasattr(avg_flow, 'item'):
+            avg_flow = avg_flow.item()
+        if hasattr(avg_pressure, 'item'):
+            avg_pressure = avg_pressure.item()
+        assert float(avg_flow) > 0, "Средний дебит должен быть положительным"
+        assert float(avg_pressure) > 0, "Среднее давление должно быть положительным"
     
     def test_parse_well_data_multiple_groups(self):
         """Тест парсинга файла с несколькими группами данных"""
@@ -341,7 +357,7 @@ class TestIntegration:
         
         try:
             # Парсим данные
-            well_data_list, error_msg = parse_well_csv(temp_file)
+            well_data_list, error_msg = parse_well_data(temp_file)
             
             assert error_msg is None, f"Ошибка парсинга: {error_msg}"
             assert well_data_list is not None, "Список данных не должен быть None"

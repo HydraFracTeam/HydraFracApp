@@ -48,12 +48,12 @@ class TestMainFunctions:
             fractures_count=1,
             a_l_ratio=0.1
         )
-        self.app.well_data_list = [self.well_data]
-        self.app.current_well_index = 0
+        self.app.loaded_data = [self.well_data]
+        self.app.current_index = 0
     
     def test_get_well_params_defaults(self):
         """Тест создания параметров скважины с значениями по умолчанию"""
-        params = self.app._get_well_params(self.well_data)
+        params = self.app._get_params(self.well_data)
         
         assert params['k'] == DEFAULT_K
         assert params['mu'] == DEFAULT_MU
@@ -70,7 +70,7 @@ class TestMainFunctions:
         """Тест создания параметров скважины с кастомными значениями"""
         custom_k = 5.0
         custom_mu = 2.0
-        params = self.app._get_well_params(self.well_data, default_k=custom_k, default_mu=custom_mu)
+        params = self.app._get_params(self.well_data, default_k=custom_k, default_mu=custom_mu)
         
         assert params['k'] == custom_k
         assert params['mu'] == custom_mu
@@ -141,8 +141,8 @@ class TestMainIntegration:
         
         # Проверяем, что приложение создалось
         assert app is not None
-        assert hasattr(app, 'well_data_list')
-        assert hasattr(app, 'current_well_index')
+        assert hasattr(app, 'loaded_data')
+        assert hasattr(app, 'current_index')
     
 
 
@@ -164,8 +164,8 @@ class TestMainIntegration:
         
         # Проверяем, что приложение создалось
         assert app is not None
-        assert hasattr(app, 'well_data_list')
-        assert hasattr(app, 'current_well_index')
+        assert hasattr(app, 'loaded_data')
+        assert hasattr(app, 'current_index')
         assert app.test_mode is True
     
     def test_constants_defined(self):

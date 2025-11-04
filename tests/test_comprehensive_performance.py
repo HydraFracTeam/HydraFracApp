@@ -68,8 +68,8 @@ def app_with_data(qapp):
         a_l_ratio=0.2
     )
     
-    app.well_data_list = [well_data]
-    app.current_well_index = 0
+    app.loaded_data = [well_data]
+    app.current_index = 0
     
     yield app
     
@@ -131,7 +131,7 @@ class TestGUIResponseTime:
         times = []
         
         # Добавляем пропуски для интерполяции
-        app.well_data_list[0].pressure.iloc[10:15] = np.nan
+        app.loaded_data[0].pressure.iloc[10:15] = np.nan
         
         for _ in range(10):  # Меньше итераций, т.к. ML может быть медленнее
             start = time.perf_counter()
@@ -337,13 +337,13 @@ class TestFailureRate:
         exceptions = []
         
         # Добавляем пропуски
-        original_pressure = app.well_data_list[0].pressure.copy()
+        original_pressure = app.loaded_data[0].pressure.copy()
         
         for i in range(n_iterations):
             try:
                 # Восстанавливаем пропуски для каждой итерации
-                app.well_data_list[0].pressure = original_pressure.copy()
-                app.well_data_list[0].pressure.iloc[10:15] = np.nan
+                app.loaded_data[0].pressure = original_pressure.copy()
+                app.loaded_data[0].pressure.iloc[10:15] = np.nan
                 
                 app.on_interpolate_data()
                 QApplication.instance().processEvents()

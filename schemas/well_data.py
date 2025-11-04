@@ -41,6 +41,10 @@ class WellTimeSeries(BaseModel):
     flow_rate: pd.Series = Field(description="Дебит")
     flow_rate_derivative: Optional[pd.Series] = Field(default=None, description="Производная дебита")
     
+    # Безразмерные параметры из данных (если есть)
+    X: Optional[pd.Series] = Field(default=None, description="Безразмерный фильтрационный параметр X из данных")
+    Y: Optional[pd.Series] = Field(default=None, description="Безразмерный ёмкостной параметр Y из данных")
+    
     # Параметры скважины (константы для всего временного ряда)
     skin: float = Field(description="Фактор скин-эффекта")
     thickness: float = Field(description="Толщина пласта")

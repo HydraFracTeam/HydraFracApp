@@ -43,14 +43,14 @@ class TestGUIIntegration:
         app = MyApp()
         
         # Проверяем основные компоненты
-        assert hasattr(app, 'well_data_list')
-        assert hasattr(app, 'current_well_index')
+        assert hasattr(app, 'loaded_data')
+        assert hasattr(app, 'current_index')
         assert hasattr(app, 'plot_type_combo')
         assert hasattr(app, 'plot_widget')
         
         # Проверяем начальные значения
-        assert app.well_data_list == []
-        assert app.current_well_index == 0
+        assert app.loaded_data == []
+        assert app.current_index == 0
     
     def test_plot_type_combo_population(self):
         """Тест заполнения combo box типами графиков"""
@@ -104,12 +104,12 @@ class TestGUIIntegration:
         )
         
         # Добавляем данные в приложение
-        app.well_data_list = [well_data]
-        app.current_well_index = 0
+        app.loaded_data = [well_data]
+        app.current_index = 0
         
         # Проверяем, что данные загружены
-        assert app.well_data is not None
-        assert app.well_data == well_data
+        assert app.current_data is not None
+        assert app.current_data == well_data
     
     @patch('main.QFileDialog.getOpenFileName')
     def test_file_loading_dialog(self, mock_file_dialog):
@@ -200,8 +200,8 @@ class TestGUIFunctional:
         )
         
         # Добавляем данные
-        app.well_data_list = [well_data]
-        app.current_well_index = 0
+        app.loaded_data = [well_data]
+        app.current_index = 0
         
         # Устанавливаем тип графика
         app.plot_type_combo.setCurrentText("Давление vs Время")
@@ -237,8 +237,8 @@ class TestGUIFunctional:
         )
         
         # Добавляем данные
-        app.well_data_list = [well_data]
-        app.current_well_index = 0
+        app.loaded_data = [well_data]
+        app.current_index = 0
         
         # Устанавливаем тип графика
         app.plot_type_combo.setCurrentText("Безразмерные параметры (X-Y)")
@@ -273,8 +273,8 @@ class TestGUIFunctional:
         )
         
         # Добавляем данные
-        app.well_data_list = [well_data]
-        app.current_well_index = 0
+        app.loaded_data = [well_data]
+        app.current_index = 0
         
         # Устанавливаем тип графика
         app.plot_type_combo.setCurrentText("Логарифмический P(t) с инверсией")
@@ -304,7 +304,7 @@ class TestGUIErrorHandling:
         app = MyApp()
         
         # Убеждаемся, что нет данных
-        app.well_data_list = []
+        app.loaded_data = []
         
         # Устанавливаем тип графика
         app.plot_type_combo.setCurrentText("Давление vs Время")
@@ -340,8 +340,8 @@ class TestGUIErrorHandling:
         )
         
         # Добавляем данные
-        app.well_data_list = [well_data]
-        app.current_well_index = 0
+        app.loaded_data = [well_data]
+        app.current_index = 0
         
         # Устанавливаем тип графика
         app.plot_type_combo.setCurrentText("Давление vs Время")

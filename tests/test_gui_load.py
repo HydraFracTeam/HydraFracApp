@@ -41,7 +41,7 @@ def app_with_data(qapp):
     """Создает приложение с загруженными тестовыми данными"""
     from main import MyApp
     
-        app = MyApp(test_mode=True)  # Отключаем QMessageBox в тестах
+    app = MyApp(test_mode=True)  # Отключаем QMessageBox в тестах
     
     # Создаем тестовые данные с пропусками для тестирования интерполяции
     n_points = 50
@@ -65,8 +65,8 @@ def app_with_data(qapp):
         a_l_ratio=0.2
     )
     
-    app.well_data_list = [well_data]
-    app.current_well_index = 0
+    app.loaded_data = [well_data]
+    app.current_index = 0
     
     yield app
     
@@ -224,7 +224,7 @@ class TestGUILoadInterpolation:
         # Проверки
         assert exception_count == 0, f"Было {exception_count} исключений"
         assert not hang_detected, "Обнаружено зависание"
-        assert app.well_data is not None, "Данные должны существовать"
+        assert app.current_data is not None, "Данные должны существовать"
         
         print(f"\n✓ 100 кликов по интерполяции выполнено за {elapsed_time:.2f} секунд")
         print(f"  Среднее время на операцию: {elapsed_time/100*1000:.2f} мс")
@@ -234,22 +234,22 @@ class TestGUILoadInterpolation:
         app = app_with_data
         
         # Сохраняем исходные данные
-        original_pressure = app.well_data.pressure.copy()
-        original_flow_rate = app.well_data.flow_rate.copy()
+        original_pressure = app.current_data.pressure.copy()
+        original_flow_rate = app.current_data.flow_rate.copy()
         
         # Первая интерполяция
         app.on_interpolate_data()
         QApplication.instance().processEvents()
         
-        first_pressure = app.well_data.pressure.copy()
-        first_flow_rate = app.well_data.flow_rate.copy()
+        first_pressure = app.current_data.pressure.copy()
+        first_flow_rate = app.current_data.flow_rate.copy()
         
         # Вторая интерполяция на тех же данных
         app.on_interpolate_data()
         QApplication.instance().processEvents()
         
-        second_pressure = app.well_data.pressure.copy()
-        second_flow_rate = app.well_data.flow_rate.copy()
+        second_pressure = app.current_data.pressure.copy()
+        second_flow_rate = app.current_data.flow_rate.copy()
         
         # Результаты должны быть одинаковыми (идемпотентность)
         # Используем относительную разницу из-за возможных небольших численных различий
@@ -272,15 +272,15 @@ class TestGUILoadInterpolation:
         app = app_with_data
         
         # Сохраняем исходные данные
-        original_pressure = app.well_data.pressure.values.copy()
-        original_flow_rate = app.well_data.flow_rate.values.copy()
+        original_pressure = app.current_data.pressure.values.copy()
+        original_flow_rate = app.current_data.flow_rate.values.copy()
         
         # Первая интерполяция
         app.on_interpolate_data()
         QApplication.instance().processEvents()
         
-        first_pressure = app.well_data.pressure.values.copy()
-        first_flow_rate = app.well_data.flow_rate.values.copy()
+        first_pressure = app.current_data.pressure.values.copy()
+        first_flow_rate = app.current_data.flow_rate.values.copy()
         
         # Проверяем, что данные изменились (если были пропуски)
         if np.any(np.isnan(original_pressure)):
@@ -291,8 +291,8 @@ class TestGUILoadInterpolation:
         app.on_interpolate_data()
         QApplication.instance().processEvents()
         
-        second_pressure = app.well_data.pressure.values.copy()
-        second_flow_rate = app.well_data.flow_rate.values.copy()
+        second_pressure = app.current_data.pressure.values.copy()
+        second_flow_rate = app.current_data.flow_rate.values.copy()
         
         # Результаты должны быть одинаковыми
         np.testing.assert_array_almost_equal(
