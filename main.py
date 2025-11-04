@@ -2,10 +2,12 @@ import sys
 import pandas as pd
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtWidgets import (QLabel, QApplication, QMainWindow, QFileDialog, QMessageBox, 
+from PySide6.QtWidgets import (QLabel, QTableView, QApplication, QMainWindow, QFileDialog, QMessageBox, 
                                QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout,
                                QCheckBox)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from ui import Ui_mainWindow
 
@@ -325,6 +327,27 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.export_report_btn = QPushButton("Экспорт отчета")
         layout.addWidget(self.export_report_btn)
     
+    def setup_data_tab(self):
+        """Вкладка для просмотра загруженных данных (только чтение)"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # Таблица для отображения данных
+        self.data_table = QTableView()
+        # self.data_table.setEditTriggers(self.data_table.)  # запрет редактирования
+        self.data_table.setAlternatingRowColors(True)
+        self.data_table.setSelectionBehavior(self.data_table.SelectionBehavior.SelectRows)
+        self.data_table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.data_table)
+
+        # Текстовое поле для информации (например, имя файла или статистика)
+        self.data_info_label = QLabel("Здесь появится информация о загруженных данных")
+        self.data_info_label.setAlignment(Qt.AlignLeft)
+        layout.addWidget(self.data_info_label)
+
+        tab.setLayout(layout)
+        return tab
+    
     def setup_event_handlers(self):
         """Настройка обработчиков событий"""
         # Временные ряды
@@ -351,6 +374,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Результаты
         self.export_report_btn.clicked.connect(self.on_export_report)
 
+        self.data_tab = self.setup_data_tab()
+        self.tab_widget.addTab(self.data_tab, "Загруженные данные")
 
     def load_template(self):
         """Загрузка CSV файла с данными разведки месторождений"""
@@ -378,6 +403,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         # Обновляем отображение параметров ГРП
         self.update_grp_parameters()
+        
+        # Обновляем вкладку с загруженными данными
+        self.update_data_tab()
         
         # Обновляем старые поля для совместимости
         current_well = self.current_well_data
@@ -486,6 +514,34 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.width_doubleSpinBox.setValue(self.current_well_data.fracture_width)
         self.n_spinBox.setValue(self.current_well_data.fractures_count)
         self.aL_doubleSpinBox.setValue(self.current_well_data.a_l_ratio)
+    def update_data_tab(self):
+        """Обновляет таблицу на вкладке 'Загруженные данные'"""
+        if not self.well_data_list:
+            self.data_info_label.setText("Нет загруженных данных")
+            self.data_table.setModel(None)
+            return
+
+        # Преобразуем данные текущей скважины в DataFrame
+        current_well = self.current_well_data
+        df = pd.DataFrame({
+            "time": current_well.time,
+            "pressure": current_well.pressure,
+            "rate": current_well.flow_rate
+        })
+
+        # Создаем модель для QTableView
+        model = QStandardItemModel(df.shape[0], df.shape[1])
+        model.setHorizontalHeaderLabels(df.columns)
+
+        for row in range(df.shape[0]):
+            for col in range(df.shape[1]):
+                item = QStandardItem(str(df.iat[row, col]))
+                item.setEditable(False)
+                model.setItem(row, col, item)
+
+        self.data_table.setModel(model)
+        self.data_info_label.setText(f"Отображены данные скважины {self.current_well_index + 1} — {len(df)} строк")
+
         
     def update_well_selection(self):
         """Обновляет список выбора скважин"""
