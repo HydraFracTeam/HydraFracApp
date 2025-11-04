@@ -2,6 +2,7 @@ import sys
 import pandas as pd
 import numpy as np
 import pyqtgraph as pg
+from typing import Optional, Dict, List, Tuple, Any
 from PySide6.QtWidgets import (QLabel, QTableView, QApplication, QMainWindow, QFileDialog, QMessageBox, 
                                QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout,
@@ -19,15 +20,55 @@ from helpers.dimensionless_plotting import plot_dimensionless_grouped
 from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator                                                                                         
 from schemas.well_data import WellTimeSeries
 
+# Константы для магических чисел
+# Размеры окна
+WINDOW_WIDTH = 1400
+WINDOW_HEIGHT = 900
+
+# Геометрия виджетов
+TAB_WIDGET_X = 350
+TAB_WIDGET_Y = 20
+TAB_WIDGET_WIDTH = 1150
+TAB_WIDGET_HEIGHT = 900
+LEFT_PANEL_MAX_WIDTH = 300
+
+# Пороги качества интерполяции
+RMSE_EXCELLENT_THRESHOLD = 0.01
+RMSE_GOOD_THRESHOLD = 0.1
+
+# Параметры по умолчанию для скважины
+DEFAULT_K = 1.0  # проницаемость
+DEFAULT_MU = 1.0  # вязкость
+DEFAULT_B = 1.0  # объемный коэффициент
+DEFAULT_PHI = 0.1  # пористость
+DEFAULT_C_T = 1e-4  # общая сжимаемость
+
+# Параметры фильтров
+DEFAULT_OUTLIER_THRESHOLD = 1.5  # порог для обнаружения выбросов (IQR)
+DEFAULT_SAVGOL_WINDOW_LENGTH = 5  # длина окна для фильтра Savitzky-Golay
+DEFAULT_SAVGOL_POLYORDER = 2  # порядок полинома для фильтра Savitzky-Golay
+
+# Параметры для расчета
+N_PARAMETERS_PER_POINT = 2  # давление + дебит
+REPORT_SEPARATOR_LENGTH = 60  # длина разделителя в отчетах
+
+# Параметры типовых кривых
+TYPE_CURVE_N_POINTS = 100  # количество точек для типовых кривых
+TYPE_CURVE_TIME_MIN = -1  # минимум логарифма времени
+TYPE_CURVE_TIME_MAX = 3  # максимум логарифма времени
+
+# Методы интерполяции
+INTERPOLATION_METHODS = ('rbf', 'gp')  # методы интерполяции по умолчанию
+
 
 
 class MyApp(QMainWindow, Ui_mainWindow):
-    def __init__(self, test_mode=False):
+    def __init__(self, test_mode: bool = False) -> None:
         super().__init__()
         self.setupUi(self)
         
         self.test_mode = test_mode  # Флаг для отключения сообщений в тестах
-        self.resize(1400, 900)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
         # Переименуем существующую кнопку и подключим обработчик
         try:
             self.load_template_button.setText("Загрузить основной файл")
@@ -45,38 +86,38 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.setup_event_handlers()
     
     @property
-    def current_well_data(self):
+    def current_well_data(self) -> Optional[WellTimeSeries]:
         """Возвращает данные текущей скважины"""
         if self.well_data_list and 0 <= self.current_well_index < len(self.well_data_list):
             return self.well_data_list[self.current_well_index]
         return None
 
     @property
-    def well_data(self):
+    def well_data(self) -> Optional[WellTimeSeries]:
         """Алиас для current_well_data для совместимости"""
         return self.current_well_data
     
-    def show_info(self, title, message):
+    def show_info(self, title: str, message: str) -> None:
         """Показывает информационное сообщение (только если не test_mode)"""
         if not self.test_mode:
             QMessageBox.information(self, title, message)
     
-    def show_warning(self, title, message):
+    def show_warning(self, title: str, message: str) -> None:
         """Показывает предупреждение (только если не test_mode)"""
         if not self.test_mode:
             QMessageBox.warning(self, title, message)
     
-    def show_error(self, title, message):
+    def show_error(self, title: str, message: str) -> None:
         """Показывает сообщение об ошибке (только если не test_mode)"""
         if not self.test_mode:
             QMessageBox.critical(self, title, message)
     
     def _get_well_params(self, well: WellTimeSeries, 
-                        default_k: float = 1.0, 
-                        default_mu: float = 1.0, 
-                        default_B: float = 1.0,
-                        default_phi: float = 0.1, 
-                        default_c_t: float = 1e-4) -> dict:
+                        default_k: float = DEFAULT_K, 
+                        default_mu: float = DEFAULT_MU, 
+                        default_B: float = DEFAULT_B,
+                        default_phi: float = DEFAULT_PHI, 
+                        default_c_t: float = DEFAULT_C_T) -> Dict[str, Any]:
         """Создает словарь параметров скважины для безразмерного анализа"""
         return {
             'k': default_k,
@@ -90,12 +131,158 @@ class MyApp(QMainWindow, Ui_mainWindow):
             'N': well.fractures_count,
             'a_L': well.a_l_ratio
         }
+    
+    def _get_quality_label(self, rmse: float, short: bool = False) -> str:
+        """Возвращает текстовое описание качества интерполяции на основе RMSE"""
+        if rmse < RMSE_EXCELLENT_THRESHOLD:
+            return 'отлично' if short else 'Отлично'
+        elif rmse < RMSE_GOOD_THRESHOLD:
+            return 'хорошо' if short else 'Хорошо'
+        else:
+            return 'удовл.' if short else 'Удовлетворительно'
+    
+    def _create_no_interpolation_report(self) -> str:
+        """Создает отчет о том, что интерполяция не требуется"""
+        separator = "=" * REPORT_SEPARATOR_LENGTH
+        report = separator + "\n"
+        report += "ИНТЕРПОЛЯЦИЯ НЕ ТРЕБУЕТСЯ\n"
+        report += separator + "\n\n"
+        report += "Данные не содержат пропущенных значений (NaN).\n"
+        report += f"Точек данных по давлению: {len(self.well_data.pressure)}\n"
+        report += f"Точек данных по дебиту: {len(self.well_data.flow_rate)}\n"
+        report += "\nВсе данные присутствуют, интерполяция не нужна.\n"
+        report += separator + "\n"
+        return report
+    
+    def _perform_interpolation(self, n_nan_pressure: int, n_nan_flow: int) -> Tuple[Dict[str, Any], Any]:
+        """Выполняет интерполяцию безразмерных кривых"""
+        well_params = self._get_well_params(self.well_data)
+        
+        # Конвертируем в безразмерные параметры
+        from helpers.dimensionless_analysis import convert_to_dimensionless_curves
+        dim_data = convert_to_dimensionless_curves(
+            self.well_data.time, self.well_data.pressure, self.well_data.flow_rate, well_params
+        )
+        
+        # Используем интерполятор безразмерных кривых для восстановления пропусков
+        from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
+        
+        # Для интерполяции используем текущие параметры
+        param_grid = np.array([[self.well_data.skin, self.well_data.fractures_count, self.well_data.a_l_ratio]])
+        Y_grid = dim_data.Y
+        P_curves = np.asarray([dim_data.pressure / (dim_data.delta_p_i if dim_data.delta_p_i != 0 else 1.0)])
+        
+        interp = DimensionlessCurveInterpolator(methods=INTERPOLATION_METHODS)
+        interp.fit(param_grid, Y_grid, P_curves)
+        
+        # Предсказываем для тех же параметров (восстанавливаем пропуски)
+        pred_series = interp.predict(
+            skin=self.well_data.skin,
+            N=self.well_data.fractures_count,
+            a_L=self.well_data.a_l_ratio
+        )
+        
+        # Восстанавливаем физические величины из безразмерных
+        pressure_values = pred_series.values if hasattr(pred_series, 'values') else np.asarray(pred_series)
+        self.well_data.pressure = pd.Series(pressure_values * dim_data.delta_p_i, index=self.well_data.time)
+        
+        # Получаем информацию о результатах интерполяции
+        interp_info = interp.get_interpolation_info()
+        
+        # Сохраняем информацию для отображения в резюме графика
+        self.last_interpolation_info = interp_info
+        
+        return interp_info, dim_data
+    
+    def _create_interpolation_report(self, n_nan_pressure: int, n_nan_flow: int, 
+                                    interp_info: Dict[str, Any]) -> str:
+        """Создает отчет о результатах интерполяции"""
+        method_names = {
+            'linear': 'Линейная регрессия',
+            'rbf': 'RBF интерполяция (Thin Plate Spline)',
+            'gp': 'Гауссовский процесс'
+        }
+        
+        # Определяем, что было интерполировано
+        interpolated_items = []
+        if n_nan_pressure > 0:
+            interpolated_items.append(f"давление ({n_nan_pressure} точек)")
+        if n_nan_flow > 0:
+            interpolated_items.append(f"дебит ({n_nan_flow} точек)")
+        
+        separator = "=" * REPORT_SEPARATOR_LENGTH
+        report = separator + "\n"
+        report += "РЕЗУЛЬТАТЫ ИНТЕРПОЛЯЦИИ БЕЗРАЗМЕРНЫХ КРИВЫХ\n"
+        report += separator + "\n\n"
+        
+        # Что было интерполировано
+        report += "Интерполировано:\n"
+        if interpolated_items:
+            report += "  ✓ Безразмерная кривая pD(Y)\n"
+            for item in interpolated_items:
+                report += f"  ✓ {item}\n"
+        report += "\n"
+        
+        # Исходные данные
+        report += "Исходные данные:\n"
+        report += f"  Всего точек: {len(self.well_data.time)}\n"
+        total_possible = len(self.well_data.time) * N_PARAMETERS_PER_POINT
+        total_nan = n_nan_pressure + n_nan_flow
+        coverage = (1 - total_nan / total_possible) * 100 if total_possible > 0 else 0
+        report += f"  Полнота данных: {coverage:.1f}%\n"
+        report += f"  Заполнено пропусков:\n"
+        if n_nan_pressure > 0:
+            report += f"    - Давление: {n_nan_pressure} точек ({n_nan_pressure/len(self.well_data.time)*100:.1f}%)\n"
+        if n_nan_flow > 0:
+            report += f"    - Дебит: {n_nan_flow} точек ({n_nan_flow/len(self.well_data.time)*100:.1f}%)\n"
+        report += "\n"
+        
+        # Параметры скважины
+        report += "Параметры скважины (использованы для интерполяции):\n"
+        report += f"  Skin: {self.well_data.skin:.4f}\n"
+        report += f"  N (кол-во трещин): {self.well_data.fractures_count}\n"
+        report += f"  a/L: {self.well_data.a_l_ratio:.4f}\n"
+        report += f"  L (длина трещины): {self.well_data.fracture_length:.2f} м\n"
+        report += f"  h (толщина пласта): {self.well_data.thickness:.2f} м\n"
+        report += "\n"
+        
+        # Параметры интерполяции
+        report += "Параметры метода:\n"
+        report += f"  Обучающих примеров: {interp_info['n_samples']}\n"
+        report += f"  Точек на безразмерной кривой: {interp_info['n_points']}\n\n"
+        
+        # Сравнение методов
+        report += "СРАВНЕНИЕ МЕТОДОВ ИНТЕРПОЛЯЦИИ\n"
+        report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+        report += f"{'Метод':<42} {'RMSE':<12} {'Статус'}\n"
+        report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+        
+        # Сортируем методы по RMSE
+        sorted_methods = sorted(interp_info['rmse_scores'].items(), key=lambda x: x[1])
+        
+        for i, (method, rmse) in enumerate(sorted_methods, 1):
+            method_display = method_names.get(method, method)
+            marker = "✓ ВЫБРАН" if method == interp_info['best_method'] else f"#{i}"
+            report += f"{method_display:<42} {rmse:<12.3f} {marker}\n"
+        
+        report += "-" * REPORT_SEPARATOR_LENGTH + "\n\n"
+        
+        # Итоговая информация
+        best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
+        report += "ИТОГОВЫЙ РЕЗУЛЬТАТ:\n"
+        report += f"  Метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
+        report += f"  RMSE: {best_rmse:.3f}\n"
+        quality = self._get_quality_label(best_rmse)
+        report += f"  Качество: {quality}\n"
+        report += "\n" + separator + "\n"
+        
+        return report
 
-    def setup_professional_interface(self):
+    def setup_professional_interface(self) -> None:
         """Создает профессиональный интерфейс с вкладками для анализа ГРП"""
         # Основной контейнер с вкладками
         self.tab_widget = QTabWidget(self.centralwidget)
-        self.tab_widget.setGeometry(350, 20, 1150, 900)
+        self.tab_widget.setGeometry(TAB_WIDGET_X, TAB_WIDGET_Y, TAB_WIDGET_WIDTH, TAB_WIDGET_HEIGHT)
         
         # Вкладка 1: Временные ряды
         self.timeseries_tab = self.setup_timeseries_tab()  # ← присваиваем возвращённый QWidget
@@ -116,7 +303,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.tab_widget.addTab(self.results_tab, "Результаты")
         self.setup_results_tab()
     
-    def setup_timeseries_tab(self):
+    def setup_timeseries_tab(self) -> QWidget:
         """Вкладка для безразмерных графиков в стиле Kappa Sapphire."""
         tab = QWidget()
         
@@ -128,7 +315,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 5, 0)
-        left_panel.setMaximumWidth(300)  # фиксированная ширина
+        left_panel.setMaximumWidth(LEFT_PANEL_MAX_WIDTH)  # фиксированная ширина
 
         # --- Загрузка файлов ---
         load_group = QGroupBox("Загрузка данных")
@@ -242,7 +429,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         tab.setLayout(main_layout)
         return tab
 
-    def setup_grp_tab(self):
+    def setup_grp_tab(self) -> None:
         """Настройка вкладки анализа ГРП"""
         layout = QVBoxLayout(self.grp_tab)
         
@@ -286,7 +473,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.grp_results_text.setMaximumHeight(300)
         layout.addWidget(self.grp_results_text)
     
-    def setup_type_curves_tab(self):
+    def setup_type_curves_tab(self) -> None:
         """Настройка вкладки эталонных кривых"""
         layout = QVBoxLayout(self.type_curves_tab)
         
@@ -318,7 +505,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.type_curves_widget = None
             layout.addWidget(QLabel("pyqtgraph не установлен"))
     
-    def setup_results_tab(self):
+    def setup_results_tab(self) -> None:
         """Настройка вкладки результатов анализа"""
         layout = QVBoxLayout(self.results_tab)
         
@@ -331,7 +518,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.export_report_btn = QPushButton("Экспорт отчета")
         layout.addWidget(self.export_report_btn)
     
-    def setup_data_tab(self):
+    def setup_data_tab(self) -> QWidget:
         """Вкладка для просмотра загруженных данных (только чтение)"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -351,7 +538,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         tab.setLayout(layout)
         return tab
     
-    def setup_event_handlers(self):
+    def setup_event_handlers(self) -> None:
         """Настройка обработчиков событий"""
         # Временные ряды
         self.plot_btn.clicked.connect(self.on_plot_dimensionless_selected)
@@ -378,7 +565,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.data_tab = self.setup_data_tab()
         self.tab_widget.addTab(self.data_tab, "Загруженные данные")
 
-    def load_template(self):
+    def load_template(self) -> None:
         """Загрузка CSV файла с данными разведки месторождений"""
         file_dialog = QFileDialog()
         file_path, _ = file_dialog.getOpenFileName(self, "Загрузить файл данных", "./", 
@@ -432,7 +619,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         for i, well in enumerate(self.well_data_list):
             self.well_combo_dim.addItem(f"Скважина {i+1} (Skin={well.skin:.2f})")
 
-    def load_validation_file(self):
+    def load_validation_file(self) -> None:
         """Загрузка файла для проверки качества интерполяции."""
         file_dialog = QFileDialog()
         file_path, _ = file_dialog.getOpenFileName(self, "Загрузить файл для проверки", "./", 
@@ -454,7 +641,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                       f"Загружено {len(well_data_list)} групп данных для проверки\n"
                       f"Всего измерений: {sum(len(w.time) for w in well_data_list)}")
     
-    def run_data_diagnostics(self, file_path):
+    def run_data_diagnostics(self, file_path: str) -> None:
         """Запускает диагностику загруженных данных"""
         try:
             print("\n" + "="*60)
@@ -504,13 +691,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
             import traceback
             traceback.print_exc()
     
-    def update_interface_parameters(self):
+    def update_interface_parameters(self) -> None:
         self.thickness_doubleSpinBox.setValue(self.current_well_data.thickness)
         self.skin_doubleSpinBox.setValue(self.current_well_data.skin)
         self.width_doubleSpinBox.setValue(self.current_well_data.fracture_width)
         self.n_spinBox.setValue(self.current_well_data.fractures_count)
         self.aL_doubleSpinBox.setValue(self.current_well_data.a_l_ratio)
-    def update_data_tab(self):
+    def update_data_tab(self) -> None:
         """Обновляет таблицу на вкладке 'Загруженные данные'"""
         if not self.well_data_list:
             self.data_info_label.setText("Нет загруженных данных")
@@ -539,7 +726,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.data_info_label.setText(f"Отображены данные скважины {self.current_well_index + 1} — {len(df)} строк")
 
         
-    def update_well_selection(self):
+    def update_well_selection(self) -> None:
         """Обновляет список выбора скважин"""
         self.well_combo_dim.clear()
         
@@ -550,7 +737,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.well_data_list:
             self.well_combo_dim.setCurrentIndex(self.current_well_index)
     
-    def update_grp_parameters(self):
+    def update_grp_parameters(self) -> None:
         """Обновляет отображение параметров ГРП"""
         current_well = self.current_well_data
         if current_well is None:
@@ -563,7 +750,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.fracture_length_label.setText(f"Длина трещины: {current_well.fracture_length:.1f} м")
         self.al_ratio_label.setText(f"a/L: {current_well.a_l_ratio:.3f}")
     
-    def on_interpolate_data(self):
+    def on_interpolate_data(self) -> None:
         """Интерполяция данных безразмерных кривых"""
         if self.well_data is None:
             return
@@ -574,14 +761,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         if not has_nan:
             # Данные уже полные, интерполяция не требуется
-            report = "=" * 60 + "\n"
-            report += "ИНТЕРПОЛЯЦИЯ НЕ ТРЕБУЕТСЯ\n"
-            report += "=" * 60 + "\n\n"
-            report += "Данные не содержат пропущенных значений (NaN).\n"
-            report += f"Точек данных по давлению: {len(self.well_data.pressure)}\n"
-            report += f"Точек данных по дебиту: {len(self.well_data.flow_rate)}\n"
-            report += "\nВсе данные присутствуют, интерполяция не нужна.\n"
-            report += "=" * 60 + "\n"
+            report = self._create_no_interpolation_report()
             
             if hasattr(self, 'results_text'):
                 self.results_text.setPlainText(report)
@@ -595,138 +775,37 @@ class MyApp(QMainWindow, Ui_mainWindow):
             n_nan_pressure = self.well_data.pressure.isna().sum()
             n_nan_flow = self.well_data.flow_rate.isna().sum()
             
-            # Используем интерполяцию безразмерных кривых вместо простой математики
-            well_params = self._get_well_params(self.well_data)
+            # Выполняем интерполяцию
+            interp_info, _ = self._perform_interpolation(n_nan_pressure, n_nan_flow)
             
-            # Конвертируем в безразмерные параметры
-            from helpers.dimensionless_analysis import convert_to_dimensionless_curves
-            dim_data = convert_to_dimensionless_curves(
-                self.well_data.time, self.well_data.pressure, self.well_data.flow_rate, well_params
-            )
-            
-            # Используем интерполятор безразмерных кривых для восстановления пропусков
-            from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
-            
-            # Для интерполяции используем текущие параметры
-            param_grid = np.array([[self.well_data.skin, self.well_data.fractures_count, self.well_data.a_l_ratio]])
-            Y_grid = dim_data.Y
-            P_curves = np.asarray([dim_data.pressure / (dim_data.delta_p_i if dim_data.delta_p_i != 0 else 1.0)])
-            
-            interp = DimensionlessCurveInterpolator(methods=('rbf', 'gp'))
-            interp.fit(param_grid, Y_grid, P_curves)
-            
-            # Предсказываем для тех же параметров (восстанавливаем пропуски)
-            pred_series = interp.predict(
-                skin=self.well_data.skin,
-                N=self.well_data.fractures_count,
-                a_L=self.well_data.a_l_ratio
-            )
-            
-            # Восстанавливаем физические величины из безразмерных
-            pressure_values = pred_series.values if hasattr(pred_series, 'values') else np.asarray(pred_series)
-            self.well_data.pressure = pd.Series(pressure_values * dim_data.delta_p_i, index=self.well_data.time)
-            
-            # Получаем информацию о результатах интерполяции
-            interp_info = interp.get_interpolation_info()
-            
-            # Сохраняем информацию для отображения в резюме графика
-            self.last_interpolation_info = interp_info
-            
-            # Формируем отчёт для вывода
-            method_names = {
-                'linear': 'Линейная регрессия',
-                'rbf': 'RBF интерполяция (Thin Plate Spline)',
-                'gp': 'Гауссовский процесс'
-            }
-            
-            # Определяем, что было интерполировано
-            interpolated_items = []
-            if n_nan_pressure > 0:
-                interpolated_items.append(f"давление ({n_nan_pressure} точек)")
-            if n_nan_flow > 0:
-                interpolated_items.append(f"дебит ({n_nan_flow} точек)")
-            
-            report = "=" * 60 + "\n"
-            report += "РЕЗУЛЬТАТЫ ИНТЕРПОЛЯЦИИ БЕЗРАЗМЕРНЫХ КРИВЫХ\n"
-            report += "=" * 60 + "\n\n"
-            
-            # Что было интерполировано
-            report += "Интерполировано:\n"
-            if interpolated_items:
-                report += "  ✓ Безразмерная кривая pD(Y)\n"
-                for item in interpolated_items:
-                    report += f"  ✓ {item}\n"
-            report += "\n"
-            
-            # Исходные данные
-            report += "Исходные данные:\n"
-            report += f"  Всего точек: {len(self.well_data.time)}\n"
-            total_possible = len(self.well_data.time) * 2  # давление + дебит
-            total_nan = n_nan_pressure + n_nan_flow
-            coverage = (1 - total_nan / total_possible) * 100 if total_possible > 0 else 0
-            report += f"  Полнота данных: {coverage:.1f}%\n"
-            report += f"  Заполнено пропусков:\n"
-            if n_nan_pressure > 0:
-                report += f"    - Давление: {n_nan_pressure} точек ({n_nan_pressure/len(self.well_data.time)*100:.1f}%)\n"
-            if n_nan_flow > 0:
-                report += f"    - Дебит: {n_nan_flow} точек ({n_nan_flow/len(self.well_data.time)*100:.1f}%)\n"
-            report += "\n"
-            
-            # Параметры скважины (не интерполировались)
-            report += "Параметры скважины (использованы для интерполяции):\n"
-            report += f"  Skin: {self.well_data.skin:.4f}\n"
-            report += f"  N (кол-во трещин): {self.well_data.fractures_count}\n"
-            report += f"  a/L: {self.well_data.a_l_ratio:.4f}\n"
-            report += f"  L (длина трещины): {self.well_data.fracture_length:.2f} м\n"
-            report += f"  h (толщина пласта): {self.well_data.thickness:.2f} м\n"
-            report += "\n"
-            
-            # Параметры интерполяции
-            report += "Параметры метода:\n"
-            report += f"  Обучающих примеров: {interp_info['n_samples']}\n"
-            report += f"  Точек на безразмерной кривой: {interp_info['n_points']}\n\n"
-            
-            # Сравнение методов
-            report += "СРАВНЕНИЕ МЕТОДОВ ИНТЕРПОЛЯЦИИ\n"
-            report += "-" * 60 + "\n"
-            report += f"{'Метод':<42} {'RMSE':<12} {'Статус'}\n"
-            report += "-" * 60 + "\n"
-            
-            # Сортируем методы по RMSE
-            sorted_methods = sorted(interp_info['rmse_scores'].items(), key=lambda x: x[1])
-            
-            for i, (method, rmse) in enumerate(sorted_methods, 1):
-                method_display = method_names.get(method, method)
-                marker = "✓ ВЫБРАН" if method == interp_info['best_method'] else f"#{i}"
-                report += f"{method_display:<42} {rmse:<12.3f} {marker}\n"
-            
-            report += "-" * 60 + "\n\n"
-            
-            # Итоговая информация
-            best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
-            report += "ИТОГОВЫЙ РЕЗУЛЬТАТ:\n"
-            report += f"  Метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
-            report += f"  RMSE: {best_rmse:.3f}\n"
-            report += f"  Качество: {'Отлично' if best_rmse < 0.01 else 'Хорошо' if best_rmse < 0.1 else 'Удовлетворительно'}\n"
-            report += "\n" + "=" * 60 + "\n"
+            # Формируем отчет
+            report = self._create_interpolation_report(n_nan_pressure, n_nan_flow, interp_info)
             
             # Выводим в текстовое поле результатов
             if hasattr(self, 'results_text'):
                 self.results_text.setPlainText(report)
             
             self.on_plot_dimensionless_selected()
+            
+            # Показываем информационное сообщение
+            method_names = {
+                'linear': 'Линейная регрессия',
+                'rbf': 'RBF интерполяция (Thin Plate Spline)',
+                'gp': 'Гауссовский процесс'
+            }
             best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
+            quality = self._get_quality_label(best_rmse)
             self.show_info("Интерполяция", 
                           f"Данные интерполированы методом безразмерных кривых\n\n"
                           f"Выбранный метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
                           f"RMSE: {best_rmse:.3f}\n"
-                          f"Качество: {'Отлично' if best_rmse < 0.01 else 'Хорошо' if best_rmse < 0.1 else 'Удовлетворительно'}")
+                          f"Качество: {quality}")
         except Exception as e:
             self.show_warning("Ошибка", f"Ошибка интерполяции: {str(e)}")
             import traceback
             print(traceback.format_exc())
     
-    def on_plot_dimensionless_selected(self):
+    def on_plot_dimensionless_selected(self) -> None:
         """Обработка нажатия на кнопку 'Построить график'."""
         self.dimensionless_plot.clear()
         self.text_report.clear()
@@ -809,7 +888,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     'gp': 'GP'
                 }
                 best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
-                quality = 'отлично' if best_rmse < 0.01 else 'хорошо' if best_rmse < 0.1 else 'удовл.'
+                quality = self._get_quality_label(best_rmse, short=True)
                 self.text_report.append(
                     f"📊 Интерполяция: {method_names.get(interp_info['best_method'], interp_info['best_method'])}, "
                     f"RMSE={best_rmse:.3f} ({quality})"
@@ -820,26 +899,28 @@ class MyApp(QMainWindow, Ui_mainWindow):
             import traceback
             print(traceback.format_exc())        
 
-    def on_ml_filter(self):
+    def on_ml_filter(self) -> None:
         """ML-фильтрация данных"""
         if self.well_data is None:
             return
             
         try:
-            filtered = apply_ml_filter(self.well_data.pressure, 'savitzky_golay', window_length=5, polyorder=2)
+            filtered = apply_ml_filter(self.well_data.pressure, 'savitzky_golay', 
+                                     window_length=DEFAULT_SAVGOL_WINDOW_LENGTH, 
+                                     polyorder=DEFAULT_SAVGOL_POLYORDER)
             self.well_data.pressure = filtered
             self.on_plot_dimensionless_selected()
             self.show_info("ML фильтрация", "Данные отфильтрованы с помощью ML")
         except Exception as e:
             self.show_warning("Ошибка", f"Ошибка ML фильтрации: {str(e)}")
             
-    def on_detect_outliers(self):
+    def on_detect_outliers(self) -> None:
         """Обнаружение выбросов"""
         if self.well_data is None:
             return
 
         try:
-            outliers = detect_outliers(self.well_data.pressure, 'iqr', threshold=1.5)
+            outliers = detect_outliers(self.well_data.pressure, 'iqr', threshold=DEFAULT_OUTLIER_THRESHOLD)
             outlier_count = outliers.sum()
             
             self.show_info("Обнаружение выбросов", f"Найдено {outlier_count} выбросов")
@@ -849,7 +930,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         except Exception as e:
             self.show_warning("Ошибка", f"Ошибка обнаружения выбросов: {str(e)}")
     
-    def plot_outliers_with_highlight(self, outliers: pd.Series, plot_type: str):
+    def plot_outliers_with_highlight(self, outliers: pd.Series, plot_type: str) -> None:
         """Построение графика с выделенными выбросами"""
         self.plot_widget.clear()
         
@@ -885,7 +966,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.plot_widget.setLabel('left', 'Время, ч')
             self.plot_widget.setTitle('Дебит vs Время (красные X - выбросы)')
     
-    def on_export_data(self):
+    def on_export_data(self) -> None:
         """Экспорт данных"""
         if self.well_data is None:
             return
@@ -905,7 +986,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             except Exception as e:
                 self.show_warning("Ошибка экспорта", f"Не удалось экспортировать данные: {str(e)}")
     
-    def on_analyze_flow_regime(self):
+    def on_analyze_flow_regime(self) -> None:
         """Анализ режима течения"""
         if self.well_data is None:
             return
@@ -924,7 +1005,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 """
         self.show_info("Анализ режима течения", result_text)
 
-    def on_compute_productivity(self):
+    def on_compute_productivity(self) -> None:
         """Вычисление индекса продуктивности"""
         if self.well_data is None:
             return
@@ -944,7 +1025,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         self.show_info("Индекс продуктивности", result_text)
 
-    def on_detect_transitions(self):
+    def on_detect_transitions(self) -> None:
         """Обнаружение переходов режимов"""
         if self.well_data is None:
             return
@@ -965,13 +1046,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         self.show_info("Переходы режимов", result_text)
 
-    def on_plot_bilinear(self):
+    def on_plot_bilinear(self) -> None:
         """Построение кривой билинейного течения"""
         if self.well_data is None or self.type_curves_widget is None:
             return
 
         from helpers.grp_analysis import generate_type_curves
-        time_range = np.logspace(-1, 3, 100)
+        time_range = np.logspace(TYPE_CURVE_TIME_MIN, TYPE_CURVE_TIME_MAX, TYPE_CURVE_N_POINTS)
         curves = generate_type_curves(self.well_data.skin, self.well_data.fractures_count,
                                      self.well_data.a_l_ratio, time_range)
 
@@ -982,13 +1063,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.type_curves_widget.setLabel('bottom', 'Время, ч')
         self.type_curves_widget.setTitle('Билинейное течение')
 
-    def on_plot_linear(self):
+    def on_plot_linear(self) -> None:
         """Построение кривой линейного течения"""
         if self.well_data is None or self.type_curves_widget is None:
             return
 
         from helpers.grp_analysis import generate_type_curves
-        time_range = np.logspace(-1, 3, 100)
+        time_range = np.logspace(TYPE_CURVE_TIME_MIN, TYPE_CURVE_TIME_MAX, TYPE_CURVE_N_POINTS)
         curves = generate_type_curves(self.well_data.skin, self.well_data.fractures_count,
                                      self.well_data.a_l_ratio, time_range)
 
@@ -999,13 +1080,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.type_curves_widget.setLabel('bottom', 'Время, ч')
         self.type_curves_widget.setTitle('Линейное течение')
 
-    def on_plot_pseudoradial(self):
+    def on_plot_pseudoradial(self) -> None:
         """Построение кривой псевдорадиального течения"""
         if self.well_data is None or self.type_curves_widget is None:
             return
 
         from helpers.grp_analysis import generate_type_curves
-        time_range = np.logspace(-1, 3, 100)
+        time_range = np.logspace(TYPE_CURVE_TIME_MIN, TYPE_CURVE_TIME_MAX, TYPE_CURVE_N_POINTS)
         curves = generate_type_curves(self.well_data.skin, self.well_data.fractures_count,
                                      self.well_data.a_l_ratio, time_range)
 
@@ -1016,7 +1097,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.type_curves_widget.setLabel('bottom', 'Время, ч')
         self.type_curves_widget.setTitle('Псевдорадиальное течение')
 
-    def on_match_curves(self):
+    def on_match_curves(self) -> None:
         """Сопоставление с эталонными кривыми"""
         if self.well_data is None:
             return
@@ -1035,7 +1116,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         self.show_info("Сопоставление кривых", result_text)
 
-    def on_export_report(self):
+    def on_export_report(self) -> None:
         """Экспорт отчета"""
         if self.well_data is None:
             return

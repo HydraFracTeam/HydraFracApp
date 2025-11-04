@@ -15,20 +15,23 @@ from PySide6.QtWidgets import QApplication
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from schemas.well_data import WellTimeSeries
-
-# Импортируем функции из main.py
-from main import (
-    compute_dimensionless_parameters,
-    set_logarithmic_axes, 
-    invert_y_axis
-)
+from main import MyApp, DEFAULT_K, DEFAULT_MU, DEFAULT_B, DEFAULT_PHI, DEFAULT_C_T
 
 
 class TestMainFunctions:
-    """Тесты для функций main.py"""
+    """Тесты для методов класса MyApp"""
     
     def setup_method(self):
         """Настройка для каждого теста"""
+        # Создаем QApplication для тестов GUI
+        if not QApplication.instance():
+            self.app_instance = QApplication([])
+        else:
+            self.app_instance = QApplication.instance()
+        
+        # Создаем приложение в тестовом режиме
+        self.app = MyApp(test_mode=True)
+        
         # Создаем тестовые данные
         self.time = np.array([1, 2, 3, 4, 5])
         self.pressure = np.array([100, 95, 90, 85, 80])
@@ -40,152 +43,76 @@ class TestMainFunctions:
             flow_rate=pd.Series(self.flow_rate),
             thickness=10.0,
             fracture_length=100.0,
+            fracture_width=0.01,
             skin=0.0,
             fractures_count=1,
             a_l_ratio=0.1
         )
+        self.app.well_data_list = [self.well_data]
+        self.app.current_well_index = 0
     
-    def test_compute_dimensionless_parameters_basic(self):
-        """Тест базового вычисления безразмерных параметров"""
-        X, Y = compute_dimensionless_parameters(
-            self.well_data, 
-            self.time, 
-            self.pressure, 
-            self.flow_rate
-        )
+    def test_get_well_params_defaults(self):
+        """Тест создания параметров скважины с значениями по умолчанию"""
+        params = self.app._get_well_params(self.well_data)
         
-        # Проверяем, что результат не пустой
-        assert len(X) == len(self.time)
-        assert len(Y) == len(self.time)
-        
-        # Проверяем, что значения положительные
-        assert np.all(X > 0)
-        assert np.all(Y > 0)
-        
-        # Проверяем, что X и Y имеют разумные значения
-        assert np.all(np.isfinite(X))
-        assert np.all(np.isfinite(Y))
+        assert params['k'] == DEFAULT_K
+        assert params['mu'] == DEFAULT_MU
+        assert params['B'] == DEFAULT_B
+        assert params['phi'] == DEFAULT_PHI
+        assert params['c_t'] == DEFAULT_C_T
+        assert params['h'] == self.well_data.thickness
+        assert params['L'] == self.well_data.fracture_length
+        assert params['skin'] == self.well_data.skin
+        assert params['N'] == self.well_data.fractures_count
+        assert params['a_L'] == self.well_data.a_l_ratio
     
-    def test_compute_dimensionless_parameters_formulas(self):
-        """Тест правильности формул безразмерных параметров"""
-        X, Y = compute_dimensionless_parameters(
-            self.well_data, 
-            self.time, 
-            self.pressure, 
-            self.flow_rate
-        )
+    def test_get_well_params_custom(self):
+        """Тест создания параметров скважины с кастомными значениями"""
+        custom_k = 5.0
+        custom_mu = 2.0
+        params = self.app._get_well_params(self.well_data, default_k=custom_k, default_mu=custom_mu)
         
-        # Типичные значения для нефти
-        k = 10e-15  # проницаемость, м² (10 мД)
-        mu = 0.001  # вязкость, Па*с (1 сП)
-        B = 1.2     # объемный коэффициент нефти
-        phi = 0.15  # пористость
-        ct = 1e-5   # общая сжимаемость, 1/атм
-        h = 10.0    # толщина пласта
-        L = 100.0   # длина трещины
-        delta_p_i = self.pressure.mean()
-        
-        # Проверяем X для первого значения
-        Q = self.flow_rate[0]
-        X_expected = (0.00864 * k * h * delta_p_i) / (mu * B * Q)
-        assert abs(X[0] - X_expected) < 1e-10
-        
-        # Проверяем Y для первого значения
-        t = self.time[0]
-        Y_expected = (Q * B * t) / (24 * phi * ct * h * L**2 * delta_p_i)
-        assert abs(Y[0] - Y_expected) < 1e-10
+        assert params['k'] == custom_k
+        assert params['mu'] == custom_mu
+        assert params['B'] == DEFAULT_B  # остальные по умолчанию
     
-    def test_compute_dimensionless_parameters_edge_cases(self):
-        """Тест граничных случаев"""
-        # Тест с нулевыми значениями
-        zero_flow_rate = np.zeros_like(self.flow_rate)
-        X, Y = compute_dimensionless_parameters(
-            self.well_data, 
-            self.time, 
-            self.pressure, 
-            zero_flow_rate
-        )
+    def test_get_quality_label(self):
+        """Тест определения качества интерполяции"""
+        # Отличное качество
+        assert self.app._get_quality_label(0.005) == 'Отлично'
+        assert self.app._get_quality_label(0.005, short=True) == 'отлично'
         
-        # Должны быть защищены от деления на ноль
-        assert np.all(np.isfinite(X))
-        assert np.all(np.isfinite(Y))
+        # Хорошее качество
+        assert self.app._get_quality_label(0.05) == 'Хорошо'
+        assert self.app._get_quality_label(0.05, short=True) == 'хорошо'
         
-        # Тест с очень малыми значениями
-        small_flow_rate = np.full_like(self.flow_rate, 1e-10)
-        X, Y = compute_dimensionless_parameters(
-            self.well_data, 
-            self.time, 
-            self.pressure, 
-            small_flow_rate
-        )
-        
-        assert np.all(np.isfinite(X))
-        assert np.all(np.isfinite(Y))
+        # Удовлетворительное качество
+        assert self.app._get_quality_label(0.5) == 'Удовлетворительно'
+        assert self.app._get_quality_label(0.5, short=True) == 'удовл.'
     
-    def test_set_logarithmic_axes(self):
-        """Тест установки логарифмических осей"""
-        # Создаем мок для plot_widget
-        mock_plot = Mock()
+    def test_create_no_interpolation_report(self):
+        """Тест создания отчета о том, что интерполяция не требуется"""
+        report = self.app._create_no_interpolation_report()
         
-        # Вызываем функцию
-        set_logarithmic_axes(mock_plot)
-        
-        # Проверяем, что был вызван setLogMode
-        mock_plot.setLogMode.assert_called_once_with(x=True, y=True)
+        assert "ИНТЕРПОЛЯЦИЯ НЕ ТРЕБУЕТСЯ" in report
+        assert "Данные не содержат пропущенных значений" in report
+        assert str(len(self.well_data.pressure)) in report
+        assert str(len(self.well_data.flow_rate)) in report
     
-    def test_set_logarithmic_axes_exception(self):
-        """Тест обработки исключений в set_logarithmic_axes"""
-        # Создаем мок, который вызывает исключение
-        mock_plot = Mock()
-        mock_plot.setLogMode.side_effect = Exception("Test exception")
-        
-        # Функция не должна падать
-        set_logarithmic_axes(mock_plot)
-        
-        # Проверяем, что исключение было обработано
-        mock_plot.setLogMode.assert_called_once()
+    def test_show_info_test_mode(self):
+        """Тест что show_info не показывается в test_mode"""
+        # В test_mode сообщения не должны показываться
+        # Просто проверяем, что метод не падает
+        self.app.show_info("Тест", "Сообщение")
+        # Если бы был показан диалог, это бы вызвало ошибку в тестовом окружении
     
-    def test_invert_y_axis(self):
-        """Тест инверсии Y-оси"""
-        # Создаем мок для plot_widget
-        mock_plot = Mock()
-        mock_axis = Mock()
-        mock_axis.range = [0, 100]
-        mock_plot.getAxis.return_value = mock_axis
-        
-        # Вызываем функцию
-        invert_y_axis(mock_plot)
-        
-        # Проверяем, что был вызван setYRange с инвертированными значениями
-        mock_plot.getAxis.assert_called_once_with('left')
-        mock_plot.setYRange.assert_called_once_with(100, 0)
+    def test_show_warning_test_mode(self):
+        """Тест что show_warning не показывается в test_mode"""
+        self.app.show_warning("Тест", "Предупреждение")
     
-    def test_invert_y_axis_no_range(self):
-        """Тест инверсии Y-оси без диапазона"""
-        # Создаем мок для plot_widget
-        mock_plot = Mock()
-        mock_axis = Mock()
-        mock_axis.range = None
-        mock_plot.getAxis.return_value = mock_axis
-        
-        # Вызываем функцию
-        invert_y_axis(mock_plot)
-        
-        # Проверяем, что setYRange не был вызван
-        mock_plot.getAxis.assert_called_once_with('left')
-        mock_plot.setYRange.assert_not_called()
-    
-    def test_invert_y_axis_exception(self):
-        """Тест обработки исключений в invert_y_axis"""
-        # Создаем мок, который вызывает исключение
-        mock_plot = Mock()
-        mock_plot.getAxis.side_effect = Exception("Test exception")
-        
-        # Функция не должна падать
-        invert_y_axis(mock_plot)
-        
-        # Проверяем, что исключение было обработано
-        mock_plot.getAxis.assert_called_once()
+    def test_show_error_test_mode(self):
+        """Тест что show_error не показывается в test_mode"""
+        self.app.show_error("Тест", "Ошибка")
 
 
 class TestMainIntegration:
@@ -217,73 +144,47 @@ class TestMainIntegration:
         assert hasattr(app, 'well_data_list')
         assert hasattr(app, 'current_well_index')
     
-    def test_plot_types_available(self):
-        """Тест доступности типов графиков"""
-        from main import MyApp
-        
-        app = MyApp()
-        
-        # Проверяем, что все требуемые типы графиков доступны
-        required_types = [
-            "Безразмерные параметры (X-Y)",
-            "Логарифмический P(t) с инверсией",
-            "Логарифмический Q(t)",
-            "Логарифмическая производная P"
-        ]
-        
-        # Получаем доступные типы из combo box
-        available_types = []
-        for i in range(app.plot_type_combo.count()):
-            available_types.append(app.plot_type_combo.itemText(i))
-        
-        for req_type in required_types:
-            assert req_type in available_types, f"Тип графика {req_type} не найден"
 
 
-class TestMainPerformance:
-    """Тесты производительности для main.py"""
+class TestMainIntegration:
+    """Интеграционные тесты для main.py"""
     
-    def test_compute_dimensionless_parameters_performance(self):
-        """Тест производительности вычисления безразмерных параметров"""
-        import time
+    def setup_method(self):
+        """Настройка для каждого теста"""
+        if not QApplication.instance():
+            self.app_instance = QApplication([])
+        else:
+            self.app_instance = QApplication.instance()
         
-        # Создаем большие массивы данных
-        n_points = 10000
-        time_data = np.linspace(1, 100, n_points)
-        pressure_data = 100 - 0.1 * time_data + np.random.normal(0, 0.1, n_points)
-        flow_rate_data = 50 - 0.05 * time_data + np.random.normal(0, 0.05, n_points)
+        self.app = MyApp(test_mode=True)
+    
+    def test_application_startup(self):
+        """Тест запуска приложения"""
+        app = MyApp(test_mode=True)
         
-        well_data = WellTimeSeries(
-            time=pd.Series(time_data),
-            pressure=pd.Series(pressure_data),
-            flow_rate=pd.Series(flow_rate_data),
-            thickness=10.0,
-            fracture_length=100.0,
-            skin=0.0,
-            fractures_count=1,
-            a_l_ratio=0.1
-        )
+        # Проверяем, что приложение создалось
+        assert app is not None
+        assert hasattr(app, 'well_data_list')
+        assert hasattr(app, 'current_well_index')
+        assert app.test_mode is True
+    
+    def test_constants_defined(self):
+        """Тест что все константы определены"""
+        from main import (WINDOW_WIDTH, WINDOW_HEIGHT, TAB_WIDGET_X, TAB_WIDGET_Y,
+                          TAB_WIDGET_WIDTH, TAB_WIDGET_HEIGHT, LEFT_PANEL_MAX_WIDTH,
+                          RMSE_EXCELLENT_THRESHOLD, RMSE_GOOD_THRESHOLD,
+                          DEFAULT_K, DEFAULT_MU, DEFAULT_B, DEFAULT_PHI, DEFAULT_C_T,
+                          DEFAULT_OUTLIER_THRESHOLD, DEFAULT_SAVGOL_WINDOW_LENGTH,
+                          DEFAULT_SAVGOL_POLYORDER, N_PARAMETERS_PER_POINT,
+                          REPORT_SEPARATOR_LENGTH, TYPE_CURVE_N_POINTS,
+                          TYPE_CURVE_TIME_MIN, TYPE_CURVE_TIME_MAX, INTERPOLATION_METHODS)
         
-        # Измеряем время выполнения
-        start_time = time.time()
-        X, Y = compute_dimensionless_parameters(
-            well_data, 
-            time_data, 
-            pressure_data, 
-            flow_rate_data
-        )
-        end_time = time.time()
-        
-        execution_time = end_time - start_time
-        
-        # Проверяем, что выполнение заняло разумное время (< 1 секунды)
-        assert execution_time < 1.0, f"Выполнение заняло {execution_time:.3f} секунд"
-        
-        # Проверяем, что результат корректен
-        assert len(X) == n_points
-        assert len(Y) == n_points
-        assert np.all(np.isfinite(X))
-        assert np.all(np.isfinite(Y))
+        assert isinstance(WINDOW_WIDTH, int)
+        assert isinstance(WINDOW_HEIGHT, int)
+        assert isinstance(RMSE_EXCELLENT_THRESHOLD, float)
+        assert isinstance(RMSE_GOOD_THRESHOLD, float)
+        assert isinstance(DEFAULT_K, float)
+        assert isinstance(INTERPOLATION_METHODS, tuple)
 
 
 if __name__ == "__main__":
