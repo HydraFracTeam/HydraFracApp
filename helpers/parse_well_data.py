@@ -88,6 +88,8 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
                     time=group_data['t'].reset_index(drop=True),
                     pressure=group_data['P'].reset_index(drop=True),
                     flow_rate=group_data['Q'].reset_index(drop=True),
+                    X=group_data['X'].reset_index(drop=True) if 'X' in group_data.columns else None,
+                    Y=group_data['Y'].reset_index(drop=True) if 'Y' in group_data.columns else None,
                     skin=float(group_data['Skin'].iloc[0]),
                     thickness=float(group_data['h'].iloc[0]),
                     fractures_count=int(group_data['N'].iloc[0]),

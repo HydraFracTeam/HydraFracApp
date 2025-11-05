@@ -12,7 +12,7 @@ from schemas.well_data import WellData, WellTimeSeries, FlowRegimeAnalysis, Type
 from helpers.grp_analysis import (
     compute_pressure_derivative, compute_flow_rate_derivative,
     analyze_flow_regime, generate_type_curves, match_type_curves,
-    compute_well_productivity_index, detect_flow_regime_transitions
+    compute_productivity_index, detect_flow_regime_transitions
 )
 from helpers.ml_methods import (
     MLInterpolator, MLFilter, AdvancedInterpolator,
@@ -114,7 +114,7 @@ class TestPhysicalAdequacy:
             fracture_width=1125.0, fracture_length=280.0, a_l_ratio=0.446429
         )
         
-        productivity = compute_well_productivity_index(ts)
+        productivity = compute_productivity_index(ts)
         
         # Проверяем физическую адекватность результатов
         assert productivity['productivity_index'] > 0, "Индекс продуктивности должен быть положительным"

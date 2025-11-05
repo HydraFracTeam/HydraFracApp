@@ -296,7 +296,7 @@ def match_type_curves(time_series: WellTimeSeries) -> TypeCurveMatch:
     )
 
 
-def compute_well_productivity_index(time_series: WellTimeSeries) -> Dict[str, float]:
+def compute_productivity_index(time_series: WellTimeSeries) -> Dict[str, float]:
     """
     Вычисляет индекс продуктивности скважины.
     """

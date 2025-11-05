@@ -9,7 +9,8 @@ from sklearn.metrics import mean_squared_error
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, Matern
 from scipy import signal
-from scipy.interpolate import interp1d, UnivariateSpline, RBFInterpolator
+from scipy.interpolate import interp1d, UnivariateSpline
+from scipy.interpolate import RBFInterpolator as ScipyRBFInterpolator
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -275,11 +276,14 @@ def clean_data(time: pd.Series, values: pd.Series,
     outliers = detect_outliers(values, method=outlier_method)
     
     # Удаляем выбросы
-    clean_time = time[~outliers]
-    clean_values = values[~outliers]
+    clean_time = time[~outliers].reset_index(drop=True)
+    clean_values = values[~outliers].reset_index(drop=True)
     
     # Применяем фильтрацию
     filtered_values = apply_ml_filter(clean_values, method=filter_method)
+    
+    # Убеждаемся, что индексы совпадают
+    filtered_values = filtered_values.reset_index(drop=True)
     
     return clean_time, filtered_values
 
@@ -389,7 +393,7 @@ class RBFInterpolator:
             raise ValueError("Недостаточно данных для RBF")
         
         # Создаем RBF интерполятор
-        self.rbf = RBFInterpolator(time_clean.reshape(-1, 1), values_clean, 
+        self.rbf = ScipyRBFInterpolator(time_clean.reshape(-1, 1), values_clean, 
                                  function=self.function, smoothing=self.smoothing)
         self.fitted = True
         return self

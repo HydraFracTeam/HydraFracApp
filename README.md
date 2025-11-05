@@ -99,3 +99,10 @@ python main.py
 ## Пример данных
 
 См. файл `well_data_test.csv` для примера формата данных.
+
+## Документация
+
+- **[TESTING.md](TESTING.md)** - Руководство по тестированию приложения
+- **[DIMENSIONLESS_METHODS.md](DIMENSIONLESS_METHODS.md)** - Документация по безразмерным методам
+- **[INTERPOLATION_METHODS.md](INTERPOLATION_METHODS.md)** - Документация по методам интерполяции
+- **[REQUIREMENTS_CHECK.md](REQUIREMENTS_CHECK.md)** - Проверка выполнения требований
