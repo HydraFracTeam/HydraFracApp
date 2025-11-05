@@ -260,7 +260,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.ml_filter_btn.clicked.connect(self.on_ml_filter)
         self.outlier_btn.clicked.connect(self.on_detect_outliers)
         self.export_btn.clicked.connect(self.on_export_data)
-        self.load_validation_button.clicked.connect(self.load_validation_file)
+        # self.load_validation_button.clicked.connect(self.load_validation_file)
         
         # Кнопка сброса графиков (если существует)
         if hasattr(self, 'reset_plots_btn'):
@@ -334,28 +334,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         for i, item in enumerate(self.loaded_data):
             self.well_combo_dim.addItem(f"Скважина {i+1} (Skin={item.skin:.2f})")
 
-    def load_validation_file(self) -> None:
-        """Загрузка файла для проверки качества интерполяции."""
-        file_dialog = QFileDialog()
-        file_path, _ = file_dialog.getOpenFileName(self, "Загрузить файл для проверки", "./", 
-                                                 "Data Files (*.csv *.parquet);;CSV Files (*.csv);;Parquet Files (*.parquet);;All Files (*)")
-        if not file_path:
-            return
 
-        try:
-            data, error_msg = parse_well_data(file_path)
-            if error_msg is not None:
-                self.show_warning("Ошибка загрузки", error_msg)
-                return
-        except Exception as e:
-            self.show_warning("Ошибка загрузки", f"Неожиданная ошибка при загрузке файла: {str(e)}")
-            return
-
-        self.validation_data = data
-        self.show_info("Файл для проверки", 
-                      f"Загружено {len(data)} групп данных для проверки\n"
-                      f"Всего измерений: {sum(len(item.time) for item in data)}")
-    
     def run_data_diagnostics(self, file_path: str) -> None:
         """Запускает диагностику загруженных данных"""
         try:

@@ -58,13 +58,6 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     left_layout.setContentsMargins(0, 0, 5, 0)
     left_panel.setMaximumWidth(LEFT_PANEL_MAX_WIDTH)  # фиксированная ширина
 
-    # --- Загрузка файлов ---
-    load_group = QGroupBox("Загрузка данных")
-    load_layout = QGridLayout(load_group)
-    app.load_validation_button = QPushButton("Загрузить файл для проверки")
-    load_layout.addWidget(app.load_validation_button, 0, 0)
-    left_layout.addWidget(load_group)
-
     # --- Кнопки анализа СВЕРХУ ---
     buttons_group = QGroupBox("Управление")
     buttons_layout = QGridLayout(buttons_group)
@@ -97,7 +90,6 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     real_lay = QVBoxLayout(app.grp_real)
     app.cb_real_p = QCheckBox("P(t)")
     app.cb_real_q = QCheckBox("Q(t)")
-    # Убран чекбокс t(ось) - время всегда используется как ось X для реальных параметров
     real_lay.addWidget(app.cb_real_p)
     real_lay.addWidget(app.cb_real_q)
     controls_layout.addWidget(app.grp_real)
@@ -105,6 +97,7 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     # Безразмерные (log-log)
     app.grp_dim = QGroupBox("Безразмерные (log-log)")
     dim_lay = QVBoxLayout(app.grp_dim)
+    app.grp_dim.setFixedHeight(180)
     app.cb_dim_pD = QCheckBox("pD(Y)")
     app.cb_dim_dpD = QCheckBox("dpD/dlogY")
     app.cb_dim_tD = QCheckBox("tD (≈Y)")
@@ -118,6 +111,7 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     dim_lay.addWidget(app.cb_XY_plot)
     dim_lay.addWidget(app.cb_calc_XY)
     controls_layout.addWidget(app.grp_dim)
+    # controls_layout.setStretch(controls_layout.indexOf(app.grp_dim), 1)
 
     # Спец-пространства и типовые кривые
     app.grp_special = QGroupBox("Спец-пространства/типовые")
