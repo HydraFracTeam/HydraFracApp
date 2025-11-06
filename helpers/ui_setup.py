@@ -18,8 +18,8 @@ if TYPE_CHECKING:
     from main import MyApp
 
 
-def setup_professional_interface(app: 'MyApp') -> None:
-    """Создает профессиональный интерфейс с вкладками для анализа ГРП"""
+def setup_interface(app: 'MyApp') -> None:
+    """Создает интерфейс с вкладками для анализа ГРП"""
     # Основной контейнер с вкладками
     app.tab_widget = QTabWidget(app.centralwidget)
     app.tab_widget.setGeometry(TAB_WIDGET_X, TAB_WIDGET_Y, TAB_WIDGET_WIDTH, TAB_WIDGET_HEIGHT)
