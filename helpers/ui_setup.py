@@ -73,12 +73,14 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     app.ml_filter_btn = QPushButton("ML фильтрация")
     app.outlier_btn = QPushButton("Обнаружить выбросы")
     app.export_btn = QPushButton("Экспорт данных")
+    app.extrapolate_btn = QPushButton("Экстраполировать X-Y")
 
     buttons_layout.addWidget(app.plot_btn, 0, 0)
     buttons_layout.addWidget(app.interp_btn, 0, 1)
     buttons_layout.addWidget(app.ml_filter_btn, 1, 0)
     buttons_layout.addWidget(app.outlier_btn, 1, 1)
     buttons_layout.addWidget(app.export_btn, 2, 0)
+    buttons_layout.addWidget(app.extrapolate_btn, 2, 1)
     left_layout.addWidget(buttons_group)
 
     # --- Выбор скважины ---

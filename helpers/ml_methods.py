@@ -608,6 +608,76 @@ class AdaptiveInterpolator:
 
 
 # Функции для удобного использования новых интерполяторов
+
+def extrapolate_series_math(series: pd.Series, steps: int = 10, degree: int = 2) -> pd.Series:
+    """Экстраполяция ряда полиномиальной регрессией (безопасный фоллбэк к линейной).
+    Возвращает продолжение ряда длиной steps с тем же индексом типа, что у входа (если числовой индекс).
+    """
+    values = series.dropna().values
+    if len(values) < 3 or steps <= 0:
+        return pd.Series(dtype=float)
+    x = np.arange(len(values))
+    try:
+        coeffs = np.polyfit(x, values, deg=min(degree, len(values) - 1))
+        poly = np.poly1d(coeffs)
+        x_future = np.arange(len(values), len(values) + steps)
+        y_future = poly(x_future)
+    except Exception:
+        # Линейный фоллбэк
+        if len(values) < 2:
+            return pd.Series(dtype=float)
+        slope = values[-1] - values[-2]
+        y_future = values[-1] + slope * np.arange(1, steps + 1)
+    return pd.Series(y_future)
+
+
+def extrapolate_series_ml(series: pd.Series, steps: int = 10, method: str = 'ridge') -> pd.Series:
+    """Экстраполяция ряда с помощью ML (простая регрессия по индексу)."""
+    values = series.dropna().values
+    if len(values) < 3 or steps <= 0:
+        return pd.Series(dtype=float)
+    x = np.arange(len(values)).reshape(-1, 1)
+    if method == 'random_forest':
+        model = RandomForestRegressor(n_estimators=200, random_state=42)
+    elif method == 'ridge':
+        model = Ridge(alpha=1.0)
+    else:
+        model = LinearRegression()
+    model.fit(x, values)
+    x_future = np.arange(len(values), len(values) + steps).reshape(-1, 1)
+    y_future = model.predict(x_future)
+    return pd.Series(y_future)
+
+
+def extrapolate_parameters_df(df: pd.DataFrame,
+                              steps: int = 10,
+                              method: str = 'math',
+                              exclude: Tuple[str, ...] = ('X', 'Y')) -> pd.DataFrame:
+    """Экстраполирует все столбцы параметров (кроме exclude) на указанное число шагов."""
+    future = {}
+    for col in df.columns:
+        if col in exclude:
+            continue
+        series = pd.Series(df[col])
+        if method == 'math':
+            ext = extrapolate_series_math(series, steps=steps)
+        else:
+            ext = extrapolate_series_ml(series, steps=steps)
+        future[col] = ext.values
+    return pd.DataFrame(future)
+
+
+def generate_xy_from_params(params_row: Dict[str, float], n_points: int = 64) -> Tuple[np.ndarray, np.ndarray]:
+    """Генерирует кривую X-Y по размерным параметрам (skin, N, a_L) через физическую модель."""
+    # Импортируем здесь, чтобы избежать циклических зависимостей на уровне модуля
+    from helpers.physics import predict_production_curve
+    time_range = np.logspace(-3, 3, n_points)
+    skin = float(params_row.get('skin', 0.0))
+    N = int(params_row.get('N', params_row.get('fractures_count', 1)))
+    a_L = float(params_row.get('a_L', params_row.get('a_l_ratio', 0.1)))
+    X, Y = predict_production_curve(skin=skin, n=N, aL=a_L, time_range=time_range)
+    return X, Y
+
 def apply_kriging_interpolation(time: pd.Series, values: pd.Series) -> pd.Series:
     """Применение кригинг-интерполяции"""
     kriging = KrigingInterpolator()

@@ -57,6 +57,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.loaded_data = []  # Список WellTimeSeries объектов
         self.current_index = 0  # Индекс текущей скважины
         self.validation_data = []  # Данные для проверки качества интерполяции
+        self.last_interpolated_mask_XY = None  # Маска восстановленных точек для выделения на X-Y
+        self.last_extrapolated_XY = None  # Пара экстраполированных X,Y для отображения
         
         # Создаем профессиональный интерфейс с вкладками
         setup_professional_interface(self)
@@ -135,7 +137,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Конвертируем в безразмерные параметры
         from helpers.dimensionless_analysis import convert_to_dimensionless_curves
         dim_data = convert_to_dimensionless_curves(
-            self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, params
+            self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, params, x_mode='darcy'
         )
         
         # Используем интерполятор безразмерных кривых для восстановления пропусков
@@ -261,10 +263,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.outlier_btn.clicked.connect(self.on_detect_outliers)
         self.export_btn.clicked.connect(self.on_export_data)
         self.load_validation_button.clicked.connect(self.load_validation_file)
+        # Экстраполяция
+        if hasattr(self, 'extrapolate_btn'):
+            self.extrapolate_btn.clicked.connect(self.on_extrapolate_xy)
         
         # Кнопка сброса графиков (если существует)
         if hasattr(self, 'reset_plots_btn'):
             self.reset_plots_btn.clicked.connect(self.on_reset_plots)
+        # Смена скважины: сбрасываем график и маски
+        if hasattr(self, 'well_combo_dim'):
+            self.well_combo_dim.currentIndexChanged.connect(self.on_well_changed)
         
         # Анализ ГРП
         self.flow_regime_btn.clicked.connect(self.on_analyze_flow_regime)
@@ -380,7 +388,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     from helpers.dimensionless_analysis import convert_to_dimensionless_curves
                     params = self._get_params(item)
                     dim_data = convert_to_dimensionless_curves(
-                        item.time, item.pressure, item.flow_rate, params
+                        item.time, item.pressure, item.flow_rate, params, x_mode='darcy'
                     )
                     
                     # Создаем DataFrame в нужном формате
@@ -487,9 +495,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         try:
             # Подсчитываем количество пропусков
-            n_nan_pressure = self.current_data.pressure.isna().sum()
+            pressure_is_nan_mask = self.current_data.pressure.isna().values if hasattr(self.current_data.pressure, 'isna') else None
+            n_nan_pressure = int(np.nansum(pressure_is_nan_mask)) if pressure_is_nan_mask is not None else self.current_data.pressure.isna().sum()
             n_nan_flow = self.current_data.flow_rate.isna().sum()
             
+            # Сохраняем маску пропусков для подсветки на X-Y графике
+            try:
+                self.last_interpolated_mask_XY = pressure_is_nan_mask.copy() if pressure_is_nan_mask is not None else None
+            except Exception:
+                self.last_interpolated_mask_XY = None
+
             # Выполняем интерполяцию
             interp_info, _ = self._perform_interpolation(n_nan_pressure, n_nan_flow)
             
@@ -564,6 +579,46 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         if not self.test_mode:
             self.show_info("Графики очищены", "Все графики и чекбоксы сброшены")
+
+        # Сбрасываем внутренние состояния подсветки/экстраполяции
+        self.last_interpolated_mask_XY = None
+        self.last_extrapolated_XY = None
+
+    def on_well_changed(self, index: int) -> None:
+        """Обработка смены выбранной скважины."""
+        self.current_index = index
+        self.last_interpolated_mask_XY = None
+        self.last_extrapolated_XY = None
+        # Обновляем инфо и очищаем графики/чекбоксы
+        self.update_grp_parameters()
+        self.update_data_tab()
+        if hasattr(self, 'dimensionless_plot'):
+            self.dimensionless_plot.clear()
+            self.dimensionless_plot.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
+            self.dimensionless_plot.setLabel('left', 'Безразмерный параметр')
+            self.dimensionless_plot.setTitle("Безразмерные кривые МГРП")
+            self.dimensionless_plot.showGrid(x=True, y=True)
+
+    def on_extrapolate_xy(self) -> None:
+        """Экстраполяция и наложение X–Y кривой на график."""
+        if self.current_data is None:
+            return
+        try:
+            # Готовим параметры скважины
+            params = self._get_params(self.current_data)
+            # Генерируем кривую X–Y по физической модели
+            from helpers.ml_methods import generate_xy_from_params
+            X_ext, Y_ext = generate_xy_from_params({
+                'skin': params['skin'],
+                'N': params['N'],
+                'a_L': params['a_L']
+            }, n_points=128)
+            self.last_extrapolated_XY = (X_ext, Y_ext)
+            # Перестраиваем график с наложением экстраполяции
+            self.on_plot_dimensionless_selected()
+            self.show_info("Экстраполяция", "Экстраполированная кривая X–Y добавлена на график")
+        except Exception as e:
+            self.show_warning("Ошибка экстраполяции", f"Не удалось выполнить экстраполяцию: {str(e)}")
     
     def on_plot_dimensionless_selected(self) -> None:
         """Обработка нажатия на кнопку 'Построить график'."""
@@ -581,7 +636,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # 1️⃣ Конвертация в безразмерные параметры
             dim_data = convert_to_dimensionless_curves(
-                current_item.time, current_item.pressure, current_item.flow_rate, params
+                current_item.time, current_item.pressure, current_item.flow_rate, params, x_mode='darcy'
             )
 
             # 2️⃣ Определяем, какие группы графиков выбраны
@@ -633,7 +688,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     ref_item = self.validation_data[0]
                     ref_params = self._get_params(ref_item)
                     ref_dim = convert_to_dimensionless_curves(
-                        ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params
+                        ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params, x_mode='darcy'
                     )
                     validation_data = {'ref_dim': ref_dim}
                 except Exception as e:
@@ -644,6 +699,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
             X_data = current_item.X if hasattr(current_item, 'X') and current_item.X is not None else None
             Y_data = current_item.Y if hasattr(current_item, 'Y') and current_item.Y is not None else None
             show_calc_XY = hasattr(self, 'cb_calc_XY') and self.cb_calc_XY.isChecked()
+
+            # Предупреждение: выбран график X-Y из данных, но данных X,Y нет
+            if checked_groups.get('cb_XY_plot', False) and (X_data is None or Y_data is None):
+                self.show_warning("X-Y график", "Входные X,Y отсутствуют в данных. Будут использованы расчётные значения.")
             
             plot_dimensionless_grouped(
                 plot_widget=self.dimensionless_plot,
@@ -655,7 +714,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 validation_data=validation_data,
                 X_data=X_data,
                 Y_data=Y_data,
-                show_calculated_XY=show_calc_XY
+                show_calculated_XY=show_calc_XY,
+                interpolated_mask_XY=(self.last_interpolated_mask_XY if self.last_interpolated_mask_XY is not None else None),
+                extrapolated_XY=(self.last_extrapolated_XY if self.last_extrapolated_XY is not None else None)
             )
             
             self.text_report.append("✅ График построен успешно")

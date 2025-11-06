@@ -35,12 +35,29 @@ class DimensionlessParameters:
     phi: float  # Пористость
     c_t: float  # Общая сжимаемость, 1/атм
     L: float  # Длина трещины, м
-    delta_p_i: float  # Начальное падение давления, атм
+    delta_p_i: float  # Нормировочный перепад давления для pD (может быть скаляр)
     Q: float  # Дебит, м³/сут
     t: np.ndarray  # Время, ч
 
 
 class DimensionlessConverter:
+    @staticmethod
+    def compute_delta_p_array(pressure: np.ndarray, mode: str = 'initial') -> np.ndarray:
+        """Вычисляет массив приращений давления Δp по выбранному режиму.
+        mode='initial': Δp[i] = p_initial - p[i]
+        mode='prev':    Δp[i] = p[i-1] - p[i], Δp[0] = 0
+        """
+        if pressure is None or len(pressure) == 0:
+            return np.asarray([])
+        p = np.asarray(pressure, dtype=float)
+        if mode == 'prev':
+            dp = np.empty_like(p)
+            dp[0] = 0.0
+            dp[1:] = p[:-1] - p[1:]
+            return dp
+        # default 'initial'
+        p_initial = p[0]
+        return p_initial - p
     """Конвертер в безразмерные параметры для МГРП"""
     
     def __init__(self):
@@ -56,9 +73,11 @@ class DimensionlessConverter:
                                 time: pd.Series,
                                 pressure: pd.Series,
                                 flow_rate: pd.Series,
-                                well_params: Dict[str, float]) -> DimensionlessParameters:
+                                well_params: Dict[str, float],
+                                x_mode: str = 'darcy',
+                                delta_p_mode: str = 'initial') -> DimensionlessParameters:
         """
-        Конвертация в безразмерные параметры
+        Конвертация в безразмерные параметры    
         
         Args:
             time: Временной ряд, ч
@@ -75,24 +94,13 @@ class DimensionlessConverter:
         c_t = well_params.get('c_t', self.default_params['c_t'])
         L = well_params.get('L', 100.0)
         
-        # Начальное падение давления Δp_i
-        # По умолчанию: p_initial - p_shut_in, где p_shut_in ≈ p[0]
+        # Нормировочный перепад давления (скаляр) для pD: используем размах как надёжную норму
         try:
-            p_shut_in = float(pressure.iloc[0]) if len(pressure) > 0 else float(pressure)
-            p_initial = float(pressure.max()) if hasattr(pressure, 'max') else float(pressure)
-            delta_p_i = p_initial - p_shut_in
+            delta_p_i = float(pressure.max()) - float(pressure.min())
         except Exception:
-            # Фоллбэк: перепад по всему ряду
-            try:
-                delta_p_i = float(pressure.max()) - float(pressure.min())
-            except Exception:
-                delta_p_i = 1.0
+            delta_p_i = 1.0
         if not np.isfinite(delta_p_i) or delta_p_i == 0:
-            # Последний фоллбэк: перепад по ряду или 1.0
-            try:
-                delta_p_i = float(pressure.max()) - float(pressure.min())
-            except Exception:
-                delta_p_i = 1.0
+            delta_p_i = 1.0
         
         # Средний дебит
         Q = flow_rate.mean() if not flow_rate.empty else 1.0
@@ -101,15 +109,29 @@ class DimensionlessConverter:
         t = time.values
         p = pressure.values
         q = flow_rate.values
+
+        # Вектор приращений давления по выбранному режиму
+        delta_p_vec = self.compute_delta_p_array(p, mode=delta_p_mode)
+        # Безопасная замена нулей на маленькое число во избежание деления на ноль
+        delta_p_vec_safe = np.where(np.abs(delta_p_vec) < 1e-12, 1e-12, delta_p_vec)
         
-        # Фильтрационный параметр X = (0.00864 * k * h * Δp_i) / (μ * B * Q)
-        X = (0.00864 * k * h * delta_p_i) / (mu * B * Q)
+        # Фильтрационный параметр X
+        if x_mode == 'darcy':
+            # X = (dp/dt) * (k * h) / (Q * mu * B)
+            dt = np.gradient(t)
+            dt = np.where(np.abs(dt) < 1e-12, 1e-12, dt)
+            dp = np.gradient(p)
+            X = (dp / dt) * (k * h) / ((Q if Q != 0 else 1e-12) * mu * B)
+        else:
+            # Константный X по определению
+            # Используем вектор Δp для учёта изменения по времени
+            X = (0.00864 * k * h * delta_p_vec_safe) / (mu * B * (Q if Q != 0 else 1.0))
         
-        # Ёмкостной параметр Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i)
-        Y = (Q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_i)
+        # Ёмкостной параметр Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp)
+        Y = (Q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
         
         return DimensionlessParameters(
-            X=np.full_like(t, X),  # X постоянен для всех временных точек
+            X=X,
             Y=Y,
             pressure=p,  # Сохраняем исходные данные
             flow_rate=q,
@@ -280,6 +302,7 @@ class DimensionlessInterpolator:
         
         # Подготавливаем координаты для интерполяции
         X_coords = target_dimensionless.X.reshape(-1, 1)
+        
         Y_coords = target_dimensionless.Y.reshape(-1, 1)
         target_coords = np.hstack([X_coords, Y_coords])
         
@@ -534,10 +557,12 @@ class DimensionlessExtrapolator:
 def convert_to_dimensionless_curves(time: pd.Series,
                                    pressure: pd.Series,
                                    flow_rate: pd.Series,
-                                   well_params: Dict[str, float]) -> DimensionlessParameters:
+                                   well_params: Dict[str, float],
+                                   x_mode: str = 'constant',
+                                   delta_p_mode: str = 'initial') -> DimensionlessParameters:
     """Конвертация в безразмерные кривые"""
     converter = DimensionlessConverter()
-    return converter.convert_to_dimensionless(time, pressure, flow_rate, well_params)
+    return converter.convert_to_dimensionless(time, pressure, flow_rate, well_params, x_mode=x_mode, delta_p_mode=delta_p_mode)
 
 
 def interpolate_dimensionless_curves(time: pd.Series,

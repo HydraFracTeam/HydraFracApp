@@ -18,6 +18,8 @@ from helpers.dimensionless_analysis import (
     create_dimensionless_type_curves
 )
 
+from helpers.dimensionless_preprocessor import DimensionlessPreprocessor
+
 
 def plot_dimensionless_grouped(plot_widget: PlotWidget,
                                dim_data: DimensionlessParameters,
@@ -28,7 +30,9 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
                                validation_data: Optional[Dict] = None,
                                X_data: Optional[pd.Series] = None,
                                Y_data: Optional[pd.Series] = None,
-                               show_calculated_XY: bool = False) -> None:
+                               show_calculated_XY: bool = False,
+                               interpolated_mask_XY: Optional[np.ndarray] = None,
+                               extrapolated_XY: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> None:
     """
     Отображает графики, сгруппированные по плоскостям отображения.
     
@@ -90,7 +94,7 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
     # ГРУППА 2: Безразмерные кривые - плоскость (X, pD/qD/tD/CD)
     # Все безразмерные кривые отображаются в плоскости X-Y
     if has_dim:
-        # Используем X и Y из данных, если они есть, иначе используем расчётные
+        # Используем X и Y из данных, если они есть, иначе считаем из размерных данных локально
         if X_data is not None and Y_data is not None:
             # Преобразуем в numpy массивы (без ограничения снизу, так как не log-log)
             X = X_data.values.astype(float)
@@ -99,9 +103,36 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
             X_calc = dim_data.X.astype(float)
             Y_calc = dim_data.Y.astype(float)
         else:
-            # Используем только расчётные значения
-            X = dim_data.X.astype(float)
-            Y = dim_data.Y.astype(float)
+            # Локально рассчитываем X_calc/Y_calc через препроцессор из размерных t,P,Q и параметров пласта
+            try:
+                import pandas as _pd
+                prep = DimensionlessPreprocessor()
+                df_dim = _pd.DataFrame({
+                    't': time.values,
+                    'P': pressure.values,
+                    'Q': flow_rate.values
+                })
+                well_params = {
+                    'k': dim_data.k,
+                    'h': dim_data.h,
+                    'mu': dim_data.mu,
+                    'B': dim_data.B,
+                    'phi': dim_data.phi,
+                    'c_t': dim_data.c_t,
+                    'L': dim_data.L,
+                }
+                df_ready = prep.compute_from_dimensional(
+                    df_dim,
+                    time_col='t', pressure_col='P', flow_col='Q',
+                    well_params=well_params,
+                    x_mode='darcy', delta_p_mode='initial'
+                )
+                X = df_ready['X_calc'].to_numpy(dtype=float)
+                Y = df_ready['Y_calc'].to_numpy(dtype=float)
+            except Exception:
+                # Фоллбэк — берём расчётные значения из dim_data
+                X = dim_data.X.astype(float)
+                Y = dim_data.Y.astype(float)
             X_calc = None
             Y_calc = None
         
@@ -208,17 +239,33 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
                         X_plot = X_raw[mask_xy]
                         Y_plot = Y_raw[mask_xy]
                         if len(X_plot) > 0:
-                            plot_widget.plot(X_plot, Y_plot,
-                                            pen=pg.mkPen(color=(100, 150, 255), width=2),
-                                            symbol='o', symbolSize=5,
-                                            name="X-Y (из данных)",
-                                            connect='finite')
+                            # Если есть маска восстановленных точек, подсветим их
+                            if interpolated_mask_XY is not None and len(interpolated_mask_XY) >= len(X_raw):
+                                interp_mask = interpolated_mask_XY[:len(X_raw)][mask_xy]
+                                # Исходные
+                                if np.any(~interp_mask):
+                                    plot_widget.plot(X_plot[~interp_mask], Y_plot[~interp_mask],
+                                                     pen=None,
+                                                     symbol='o', symbolSize=6,
+                                                     symbolBrush=pg.mkBrush(100, 150, 255, 200),
+                                                     name="X-Y (исходные)")
+                                # Восстановленные
+                                if np.any(interp_mask):
+                                    plot_widget.plot(X_plot[interp_mask], Y_plot[interp_mask],
+                                                     pen=None,
+                                                     symbol='o', symbolSize=7,
+                                                     symbolBrush=pg.mkBrush(255, 100, 100, 220),
+                                                     name="X-Y (восстановлено)")
+                            else:
+                                plot_widget.plot(X_plot, Y_plot,
+                                                 pen=pg.mkPen(color=(100, 150, 255), width=2),
+                                                 symbol='o', symbolSize=5,
+                                                 name="X-Y (из данных)",
+                                                 connect='finite')
             elif X is not None and Y is not None:
-                # Если данных нет, используем расчётные для X-Y графика
-                # Но используем исходные значения до нормализации
-                # Получаем их из dim_data напрямую
-                X_raw = dim_data.X.astype(float)
-                Y_raw = dim_data.Y.astype(float)
+                # Если X,Y из данных отсутствуют — используем локально рассчитанные X,Y
+                X_raw = X.astype(float)
+                Y_raw = Y.astype(float)
                 
                 # Проверяем, что данные имеют одинаковую длину
                 min_len = min(len(X_raw), len(Y_raw))
@@ -236,6 +283,19 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
                                             symbol='o', symbolSize=5,
                                             name="X-Y (расчётные)",
                                             connect='finite')
+
+            # Экстраполированные X-Y, если переданы
+            if extrapolated_XY is not None:
+                try:
+                    X_ext, Y_ext = extrapolated_XY
+                    if X_ext is not None and Y_ext is not None and len(X_ext) > 0:
+                        plot_widget.plot(np.asarray(X_ext, dtype=float), np.asarray(Y_ext, dtype=float),
+                                         pen=pg.mkPen(color=(255, 150, 50), width=2, style=pg.QtCore.Qt.DotLine),
+                                         symbol=None,
+                                         name="X-Y (экстраполяция)",
+                                         connect='finite')
+                except Exception:
+                    pass
         
         # Отображаем расчётные X и Y, если установлен флаг и они отличаются от данных
         if show_calculated_XY and X_calc is not None and Y_calc is not None:
