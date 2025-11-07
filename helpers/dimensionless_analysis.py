@@ -26,6 +26,7 @@ class DimensionlessParameters:
     # Исходные физические данные
     pressure: np.ndarray  # Исходное давление, атм
     flow_rate: np.ndarray  # Исходный дебит, м³/сут
+    dP: np.ndarray  # Приращение давления, вычисленное из данных, атм
     
     # Исходные физические параметры
     k: float  # Проницаемость, мД
@@ -74,7 +75,7 @@ class DimensionlessConverter:
                                 pressure: pd.Series,
                                 flow_rate: pd.Series,
                                 well_params: Dict[str, float],
-                                x_mode: str = 'darcy',
+                                x_mode: str = 'alt',
                                 delta_p_mode: str = 'initial') -> DimensionlessParameters:
         """
         Конвертация в безразмерные параметры    
@@ -83,7 +84,12 @@ class DimensionlessConverter:
             time: Временной ряд, ч
             pressure: Давление, атм
             flow_rate: Дебит, м³/сут
-            well_params: Параметры скважины (k, h, mu, B, phi, c_t, L, skin, N, a_L)
+            well_params: Параметры скважины (k, h, mu, B, phi, c_t, L, skin, N, a_L, dP)
+            x_mode: Режим вычисления X:
+                - 'darcy': X = (dp/dt) * (k * h) / (Q * mu * B)
+                - 'constant': X = (0.00864 * k * h * Δp) / (μ * B * Q)
+                - 'alt': X = 0.00864 * k * h * dP / (1 * Q)
+            delta_p_mode: Режим вычисления Δp ('initial' или 'prev')
         """
         # Извлекаем параметры
         k = well_params.get('k', self.default_params['k'])
@@ -110,8 +116,25 @@ class DimensionlessConverter:
         p = pressure.values
         q = flow_rate.values
 
-        # Вектор приращений давления по выбранному режиму
-        delta_p_vec = self.compute_delta_p_array(p, mode=delta_p_mode)
+        # Вектор приращений давления: используем dP из данных CSV, если есть, иначе вычисляем
+        dP_from_params = well_params.get('dP', None)
+        if dP_from_params is not None:
+            # dP передан из CSV данных
+            if hasattr(dP_from_params, 'values'):
+                # pd.Series - извлекаем значения
+                delta_p_vec = np.asarray(dP_from_params.values, dtype=float)
+            elif isinstance(dP_from_params, (list, tuple, np.ndarray)):
+                # Уже массив или список
+                delta_p_vec = np.asarray(dP_from_params, dtype=float)
+            else:
+                # Скаляр - создаем массив
+                delta_p_vec = np.full(len(p), float(dP_from_params))
+            dP = delta_p_vec.copy()
+        else:
+            # Вычисляем dP из давления по выбранному режиму
+            delta_p_vec = self.compute_delta_p_array(p, mode=delta_p_mode)
+            dP = delta_p_vec.copy()
+        
         # Безопасная замена нулей на маленькое число во избежание деления на ноль
         delta_p_vec_safe = np.where(np.abs(delta_p_vec) < 1e-12, 1e-12, delta_p_vec)
         
@@ -122,19 +145,32 @@ class DimensionlessConverter:
             dt = np.where(np.abs(dt) < 1e-12, 1e-12, dt)
             dp = np.gradient(p)
             X = (dp / dt) * (k * h) / ((Q if Q != 0 else 1e-12) * mu * B)
+        elif x_mode == 'alt':
+            # Альтернативный режим: X = 0.00864 * k * h * dP / (1 * Q)
+            # Используем dP из данных CSV (delta_p_vec_safe) и вектор q (как в example.py)
+            # Защита от деления на ноль
+            q_safe = np.where(np.abs(q) < 1e-12, 1.0, q)
+            X = (0.00864 * k * h * delta_p_vec_safe) / q_safe
         else:
             # Константный X по определению
-            # Используем вектор Δp для учёта изменения по времени
+            # Используем вектор Δp (dP из данных CSV, если передан, иначе вычисленный)
             X = (0.00864 * k * h * delta_p_vec_safe) / (mu * B * (Q if Q != 0 else 1.0))
         
-        # Ёмкостной параметр Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp)
-        Y = (Q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
+        # Ёмкостной параметр Y
+        if x_mode == 'alt':
+            # Альтернативный режим: Y = Q * 1 * t / (24 * phi * c_t * h * L² * dP)
+            # Используем dP из данных CSV (delta_p_vec_safe) и вектор q (как в example.py)
+            Y = (q * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
+        else:
+            # Стандартная формула: Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp)
+            Y = (Q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
         
         return DimensionlessParameters(
             X=X,
             Y=Y,
             pressure=p,  # Сохраняем исходные данные
             flow_rate=q,
+            dP=dP,  # Приращение давления из CSV данных или вычисленное из давления
             k=k, h=h, mu=mu, B=B, phi=phi, c_t=c_t, L=L, 
             delta_p_i=delta_p_i, Q=Q, t=t
         )
@@ -558,7 +594,7 @@ def convert_to_dimensionless_curves(time: pd.Series,
                                    pressure: pd.Series,
                                    flow_rate: pd.Series,
                                    well_params: Dict[str, float],
-                                   x_mode: str = 'constant',
+                                   x_mode: str = 'alt',
                                    delta_p_mode: str = 'initial') -> DimensionlessParameters:
     """Конвертация в безразмерные кривые"""
     converter = DimensionlessConverter()

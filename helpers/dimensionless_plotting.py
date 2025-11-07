@@ -18,7 +18,7 @@ from helpers.dimensionless_analysis import (
     create_dimensionless_type_curves
 )
 
-from helpers.dimensionless_preprocessor import DimensionlessPreprocessor
+# DimensionlessPreprocessor больше не используется - используем напрямую dim_data.X и dim_data.Y
 
 
 def plot_dimensionless_grouped(plot_widget: PlotWidget,
@@ -94,7 +94,8 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
     # ГРУППА 2: Безразмерные кривые - плоскость (X, pD/qD/tD/CD)
     # Все безразмерные кривые отображаются в плоскости X-Y
     if has_dim:
-        # Используем X и Y из данных, если они есть, иначе считаем из размерных данных локально
+        # Используем X и Y из данных, если они есть, иначе используем рассчитанные из dim_data
+        # (как в example.py - напрямую из convert_to_dimensionless_curves, без препроцессора)
         if X_data is not None and Y_data is not None:
             # Преобразуем в numpy массивы (без ограничения снизу, так как не log-log)
             X = X_data.values.astype(float)
@@ -103,36 +104,9 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
             X_calc = dim_data.X.astype(float)
             Y_calc = dim_data.Y.astype(float)
         else:
-            # Локально рассчитываем X_calc/Y_calc через препроцессор из размерных t,P,Q и параметров пласта
-            try:
-                import pandas as _pd
-                prep = DimensionlessPreprocessor()
-                df_dim = _pd.DataFrame({
-                    't': time.values,
-                    'P': pressure.values,
-                    'Q': flow_rate.values
-                })
-                well_params = {
-                    'k': dim_data.k,
-                    'h': dim_data.h,
-                    'mu': dim_data.mu,
-                    'B': dim_data.B,
-                    'phi': dim_data.phi,
-                    'c_t': dim_data.c_t,
-                    'L': dim_data.L,
-                }
-                df_ready = prep.compute_from_dimensional(
-                    df_dim,
-                    time_col='t', pressure_col='P', flow_col='Q',
-                    well_params=well_params,
-                    x_mode='darcy', delta_p_mode='initial'
-                )
-                X = df_ready['X_calc'].to_numpy(dtype=float)
-                Y = df_ready['Y_calc'].to_numpy(dtype=float)
-            except Exception:
-                # Фоллбэк — берём расчётные значения из dim_data
-                X = dim_data.X.astype(float)
-                Y = dim_data.Y.astype(float)
+            # Используем напрямую рассчитанные X и Y из dim_data (без препроцессора, как в example.py)
+            X = dim_data.X.astype(float)
+            Y = dim_data.Y.astype(float)
             X_calc = None
             Y_calc = None
         
@@ -141,13 +115,18 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
         pD = pD.astype(float)
         qD = qD.astype(float)
 
-        # Нормализация к 1 при необходимости (чтобы избежать вылетов)
+        # Сохраняем оригинальные X и Y для графика X-Y (без нормализации, как в example.py)
+        X_original = X.copy()
+        Y_original = Y.copy()
+        
+        # Нормализация к 1 при необходимости (чтобы избежать вылетов) - только для других графиков
         def normalize_if_flat(arr):
             rng = np.nanmax(arr) - np.nanmin(arr)
             if not np.isfinite(rng) or rng < 1e-6:
                 arr = arr / (np.nanmax(arr) if np.nanmax(arr) != 0 else 1.0)
             return arr
 
+        # Нормализуем только для других графиков (pD, dpD, tD, CD), но не для X-Y
         X = normalize_if_flat(X)
         Y = normalize_if_flat(Y)
         pD = normalize_if_flat(pD)
@@ -245,17 +224,19 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
                                 # Исходные
                                 if np.any(~interp_mask):
                                     plot_widget.plot(X_plot[~interp_mask], Y_plot[~interp_mask],
-                                                     pen=None,
+                                                     pen=pg.mkPen(color=(100, 150, 255), width=2),
                                                      symbol='o', symbolSize=6,
                                                      symbolBrush=pg.mkBrush(100, 150, 255, 200),
-                                                     name="X-Y (исходные)")
+                                                     name="X-Y (исходные)",
+                                                     connect='finite')
                                 # Восстановленные
                                 if np.any(interp_mask):
                                     plot_widget.plot(X_plot[interp_mask], Y_plot[interp_mask],
-                                                     pen=None,
+                                                     pen=pg.mkPen(color=(255, 100, 100), width=2),
                                                      symbol='o', symbolSize=7,
                                                      symbolBrush=pg.mkBrush(255, 100, 100, 220),
-                                                     name="X-Y (восстановлено)")
+                                                     name="X-Y (восстановлено)",
+                                                     connect='finite')
                             else:
                                 plot_widget.plot(X_plot, Y_plot,
                                                  pen=pg.mkPen(color=(100, 150, 255), width=2),
@@ -264,8 +245,9 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
                                                  connect='finite')
             elif X is not None and Y is not None:
                 # Если X,Y из данных отсутствуют — используем локально рассчитанные X,Y
-                X_raw = X.astype(float)
-                Y_raw = Y.astype(float)
+                # Используем оригинальные (ненормализованные) значения для графика X-Y, как в example.py
+                X_raw = X_original.astype(float)
+                Y_raw = Y_original.astype(float)
                 
                 # Проверяем, что данные имеют одинаковую длину
                 min_len = min(len(X_raw), len(Y_raw))
@@ -326,6 +308,7 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
             except Exception:
                 pass
         
+        # Всегда добавляем легенду в конце, если были построены какие-либо графики
         plot_widget.addLegend()
         return  # Безразмерные кривые в своем пространстве
     

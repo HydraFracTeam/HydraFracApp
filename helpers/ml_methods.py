@@ -666,7 +666,6 @@ def extrapolate_parameters_df(df: pd.DataFrame,
         future[col] = ext.values
     return pd.DataFrame(future)
 
-
 def generate_xy_from_params(params_row: Dict[str, float], n_points: int = 64) -> Tuple[np.ndarray, np.ndarray]:
     """Генерирует кривую X-Y по размерным параметрам (skin, N, a_L) через физическую модель."""
     # Импортируем здесь, чтобы избежать циклических зависимостей на уровне модуля
@@ -677,6 +676,8 @@ def generate_xy_from_params(params_row: Dict[str, float], n_points: int = 64) ->
     a_L = float(params_row.get('a_L', params_row.get('a_l_ratio', 0.1)))
     X, Y = predict_production_curve(skin=skin, n=N, aL=a_L, time_range=time_range)
     return X, Y
+
+
 
 def apply_kriging_interpolation(time: pd.Series, values: pd.Series) -> pd.Series:
     """Применение кригинг-интерполяции"""

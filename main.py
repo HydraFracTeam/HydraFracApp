@@ -105,7 +105,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
             'L': data_item.fracture_length,
             'skin': data_item.skin,
             'N': data_item.fractures_count,
-            'a_L': data_item.a_l_ratio
+            'a_L': data_item.a_l_ratio,
+            'dP': data_item.dP if data_item.dP is not None else None  # dP из CSV данных
         }
     
     def _get_quality_label(self, rmse: float, short: bool = False) -> str:
@@ -137,7 +138,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Конвертируем в безразмерные параметры
         from helpers.dimensionless_analysis import convert_to_dimensionless_curves
         dim_data = convert_to_dimensionless_curves(
-            self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, params, x_mode='darcy'
+            self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, params, x_mode='alt'
         )
         
         # Используем интерполятор безразмерных кривых для восстановления пропусков
@@ -159,7 +160,26 @@ class MyApp(QMainWindow, Ui_mainWindow):
         )
         
         # Восстанавливаем физические величины из безразмерных
+        # pred_series имеет индекс Y_grid, нужно интерполировать обратно на time
         pressure_values = pred_series.values if hasattr(pred_series, 'values') else np.asarray(pred_series)
+        
+        # Проверяем, что pred_series содержит достаточно точек
+        if len(pressure_values) != len(self.current_data.time):
+            # Если количество точек не совпадает, интерполируем на временную сетку
+            from scipy.interpolate import interp1d
+            Y_grid_values = pred_series.index.values
+            # Интерполируем pD обратно на Y из dim_data, затем на time
+            if len(pressure_values) > 1 and len(dim_data.Y) > 1:
+                # Создаем интерполятор для маппинга Y_grid -> Y из данных
+                interp_pd = interp1d(Y_grid_values, pressure_values, kind='linear', 
+                                     bounds_error=False, fill_value='extrapolate')
+                # Интерполируем на Y из данных
+                pD_interp = interp_pd(dim_data.Y)
+                pressure_values = pD_interp
+            elif len(pressure_values) == 1:
+                # Если только одна точка, дублируем её для всех временных точек
+                pressure_values = np.full(len(self.current_data.time), pressure_values[0])
+        
         self.current_data.pressure = pd.Series(pressure_values * dim_data.delta_p_i, index=self.current_data.time)
         
         # Получаем информацию о результатах интерполяции
@@ -388,7 +408,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     from helpers.dimensionless_analysis import convert_to_dimensionless_curves
                     params = self._get_params(item)
                     dim_data = convert_to_dimensionless_curves(
-                        item.time, item.pressure, item.flow_rate, params, x_mode='darcy'
+                        item.time, item.pressure, item.flow_rate, params, x_mode='alt'
                     )
                     
                     # Создаем DataFrame в нужном формате
@@ -397,6 +417,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                         'Y': dim_data.Y,
                         'P': dim_data.pressure,
                         'Q': dim_data.flow_rate,
+                        'dP': dim_data.dP,
                         't': item.time
                     })
                 else:
@@ -636,7 +657,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # 1️⃣ Конвертация в безразмерные параметры
             dim_data = convert_to_dimensionless_curves(
-                current_item.time, current_item.pressure, current_item.flow_rate, params, x_mode='darcy'
+                current_item.time, current_item.pressure, current_item.flow_rate, params, x_mode='alt'
             )
 
             # 2️⃣ Определяем, какие группы графиков выбраны
@@ -688,7 +709,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     ref_item = self.validation_data[0]
                     ref_params = self._get_params(ref_item)
                     ref_dim = convert_to_dimensionless_curves(
-                        ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params, x_mode='darcy'
+                        ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params, x_mode='alt'
                     )
                     validation_data = {'ref_dim': ref_dim}
                 except Exception as e:
