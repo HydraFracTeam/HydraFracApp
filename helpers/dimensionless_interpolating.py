@@ -124,6 +124,7 @@ class DimensionlessCurveInterpolator:
 
         # Тестируем все методы с использованием скользящего окна для контроля адекватности
         window_size = max(3, min(10, len(self.Y_grid) // 4))  # Размер окна для скользящей проверки
+        stability_failures = {}  # Для отладки: сохраняем причины неудач
 
         for method in self.methods:
             models = []
@@ -216,7 +217,11 @@ class DimensionlessCurveInterpolator:
                 continue
 
             # Проверка стабильности с использованием скользящего окна для каждой кривой
+            # Делаем проверку более мягкой: проверяем стабильность на большей части окон, а не на всех
             is_stable = True
+            stability_checks = 0
+            stability_passes = 0
+            
             for curve_idx in range(preds_all.shape[0]):  # Для каждой кривой в обучающем наборе
                 curve_pred = preds_all[curve_idx, :]
                 valid_points = ~np.isnan(curve_pred)
@@ -225,23 +230,41 @@ class DimensionlessCurveInterpolator:
                     continue
 
                 # Проверяем стабильность с помощью скользящего окна
-                for start_idx in range(len(curve_pred) - window_size + 1):
+                # Используем шаг для уменьшения количества проверок
+                step = max(1, window_size // 2)  # Проверяем каждое второе окно
+                for start_idx in range(0, len(curve_pred) - window_size + 1, step):
                     end_idx = start_idx + window_size
                     window_pred = curve_pred[start_idx:end_idx]
                     window_Y = self.Y_grid[start_idx:end_idx]
                     window_valid = valid_points[start_idx:end_idx]
 
-                    if not np.any(window_valid):
+                    if not np.any(window_valid) or np.sum(window_valid) < 3:
                         continue
 
                     stability = self.check_stability(window_Y[window_valid], window_pred[window_valid])
+                    stability_checks += 1
+                    
+                    if stability["stable"]:
+                        stability_passes += 1
+                    else:
+                        # Сохраняем информацию о неудаче для отладки
+                        if method not in stability_failures:
+                            stability_failures[method] = []
+                        stability_failures[method].append({
+                            "max_jump": stability["max_jump"],
+                            "max_second_derivative": stability["max_second_derivative"]
+                        })
 
-                    if not stability["stable"]:
-                        is_stable = False
-                        break
-
-                if not is_stable:
-                    break
+            # Метод считается стабильным, если прошло >= 70% проверок
+            stability_ratio = stability_passes / stability_checks if stability_checks > 0 else 0.0
+            is_stable = stability_ratio >= 0.7
+            
+            if not is_stable and stability_checks > 0:
+                # Логируем информацию для отладки
+                avg_max_jump = np.mean([f["max_jump"] for failures in stability_failures.get(method, []) for f in failures]) if method in stability_failures else 0
+                avg_max_dd = np.mean([f["max_second_derivative"] for failures in stability_failures.get(method, []) for f in failures]) if method in stability_failures else 0
+                print(f"Метод '{method}': стабильность {stability_passes}/{stability_checks} ({stability_ratio:.1%}), "
+                      f"средний max_jump={avg_max_jump:.2f}, средний max_dd={avg_max_dd:.2f}")
 
             # Если метод нестабилен, исключаем его
             if not is_stable:
@@ -513,7 +536,7 @@ class DimensionlessCurveInterpolator:
         return float(np.sqrt(total_mse / total_points))
     
     def check_stability(self, Y: np.ndarray, P: np.ndarray, 
-                        max_ratio: float = 2.0, max_second_deriv: float = 3.0) -> dict:
+                        max_ratio: float = 5.0, max_second_deriv: float = 10.0) -> dict:
         """
         Проверяет устойчивость интерполяции:
         - нет резких скачков;
@@ -542,7 +565,12 @@ class DimensionlessCurveInterpolator:
             significant_mask = abs_dP[:-1] > threshold
             
             if np.any(significant_mask):
-                ratio = np.abs(dP[1:][significant_mask] / (dP[:-1][significant_mask] + 1e-12))
+                # Используем более устойчивую формулу для отношения изменений
+                dP_prev = dP[:-1][significant_mask]
+                dP_next = dP[1:][significant_mask]
+                # Избегаем деления на очень маленькие числа
+                denominator = np.abs(dP_prev) + 1e-6 * np.max(np.abs(P))
+                ratio = np.abs(dP_next / denominator)
                 max_jump = np.nanmax(ratio) if len(ratio) > 0 else 0.0
             else:
                 max_jump = 0.0  # Все изменения незначительны

@@ -59,6 +59,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.validation_data = []  # Данные для проверки качества интерполяции
         self.last_interpolated_mask_XY = None  # Маска восстановленных точек для выделения на X-Y
         self.last_extrapolated_XY = None  # Пара экстраполированных X,Y для отображения
+        self.last_extrapolation_result = None  # Результат экстраполяции с метриками качества
         
         # Создаем профессиональный интерфейс с вкладками
         setup_professional_interface(self)
@@ -72,6 +73,28 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.loaded_data and 0 <= self.current_index < len(self.loaded_data):
             return self.loaded_data[self.current_index]
         return None
+    
+    @current_data.setter
+    def current_data(self, value: Optional[WellTimeSeries]) -> None:
+        """Устанавливает данные текущей скважины"""
+        if value is None:
+            # Если устанавливаем None, не меняем current_index
+            # current_data будет None через property getter, если индекс невалидный
+            pass
+        else:
+            # Ищем индекс в loaded_data
+            if self.loaded_data:
+                try:
+                    index = self.loaded_data.index(value)
+                    self.current_index = index
+                except ValueError:
+                    # Если не найдено, добавляем в список
+                    self.loaded_data.append(value)
+                    self.current_index = len(self.loaded_data) - 1
+            else:
+                # Если loaded_data пустой, создаём список и добавляем элемент
+                self.loaded_data = [value]
+                self.current_index = 0
 
     def show_info(self, title: str, message: str) -> None:
         """Показывает информационное сообщение (только если не test_mode)"""
@@ -163,6 +186,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # pred_series имеет индекс Y_grid, нужно интерполировать обратно на time
         pressure_values = pred_series.values if hasattr(pred_series, 'values') else np.asarray(pred_series)
         
+        # Определяем маску пропусков в исходных данных (до интерполяции)
+        pressure_is_nan = self.current_data.pressure.isna()
+        
         # Проверяем, что pred_series содержит достаточно точек
         if len(pressure_values) != len(self.current_data.time):
             # Если количество точек не совпадает, интерполируем на временную сетку
@@ -180,7 +206,50 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 # Если только одна точка, дублируем её для всех временных точек
                 pressure_values = np.full(len(self.current_data.time), pressure_values[0])
         
-        self.current_data.pressure = pd.Series(pressure_values * dim_data.delta_p_i, index=self.current_data.time)
+        # Убеждаемся, что pressure_values имеет правильную длину
+        if len(pressure_values) != len(self.current_data.time):
+            # Если все еще не совпадает, используем линейную интерполяцию по времени
+            from scipy.interpolate import interp1d
+            # Используем доступные точки для интерполяции
+            valid_indices = np.arange(len(pressure_values))
+            interp_temp = interp1d(valid_indices, pressure_values, kind='linear', 
+                                  bounds_error=False, fill_value='extrapolate')
+            target_indices = np.linspace(0, len(pressure_values) - 1, len(self.current_data.time))
+            pressure_values = interp_temp(target_indices)
+        
+        # Восстанавливаем давление: заполняем только пропуски точно в точках времени t
+        pressure_restored = self.current_data.pressure.copy()
+        if pressure_is_nan.any():
+            # Преобразуем pressure_values в массив
+            pressure_values_array = np.asarray(pressure_values)
+            
+            # Убеждаемся, что длина совпадает
+            if len(pressure_values_array) != len(self.current_data.time):
+                # Если не совпадает, интерполируем точно на временную сетку
+                from scipy.interpolate import interp1d
+                # Используем Y_grid для интерполяции обратно на time
+                if len(pressure_values_array) > 1 and len(dim_data.Y) > 1:
+                    # Интерполируем pD по Y, затем маппим на time через Y
+                    Y_grid_for_interp = pred_series.index.values if hasattr(pred_series, 'index') else np.arange(len(pressure_values_array))
+                    interp_pd_final = interp1d(Y_grid_for_interp, pressure_values_array, kind='linear',
+                                              bounds_error=False, fill_value='extrapolate')
+                    # Интерполируем на Y из dim_data (который соответствует time)
+                    pressure_values_array = interp_pd_final(dim_data.Y)
+            
+            # Создаем массив восстановленных значений давления
+            pressure_interpolated = pressure_values_array * dim_data.delta_p_i
+            
+            # Заполняем только пропуски интерполированными значениями точно в точках времени t
+            # Используем .values для маски, чтобы получить numpy array
+            nan_mask = pressure_is_nan.values if hasattr(pressure_is_nan, 'values') else pressure_is_nan
+            # Убеждаемся, что индексы совпадают
+            if len(pressure_interpolated) == len(nan_mask):
+                pressure_restored.loc[pressure_is_nan] = pressure_interpolated[nan_mask]
+            else:
+                # Если длины не совпадают, используем прямое индексирование
+                pressure_restored.iloc[pressure_is_nan.values] = pressure_interpolated[pressure_is_nan.values]
+        
+        self.current_data.pressure = pressure_restored
         
         # Получаем информацию о результатах интерполяции
         interp_info = interp.get_interpolation_info()
@@ -267,9 +336,133 @@ class MyApp(QMainWindow, Ui_mainWindow):
         best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
         report += "ИТОГОВЫЙ РЕЗУЛЬТАТ:\n"
         report += f"  Метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
-        report += f"  RMSE: {best_rmse:.3f}\n"
+        report += f"  RMSE: {best_rmse:.6e}\n"
         quality = self._get_quality_label(best_rmse)
         report += f"  Качество: {quality}\n"
+        
+        # Дополнительные метрики качества
+        report += "\nОЦЕНКА КАЧЕСТВА ИНТЕРПОЛЯЦИИ:\n"
+        report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+        if 'n_samples' in interp_info:
+            report += f"  Обучающих примеров: {interp_info['n_samples']}\n"
+        if 'n_points' in interp_info:
+            report += f"  Точек на кривой: {interp_info['n_points']}\n"
+        if 'best_method' in interp_info:
+            report += f"  Выбранный метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
+        
+        # Стабильность интерполяции
+        if len(interp_info['rmse_scores']) > 1:
+            rmse_values = list(interp_info['rmse_scores'].values())
+            rmse_std = np.std(rmse_values) if rmse_values else 0
+            rmse_mean = np.mean(rmse_values) if rmse_values else 0
+            report += f"  Средний RMSE по всем методам: {rmse_mean:.6e}\n"
+            report += f"  Стандартное отклонение RMSE: {rmse_std:.6e}\n"
+            if rmse_std > 0:
+                stability = "высокая" if rmse_std / rmse_mean < 0.1 else "средняя" if rmse_std / rmse_mean < 0.3 else "низкая"
+                report += f"  Стабильность: {stability}\n"
+        
+        report += "\n" + separator + "\n"
+        
+        return report
+    
+    def _create_extrapolation_report(self, result: Dict[str, Any]) -> str:
+        """Создает отчет о результатах экстраполяции"""
+        separator = "=" * REPORT_SEPARATOR_LENGTH
+        report = separator + "\n"
+        report += "РЕЗУЛЬТАТЫ ЭКСТРАПОЛЯЦИИ БЕЗРАЗМЕРНЫХ КРИВЫХ X-Y\n"
+        report += separator + "\n\n"
+        
+        # Метаданные
+        meta = result.get('meta', {})
+        df_pred = result.get('df_pred', pd.DataFrame())
+        df_ref = result.get('df_ref', None)
+        rmse = result.get('rmse', {})
+        
+        # Основная информация
+        report += "ПАРАМЕТРЫ ЭКСТРАПОЛЯЦИИ:\n"
+        report += f"  Метод: {meta.get('method', 'unknown')}\n"
+        report += f"  Исторических точек: {meta.get('n_historical_points', 0)}\n"
+        report += f"  Экстраполированных точек: {meta.get('n_future_points', 0)}\n"
+        report += f"  Шаг времени (dt): {meta.get('dt', 0):.4f} ч\n"
+        
+        if 'time_range_historical' in meta:
+            t_min, t_max = meta['time_range_historical']
+            report += f"  Диапазон исторических данных: {t_min:.2f} - {t_max:.2f} ч\n"
+        
+        if 'time_range_predicted' in meta:
+            t_min, t_max = meta['time_range_predicted']
+            report += f"  Диапазон экстраполированных данных: {t_min:.2f} - {t_max:.2f} ч\n"
+        
+        report += "\n"
+        
+        # Оценка качества экстраполяции
+        report += "ОЦЕНКА КАЧЕСТВА ЭКСТРАПОЛЯЦИИ:\n"
+        report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+        
+        if rmse:
+            if isinstance(rmse, dict):
+                rmse_x = rmse.get('X', 0)
+                rmse_y = rmse.get('Y', 0)
+                rmse_mean = rmse.get('mean', 0)
+                
+                report += f"  RMSE по X: {rmse_x:.6e}\n"
+                report += f"  RMSE по Y: {rmse_y:.6e}\n"
+                report += f"  Средний RMSE: {rmse_mean:.6e}\n"
+                
+                # Оценка качества
+                quality_x = self._get_quality_label(rmse_x)
+                quality_y = self._get_quality_label(rmse_y)
+                quality_mean = self._get_quality_label(rmse_mean)
+                
+                report += f"  Качество по X: {quality_x}\n"
+                report += f"  Качество по Y: {quality_y}\n"
+                report += f"  Общее качество: {quality_mean}\n"
+            else:
+                report += f"  RMSE: {rmse:.6e}\n"
+                quality = self._get_quality_label(rmse)
+                report += f"  Качество: {quality}\n"
+        else:
+            report += "  RMSE не рассчитан (нет эталонных данных)\n"
+        
+        # Стабильность
+        if 'stability' in meta:
+            stability = meta['stability']
+            stability_ru = "хорошая" if stability == 'good' else "требует улучшения"
+            report += f"  Стабильность: {stability_ru}\n"
+        
+        # Статистика по экстраполированным данным
+        if not df_pred.empty and 'X' in df_pred.columns and 'Y' in df_pred.columns:
+            report += "\nСТАТИСТИКА ЭКСТРАПОЛИРОВАННЫХ ДАННЫХ:\n"
+            report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+            
+            X_values = df_pred['X'].dropna()
+            Y_values = df_pred['Y'].dropna()
+            
+            if len(X_values) > 0:
+                report += f"  X: min={X_values.min():.6e}, max={X_values.max():.6e}, mean={X_values.mean():.6e}\n"
+            if len(Y_values) > 0:
+                report += f"  Y: min={Y_values.min():.6e}, max={Y_values.max():.6e}, mean={Y_values.mean():.6e}\n"
+        
+        # Сравнение с эталонными данными (если есть)
+        if df_ref is not None and not df_ref.empty and not df_pred.empty:
+            report += "\nСРАВНЕНИЕ С ЭТАЛОННЫМИ ДАННЫМИ:\n"
+            report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+            
+            if 'X' in df_ref.columns and 'Y' in df_ref.columns:
+                # Находим общие временные точки
+                common_times = np.intersect1d(df_ref['t'].values, df_pred['t'].values)
+                if len(common_times) > 0:
+                    ref_common = df_ref[df_ref['t'].isin(common_times)].sort_values('t')
+                    pred_common = df_pred[df_pred['t'].isin(common_times)].sort_values('t')
+                    
+                    X_diff = np.abs(ref_common['X'].values - pred_common['X'].values)
+                    Y_diff = np.abs(ref_common['Y'].values - pred_common['Y'].values)
+                    
+                    report += f"  Средняя абсолютная ошибка по X: {np.mean(X_diff):.6e}\n"
+                    report += f"  Средняя абсолютная ошибка по Y: {np.mean(Y_diff):.6e}\n"
+                    report += f"  Максимальная ошибка по X: {np.max(X_diff):.6e}\n"
+                    report += f"  Максимальная ошибка по Y: {np.max(Y_diff):.6e}\n"
+        
         report += "\n" + separator + "\n"
         
         return report
@@ -330,7 +523,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
             return
 
         self.loaded_data = data
-        self.current_index = 0
+        # Устанавливаем current_index только если данные не пустые
+        if data and len(data) > 0:
+            self.current_index = 0
+        else:
+            self.current_index = -1
+        # Очищаем validation_data при загрузке новых основных данных
+        self.validation_data = []
         
         # Обновляем список выбора скважин
         self.update_well_selection()
@@ -450,6 +649,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         # Преобразуем данные текущей скважины в DataFrame
         current_item = self.current_data
+        if current_item is None:
+            # Очищаем таблицу, если нет данных
+            model = QStandardItemModel(0, 3)
+            model.setHorizontalHeaderLabels(["time", "pressure", "rate"])
+            self.data_table.setModel(model)
+            return
+        
         df = pd.DataFrame({
             "time": current_item.time,
             "pressure": current_item.pressure,
@@ -604,12 +810,23 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Сбрасываем внутренние состояния подсветки/экстраполяции
         self.last_interpolated_mask_XY = None
         self.last_extrapolated_XY = None
+        self.last_extrapolation_result = None
 
     def on_well_changed(self, index: int) -> None:
         """Обработка смены выбранной скважины."""
-        self.current_index = index
+        # Просто обновляем индекс - current_data будет автоматически обновлён через property
+        if self.loaded_data and 0 <= index < len(self.loaded_data):
+            self.current_index = index
+        else:
+            # Если индекс невалидный, устанавливаем 0 или оставляем как есть
+            if self.loaded_data:
+                self.current_index = 0
+            else:
+                self.current_index = -1
+        
         self.last_interpolated_mask_XY = None
         self.last_extrapolated_XY = None
+        self.last_extrapolation_result = None
         # Обновляем инфо и очищаем графики/чекбоксы
         self.update_grp_parameters()
         self.update_data_tab()
@@ -621,25 +838,73 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.dimensionless_plot.showGrid(x=True, y=True)
 
     def on_extrapolate_xy(self) -> None:
-        """Экстраполяция и наложение X–Y кривой на график."""
+        """Экстраполяция и наложение X–Y кривой на график на основе экстраполированных размерных параметров."""
         if self.current_data is None:
             return
         try:
             # Готовим параметры скважины
             params = self._get_params(self.current_data)
-            # Генерируем кривую X–Y по физической модели
-            from helpers.ml_methods import generate_xy_from_params
-            X_ext, Y_ext = generate_xy_from_params({
-                'skin': params['skin'],
-                'N': params['N'],
-                'a_L': params['a_L']
-            }, n_points=128)
+            
+            # Преобразуем WellTimeSeries в DataFrame для нового экстраполятора
+            n_points = len(self.current_data.time)
+            df = pd.DataFrame({
+                't': self.current_data.time.values,
+                'P': self.current_data.pressure.values,
+                'dP': self.current_data.dP.values if self.current_data.dP is not None else 
+                      (self.current_data.pressure.diff().fillna(0).values),
+                'Q': self.current_data.flow_rate.values,
+                'Skin': [self.current_data.skin] * n_points,  # Статичные параметры для всех строк
+                'h': [self.current_data.thickness] * n_points,
+                'N': [self.current_data.fractures_count] * n_points,
+                'W': [self.current_data.fracture_width] * n_points,
+                'L': [self.current_data.fracture_length] * n_points,
+                'a/L': [self.current_data.a_l_ratio] * n_points
+            })
+            
+            # Используем новый класс DimensionlessExtrapolatorAgent
+            from helpers.ml_methods import DimensionlessExtrapolatorAgent
+            
+            extrapolator = DimensionlessExtrapolatorAgent()
+            result = extrapolator.run(
+                df=df,
+                well_params=params,
+                n_future=20,
+                method="adaptive",
+                check_rmse=True  # Проверяем RMSE для оценки качества
+            )
+            
+            # Извлекаем экстраполированные X и Y
+            df_pred = result['df_pred']
+            X_ext = df_pred['X'].values
+            Y_ext = df_pred['Y'].values
+            
             self.last_extrapolated_XY = (X_ext, Y_ext)
+            self.last_extrapolation_result = result  # Сохраняем результат для отчёта
+            
             # Перестраиваем график с наложением экстраполяции
             self.on_plot_dimensionless_selected()
-            self.show_info("Экстраполяция", "Экстраполированная кривая X–Y добавлена на график")
+            
+            # Формируем и выводим отчёт об экстраполяции
+            extrapolation_report = self._create_extrapolation_report(result)
+            if hasattr(self, 'results_text'):
+                # Добавляем отчёт к существующему тексту
+                current_text = self.results_text.toPlainText()
+                if current_text:
+                    self.results_text.setPlainText(current_text + "\n\n" + extrapolation_report)
+                else:
+                    self.results_text.setPlainText(extrapolation_report)
+            
+            # Показываем информацию о результатах
+            meta = result.get('meta', {})
+            method_used = meta.get('method', 'unknown')
+            n_points = meta.get('n_future_points', 0)
+            self.show_info("Экстраполяция", 
+                         f"Экстраполированная кривая X–Y добавлена на график\n"
+                         f"Метод: {method_used}, точек: {n_points}")
         except Exception as e:
-            self.show_warning("Ошибка экстраполяции", f"Не удалось выполнить экстраполяцию: {str(e)}")
+            import traceback
+            self.show_warning("Ошибка экстраполяции", 
+                            f"Не удалось выполнить экстраполяцию: {str(e)}\n{traceback.format_exc()}")
     
     def on_plot_dimensionless_selected(self) -> None:
         """Обработка нажатия на кнопку 'Построить график'."""
@@ -648,7 +913,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         current_item = self.current_data
         if current_item is None:
-            self.text_report.setText("❌ Нет данных для построения.")
+            # Добавляем отладочную информацию
+            debug_info = f"❌ Нет данных для построения.\n"
+            debug_info += f"loaded_data: {len(self.loaded_data) if self.loaded_data else 0} элементов\n"
+            debug_info += f"current_index: {self.current_index}\n"
+            if self.loaded_data:
+                debug_info += f"Доступные индексы: 0-{len(self.loaded_data) - 1}"
+            self.text_report.setText(debug_info)
             return
 
         try:
@@ -692,9 +963,11 @@ class MyApp(QMainWindow, Ui_mainWindow):
             }
             
             # Проверяем, выбрано ли что-то для отображения
+            # cb_calc_XY может быть выбран независимо от других графиков
             has_any_selected = (checked_groups.get('real_params', False) or
                               checked_groups.get('dimensionless', False) or
                               checked_groups.get('cb_XY_plot', False) or
+                              checked_groups.get('cb_calc_XY', False) or
                               checked_groups.get('type_curves', False) or
                               checked_groups.get('special', False))
             
@@ -703,27 +976,73 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 return
             
             # 3️⃣ Подготовка данных для валидации
+            # validation_data передается только если это действительно эталонные данные для валидации,
+            # а не просто текущие данные с пропусками
             validation_data = None
-            if self.validation_data:
+            # Проверяем, что validation_data содержит эталонные данные (не текущие данные)
+            if self.validation_data and len(self.validation_data) > 0 and current_item is not None:
                 try:
                     ref_item = self.validation_data[0]
-                    ref_params = self._get_params(ref_item)
-                    ref_dim = convert_to_dimensionless_curves(
-                        ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params, x_mode='alt'
+                    # Строгая проверка: убеждаемся, что это не те же данные, что и current_item
+                    # Проверяем по нескольким критериям:
+                    # 1. Это не тот же объект (обязательно)
+                    # 2. И хотя бы одно из условий различия:
+                    #    - Разные временные ряды (по длине или значениям)
+                    #    - Разные параметры скважины
+                    #    - Разные данные давления/дебита
+                    is_different = (
+                        ref_item is not current_item and
+                        (
+                            # Разные временные ряды
+                            (len(ref_item.time) != len(current_item.time) or
+                             not np.array_equal(ref_item.time.values, current_item.time.values)) or
+                            # Разные параметры скважины
+                            (ref_item.skin != current_item.skin or
+                             ref_item.fractures_count != current_item.fractures_count or
+                             ref_item.a_l_ratio != current_item.a_l_ratio) or
+                            # Разные данные давления/дебита
+                            (len(ref_item.pressure) != len(current_item.pressure) or
+                             not np.allclose(ref_item.pressure.values, current_item.pressure.values, 
+                                           rtol=1e-3, equal_nan=True)) or
+                            (len(ref_item.flow_rate) != len(current_item.flow_rate) or
+                             not np.allclose(ref_item.flow_rate.values, current_item.flow_rate.values,
+                                           rtol=1e-3, equal_nan=True))
+                        )
                     )
-                    validation_data = {'ref_dim': ref_dim}
+                    
+                    if is_different:
+                        ref_params = self._get_params(ref_item)
+                        ref_dim = convert_to_dimensionless_curves(
+                            ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params, x_mode='alt'
+                        )
+                        validation_data = {'ref_dim': ref_dim}
+                    else:
+                        # Это те же данные - не используем как эталон
+                        validation_data = None
                 except Exception as e:
-                    self.text_report.append(f"⚠️ Ошибка подготовки данных валидации: {e}")
+                    # Не выводим ошибку, просто не используем validation_data
+                    validation_data = None
             
             # 4️⃣ Используем новую функцию для отображения сгруппированных графиков
             # Передаём X и Y из данных, если они есть
-            X_data = current_item.X if hasattr(current_item, 'X') and current_item.X is not None else None
-            Y_data = current_item.Y if hasattr(current_item, 'Y') and current_item.Y is not None else None
+            # ВАЖНО: Если была выполнена интерполяция, используем пересчитанные X и Y из dim_data,
+            # а не старые X_data/Y_data, чтобы восстановленные точки правильно отображались
+            X_data = None
+            Y_data = None
+            if hasattr(self, 'last_interpolated_mask_XY') and self.last_interpolated_mask_XY is not None:
+                # Если была интерполяция, используем пересчитанные X и Y из dim_data
+                # чтобы восстановленные точки имели правильные координаты
+                X_data = pd.Series(dim_data.X, index=current_item.time.index)
+                Y_data = pd.Series(dim_data.Y, index=current_item.time.index)
+            else:
+                # Если интерполяции не было, используем X и Y из данных, если они есть
+                X_data = current_item.X if hasattr(current_item, 'X') and current_item.X is not None else None
+                Y_data = current_item.Y if hasattr(current_item, 'Y') and current_item.Y is not None else None
+            
             show_calc_XY = hasattr(self, 'cb_calc_XY') and self.cb_calc_XY.isChecked()
 
-            # Предупреждение: выбран график X-Y из данных, но данных X,Y нет
-            if checked_groups.get('cb_XY_plot', False) and (X_data is None or Y_data is None):
-                self.show_warning("X-Y график", "Входные X,Y отсутствуют в данных. Будут использованы расчётные значения.")
+            # Если X и Y отсутствуют в данных, просто не будем их использовать для графика "X-Y (из данных)"
+            # Расчётные X и Y можно отображать независимо через чекбокс "Отобразить расчётные X и Y"
             
             plot_dimensionless_grouped(
                 plot_widget=self.dimensionless_plot,
@@ -754,8 +1073,35 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 quality = self._get_quality_label(best_rmse, short=True)
                 self.text_report.append(
                     f"📊 Интерполяция: {method_names.get(interp_info['best_method'], interp_info['best_method'])}, "
-                    f"RMSE={best_rmse:.3f} ({quality})"
+                    f"RMSE={best_rmse:.6e} ({quality})"
                 )
+            
+            # Добавляем краткое резюме, если была проведена экстраполяция
+            if hasattr(self, 'last_extrapolation_result') and self.last_extrapolation_result:
+                result = self.last_extrapolation_result
+                meta = result.get('meta', {})
+                rmse = result.get('rmse', {})
+                
+                method_used = meta.get('method', 'unknown')
+                n_points = meta.get('n_future_points', 0)
+                
+                self.text_report.append(
+                    f"📈 Экстраполяция: метод={method_used}, точек={n_points}"
+                )
+                
+                if rmse:
+                    if isinstance(rmse, dict):
+                        rmse_mean = rmse.get('mean', 0)
+                        quality = self._get_quality_label(rmse_mean, short=True)
+                        self.text_report.append(
+                            f"   RMSE: X={rmse.get('X', 0):.6e}, Y={rmse.get('Y', 0):.6e}, "
+                            f"среднее={rmse_mean:.6e} ({quality})"
+                        )
+                    else:
+                        quality = self._get_quality_label(rmse, short=True)
+                        self.text_report.append(
+                            f"   RMSE={rmse:.6e} ({quality})"
+                        )
             
         except Exception as e:
             self.text_report.setText(f"❌ Ошибка построения графика: {str(e)}")
