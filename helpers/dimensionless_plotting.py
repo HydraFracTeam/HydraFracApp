@@ -151,15 +151,47 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
         plot_widget.setLabel('left', 'Безразмерный параметр')
         plot_widget.setTitle("Безразмерные кривые МГРП")
         
+        # Подготавливаем маску для интерполированных точек (если есть)
+        interp_mask_for_plot = None
+        if interpolated_mask_XY is not None:
+            # Применяем маску к нормализованным X и Y (которые используются для графиков)
+            if len(interpolated_mask_XY) >= len(X):
+                interp_mask_for_plot = interpolated_mask_XY[:len(X)]
+            else:
+                # Если маска короче, расширяем её
+                interp_mask_for_plot = np.zeros(len(X), dtype=bool)
+                interp_mask_for_plot[:len(interpolated_mask_XY)] = interpolated_mask_XY
+        
         # Строим только выбранные графики
         if checked_groups.get('cb_dim_pD', False):
             # Используем отфильтрованные массивы X и pD
             mask = np.isfinite(X) & np.isfinite(pD)
             if np.any(mask):
-                plot_widget.plot(X[mask], pD[mask],
-                                pen=pg.mkPen(color=(200, 50, 50), width=2),
-                                name="pD(X)",
-                                connect='finite')
+                X_plot = X[mask]
+                pD_plot = pD[mask]
+                
+                # Если есть маска интерполированных точек, выделяем их
+                if interp_mask_for_plot is not None and len(interp_mask_for_plot) >= len(X):
+                    interp_mask_plot = interp_mask_for_plot[mask]
+                    # Исходные точки
+                    if np.any(~interp_mask_plot):
+                        plot_widget.plot(X_plot[~interp_mask_plot], pD_plot[~interp_mask_plot],
+                                        pen=pg.mkPen(color=(200, 50, 50), width=2),
+                                        name="pD(X)",
+                                        connect='finite')
+                    # Интерполированные точки
+                    if np.any(interp_mask_plot):
+                        plot_widget.plot(X_plot[interp_mask_plot], pD_plot[interp_mask_plot],
+                                        pen=pg.mkPen(color=(255, 100, 100), width=2),
+                                        symbol='o', symbolSize=7,
+                                        symbolBrush=pg.mkBrush(255, 100, 100, 220),
+                                        name="pD(X) (восстановлено)",
+                                        connect='finite')
+                else:
+                    plot_widget.plot(X_plot, pD_plot,
+                                    pen=pg.mkPen(color=(200, 50, 50), width=2),
+                                    name="pD(X)",
+                                    connect='finite')
         
         if checked_groups.get('cb_dim_dpD', False):
             # Вычисляем производную на отфильтрованных данных
@@ -168,19 +200,61 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
             dpdY = np.gradient(pD, Yc)
             mask = np.isfinite(X) & np.isfinite(dpdY)
             if np.any(mask):
-                plot_widget.plot(X[mask], dpdY[mask],
-                                pen=pg.mkPen(color=(150, 0, 150), width=2),
-                                name="dpD/dY(X)",
-                                connect='finite')
+                X_plot = X[mask]
+                dpdY_plot = dpdY[mask]
+                
+                # Если есть маска интерполированных точек, выделяем их
+                if interp_mask_for_plot is not None and len(interp_mask_for_plot) >= len(X):
+                    interp_mask_plot = interp_mask_for_plot[mask]
+                    # Исходные точки
+                    if np.any(~interp_mask_plot):
+                        plot_widget.plot(X_plot[~interp_mask_plot], dpdY_plot[~interp_mask_plot],
+                                        pen=pg.mkPen(color=(150, 0, 150), width=2),
+                                        name="dpD/dY(X)",
+                                        connect='finite')
+                    # Интерполированные точки
+                    if np.any(interp_mask_plot):
+                        plot_widget.plot(X_plot[interp_mask_plot], dpdY_plot[interp_mask_plot],
+                                        pen=pg.mkPen(color=(255, 100, 100), width=2),
+                                        symbol='o', symbolSize=7,
+                                        symbolBrush=pg.mkBrush(255, 100, 100, 220),
+                                        name="dpD/dY(X) (восстановлено)",
+                                        connect='finite')
+                else:
+                    plot_widget.plot(X_plot, dpdY_plot,
+                                    pen=pg.mkPen(color=(150, 0, 150), width=2),
+                                    name="dpD/dY(X)",
+                                    connect='finite')
         
         if checked_groups.get('cb_dim_tD', False):
             # Используем отфильтрованные массивы X и Y
             mask = np.isfinite(X) & np.isfinite(Y)
             if np.any(mask):
-                plot_widget.plot(X[mask], Y[mask],
-                                pen=pg.mkPen(color=(0, 120, 200), width=2),
-                                name="tD (Y)",
-                                connect='finite')
+                X_plot = X[mask]
+                Y_plot = Y[mask]
+                
+                # Если есть маска интерполированных точек, выделяем их
+                if interp_mask_for_plot is not None and len(interp_mask_for_plot) >= len(X):
+                    interp_mask_plot = interp_mask_for_plot[mask]
+                    # Исходные точки
+                    if np.any(~interp_mask_plot):
+                        plot_widget.plot(X_plot[~interp_mask_plot], Y_plot[~interp_mask_plot],
+                                        pen=pg.mkPen(color=(0, 120, 200), width=2),
+                                        name="tD (Y)",
+                                        connect='finite')
+                    # Интерполированные точки
+                    if np.any(interp_mask_plot):
+                        plot_widget.plot(X_plot[interp_mask_plot], Y_plot[interp_mask_plot],
+                                        pen=pg.mkPen(color=(255, 100, 100), width=2),
+                                        symbol='o', symbolSize=7,
+                                        symbolBrush=pg.mkBrush(255, 100, 100, 220),
+                                        name="tD (Y) (восстановлено)",
+                                        connect='finite')
+                else:
+                    plot_widget.plot(X_plot, Y_plot,
+                                    pen=pg.mkPen(color=(0, 120, 200), width=2),
+                                    name="tD (Y)",
+                                    connect='finite')
         
         if checked_groups.get('cb_dim_CD', False):
             # Вычисляем CD на отфильтрованных данных
@@ -195,10 +269,31 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
 
             mask = np.isfinite(X) & np.isfinite(CD)
             if np.any(mask):
-                plot_widget.plot(X[mask], CD[mask],
-                                pen=pg.mkPen(color=(0, 180, 80), width=2),
-                                name="CD(X)",
-                                connect='finite')
+                X_plot = X[mask]
+                CD_plot = CD[mask]
+                
+                # Если есть маска интерполированных точек, выделяем их
+                if interp_mask_for_plot is not None and len(interp_mask_for_plot) >= len(X):
+                    interp_mask_plot = interp_mask_for_plot[mask]
+                    # Исходные точки
+                    if np.any(~interp_mask_plot):
+                        plot_widget.plot(X_plot[~interp_mask_plot], CD_plot[~interp_mask_plot],
+                                        pen=pg.mkPen(color=(0, 180, 80), width=2),
+                                        name="CD(X)",
+                                        connect='finite')
+                    # Интерполированные точки
+                    if np.any(interp_mask_plot):
+                        plot_widget.plot(X_plot[interp_mask_plot], CD_plot[interp_mask_plot],
+                                        pen=pg.mkPen(color=(255, 100, 100), width=2),
+                                        symbol='o', symbolSize=7,
+                                        symbolBrush=pg.mkBrush(255, 100, 100, 220),
+                                        name="CD(X) (восстановлено)",
+                                        connect='finite')
+                else:
+                    plot_widget.plot(X_plot, CD_plot,
+                                    pen=pg.mkPen(color=(0, 180, 80), width=2),
+                                    name="CD(X)",
+                                    connect='finite')
         
         # Отображаем X-Y график (пары точек X-Y из данных), если установлен флаг
         if checked_groups.get('cb_XY_plot', False):
@@ -282,28 +377,47 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
             # Отображаем расчётные значения пунктирной линией
             mask_calc = np.isfinite(X_calc) & np.isfinite(Y_calc)
             if np.any(mask_calc):
-                plot_widget.plot(X_calc[mask_calc], Y_calc[mask_calc],
-                                pen=pg.mkPen(color=(200, 200, 0), width=1, 
-                                            style=pg.QtCore.Qt.DashLine),
-                                symbol='+', symbolSize=8,
-                                name="X-Y (расчётные)")
+                X_calc_plot = X_calc[mask_calc]
+                Y_calc_plot = Y_calc[mask_calc]
+                
+                # Если есть маска интерполированных точек, выделяем их
+                if interpolated_mask_XY is not None and len(interpolated_mask_XY) >= len(X_calc):
+                    interp_mask_calc = interpolated_mask_XY[:len(X_calc)][mask_calc]
+                    
+                    # Исходные точки (не были пропущены)
+                    if np.any(~interp_mask_calc):
+                        plot_widget.plot(X_calc_plot[~interp_mask_calc], Y_calc_plot[~interp_mask_calc],
+                                        pen=pg.mkPen(color=(200, 200, 0), width=1, 
+                                                    style=pg.QtCore.Qt.DashLine),
+                                        symbol='+', symbolSize=8,
+                                        name="X-Y (расчётные)")
+                    
+                    # Интерполированные точки (были пропущены и восстановлены)
+                    if np.any(interp_mask_calc):
+                        plot_widget.plot(X_calc_plot[interp_mask_calc], Y_calc_plot[interp_mask_calc],
+                                        pen=pg.mkPen(color=(255, 100, 100), width=2),
+                                        symbol='o', symbolSize=7,
+                                        symbolBrush=pg.mkBrush(255, 100, 100, 220),
+                                        name="X-Y (расчётные, восстановлено)")
+                else:
+                    # Нет маски - отображаем все точки жёлтым цветом
+                    plot_widget.plot(X_calc_plot, Y_calc_plot,
+                                    pen=pg.mkPen(color=(200, 200, 0), width=1, 
+                                                style=pg.QtCore.Qt.DashLine),
+                                    symbol='+', symbolSize=8,
+                                    name="X-Y (расчётные)")
         
         # Добавляем эталонные кривые, если есть
         # Важно: validation_data должна содержать действительно эталонные данные,
         # а не просто текущие данные с пропусками
-        # Эталон отображается ТОЛЬКО если явно загружен файл для валидации
+        # Эталон pD(X) отображается ТОЛЬКО если явно выбран график pD(Y) в GUI
         # И validation_data не пустой словарь
-        # И НЕ выбран ТОЛЬКО график X-Y (эталон pD(X) не должен отображаться на графике X-Y)
-        # Эталон pD(X) отображается только для графиков pD(X), dpD/dY(X), tD(Y), CD(X)
-        only_xy_plot = (
-            checked_groups.get('cb_XY_plot', False) and
-            not checked_groups.get('cb_dim_pD', False) and
-            not checked_groups.get('cb_dim_dpD', False) and
-            not checked_groups.get('cb_dim_tD', False) and
-            not checked_groups.get('cb_dim_CD', False)
-        )
+        # И явно загружен файл для валидации
         
-        if validation_data is not None and validation_data != {} and not only_xy_plot:
+        # Эталон отображается только если явно выбран график pD(Y)
+        pD_plot_selected = checked_groups.get('cb_dim_pD', False)
+        
+        if validation_data is not None and validation_data != {} and pD_plot_selected:
             try:
                 ref_dim = validation_data.get('ref_dim')
                 # Дополнительная проверка: убеждаемся, что ref_dim не пустой и содержит валидные данные

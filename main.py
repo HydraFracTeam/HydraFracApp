@@ -254,6 +254,45 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Получаем информацию о результатах интерполяции
         interp_info = interp.get_interpolation_info()
         
+        # Если есть эталонные данные, рассчитываем метрики относительно эталона
+        if hasattr(self, 'validation_data') and self.validation_data and len(self.validation_data) > 0:
+            try:
+                ref_item = self.validation_data[0]
+                # Проверяем, что это действительно эталонные данные
+                if (ref_item is not None and 
+                    hasattr(ref_item, 'time') and hasattr(ref_item, 'pressure') and
+                    (ref_item is not self.current_data or 
+                     len(ref_item.pressure) != len(self.current_data.pressure) or
+                     not np.allclose(ref_item.pressure.values, self.current_data.pressure.values, 
+                                   rtol=1e-3, equal_nan=True))):
+                    
+                    # Конвертируем эталон в безразмерные параметры
+                    ref_params = self._get_params(ref_item)
+                    ref_dim = convert_to_dimensionless_curves(
+                        ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params, x_mode='alt'
+                    )
+                    
+                    # Получаем предсказанные значения в безразмерных координатах
+                    Y_pred = dim_data.Y
+                    P_pred = dim_data.pressure / (dim_data.delta_p_i if dim_data.delta_p_i != 0 else 1.0)
+                    
+                    # Эталонные значения
+                    Y_ref = ref_dim.Y
+                    P_ref = ref_dim.pressure / (ref_dim.delta_p_i if ref_dim.delta_p_i != 0 else 1.0)
+                    
+                    # Рассчитываем метрики с использованием случайных точек эталона
+                    reference_metrics = interp.compare_with_reference(
+                        Y_pred=Y_pred, P_pred=P_pred,
+                        Y_ref=Y_ref, P_ref=P_ref,
+                        n_random_points=100
+                    )
+                    
+                    # Добавляем метрики в interp_info
+                    interp_info['reference_metrics'] = reference_metrics
+            except Exception as e:
+                # Если не удалось рассчитать метрики, просто пропускаем
+                print(f"Не удалось рассчитать метрики относительно эталона: {e}")
+        
         # Сохраняем информацию для отображения в резюме графика
         self.last_interpolation_info = interp_info
         
@@ -269,11 +308,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
         }
         
         # Определяем, что было интерполировано
-        interpolated_items = []
-        if n_nan_pressure > 0:
-            interpolated_items.append(f"давление ({n_nan_pressure} точек)")
-        if n_nan_flow > 0:
-            interpolated_items.append(f"дебит ({n_nan_flow} точек)")
+        # Интерполируется безразмерная кривая pD(Y), из которой затем восстанавливаются X и Y
+        n_interpolated_points = max(n_nan_pressure, n_nan_flow)  # Количество точек с пропусками
         
         separator = "=" * REPORT_SEPARATOR_LENGTH
         report = separator + "\n"
@@ -282,24 +318,19 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         # Что было интерполировано
         report += "Интерполировано:\n"
-        if interpolated_items:
-            report += "  ✓ Безразмерная кривая pD(Y)\n"
-            for item in interpolated_items:
-                report += f"  ✓ {item}\n"
+        report += "  ✓ Безразмерная кривая pD(Y)\n"
+        if n_interpolated_points > 0:
+            report += f"  ✓ Восстановлено {n_interpolated_points} точек безразмерной кривой\n"
+            report += "  ✓ Из восстановленной кривой рассчитаны X (фильтрационный) и Y (ёмкостной) параметры\n"
         report += "\n"
         
         # Исходные данные
         report += "Исходные данные:\n"
         report += f"  Всего точек: {len(self.current_data.time)}\n"
-        total_possible = len(self.current_data.time) * N_PARAMETERS_PER_POINT
-        total_nan = n_nan_pressure + n_nan_flow
-        coverage = (1 - total_nan / total_possible) * 100 if total_possible > 0 else 0
-        report += f"  Полнота данных: {coverage:.1f}%\n"
-        report += f"  Заполнено пропусков:\n"
-        if n_nan_pressure > 0:
-            report += f"    - Давление: {n_nan_pressure} точек ({n_nan_pressure/len(self.current_data.time)*100:.1f}%)\n"
-        if n_nan_flow > 0:
-            report += f"    - Дебит: {n_nan_flow} точек ({n_nan_flow/len(self.current_data.time)*100:.1f}%)\n"
+        if n_interpolated_points > 0:
+            coverage = (1 - n_interpolated_points / len(self.current_data.time)) * 100
+            report += f"  Полнота данных: {coverage:.1f}%\n"
+            report += f"  Восстановлено точек безразмерной кривой: {n_interpolated_points} ({n_interpolated_points/len(self.current_data.time)*100:.1f}%)\n"
         report += "\n"
         
         # Параметры скважины
@@ -339,6 +370,21 @@ class MyApp(QMainWindow, Ui_mainWindow):
         report += f"  RMSE: {best_rmse:.6e}\n"
         quality = self._get_quality_label(best_rmse)
         report += f"  Качество: {quality}\n"
+        
+        # Если есть метрики относительно эталона, добавляем их
+        if 'reference_metrics' in interp_info:
+            ref_metrics = interp_info['reference_metrics']
+            report += "\n"
+            report += "МЕТРИКИ ОТНОСИТЕЛЬНО ЭТАЛОНА (на случайных точках):\n"
+            report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+            report += f"  RMSE: {ref_metrics.get('rmse', 0):.6e}\n"
+            report += f"  MAE: {ref_metrics.get('mae', 0):.6e}\n"
+            report += f"  MAPE: {ref_metrics.get('mape', 0):.2f}%\n"
+            report += f"  R²: {ref_metrics.get('r2', 0):.6f}\n"
+            report += f"  Максимальная ошибка: {ref_metrics.get('max_error', 0):.6e}\n"
+            report += f"  Медианная ошибка: {ref_metrics.get('median_error', 0):.6e}\n"
+            report += f"  Средняя ошибка: {ref_metrics.get('mean_error', 0):.6e}\n"
+            report += f"  MSE: {ref_metrics.get('mse', 0):.6e}\n"
         
         # Дополнительные метрики качества
         report += "\nОЦЕНКА КАЧЕСТВА ИНТЕРПОЛЯЦИИ:\n"
@@ -1075,6 +1121,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     f"📊 Интерполяция: {method_names.get(interp_info['best_method'], interp_info['best_method'])}, "
                     f"RMSE={best_rmse:.6e} ({quality})"
                 )
+                
+                # Добавляем метрики относительно эталона, если они есть
+                if 'reference_metrics' in interp_info:
+                    ref_metrics = interp_info['reference_metrics']
+                    mse = ref_metrics.get('mse', 0)
+                    mae = ref_metrics.get('mae', 0)
+                    r2 = ref_metrics.get('r2', 0)
+                    self.text_report.append(
+                        f"   Метрики (эталон): MSE={mse:.6e}, MAE={mae:.6e}, R²={r2:.4f}"
+                    )
             
             # Добавляем краткое резюме, если была проведена экстраполяция
             if hasattr(self, 'last_extrapolation_result') and self.last_extrapolation_result:
