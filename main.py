@@ -521,7 +521,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.ml_filter_btn.clicked.connect(self.on_ml_filter)
         self.outlier_btn.clicked.connect(self.on_detect_outliers)
         self.export_btn.clicked.connect(self.on_export_data)
-        self.load_validation_button.clicked.connect(self.load_validation_file)
         # Экстраполяция
         if hasattr(self, 'extrapolate_btn'):
             self.extrapolate_btn.clicked.connect(self.on_extrapolate_xy)
