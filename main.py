@@ -420,9 +420,12 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Преобразуем данные текущей скважины в DataFrame
         current_item = self.current_data
         df = pd.DataFrame({
-            "time": current_item.time,
-            "pressure": current_item.pressure,
-            "rate": current_item.flow_rate
+            "Время t, ч": current_item.time,
+            "Давление P, кгс/см²": current_item.pressure,
+            "Депрессия, кгс/см²": current_item.pressure_drop,
+            "Поток Q, м³/сут": current_item.flow_rate,
+            "X": current_item.X,
+            "Y": current_item.Y,
         })
 
         # Создаем модель для QTableView
