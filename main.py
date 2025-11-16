@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (QLabel, QTableView, QApplication, QMainWindow, QFileDialog, QMessageBox, 
                                QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout)
+                               QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout, QDialog,
+                               QDialogButtonBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
@@ -14,7 +15,8 @@ from ui import Ui_mainWindow
 from helpers.parse_well_data import parse_well_data
 from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
                                detect_outliers)
-from helpers.dimensionless_analysis import convert_to_dimensionless_curves
+from helpers.dimensionless_analysis import convert_to_dimensionless_curves, get_dimensionless_series
+from helpers.dimensionless.filtration import SignalFilters, PhysicsConstraints, compute_snr
 from helpers.dimensionless_plotting import plot_dimensionless_grouped
 from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
 from schemas.well_data import WellTimeSeries
@@ -67,6 +69,18 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         # Создаем профессиональный интерфейс с вкладками
         setup_professional_interface(self)
+        
+        # Добавляем отчёт в centralwidget под параметрами (вне вкладок)
+        from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTextEdit
+        report_group = QGroupBox("Отчёт", self.centralwidget)
+        report_group.setGeometry(20, 330, 300, 400)  # Под параметрами (последний на y=300)
+        report_layout = QVBoxLayout(report_group)
+        self.text_report = QTextEdit(report_group)
+        self.text_report.setReadOnly(True)
+        self.text_report.setPlaceholderText("Здесь появится отчёт...")
+        self.text_report.setMinimumHeight(150)
+        self.text_report.setMaximumHeight(500)
+        report_layout.addWidget(self.text_report)
         
         # Настраиваем обработчики событий
         self.setup_event_handlers()
@@ -872,7 +886,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if not self.test_mode:
             self.show_info("Графики очищены", "Все графики и чекбоксы сброшены")
 
-        # Сбрасываем внутренние состояния подсветки/экстраполяции
+        # Сбрасываем внутренние состояния подсветки/экстраполяции/фильтрации
         self.last_interpolated_mask_XY = None
         self.last_interpolated_pressure = None
         self.last_extrapolated_XY = None
@@ -880,6 +894,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.last_fitted_XY = None
         self.last_fit_coefficients = None
         self.original_calc_XY = None
+        self.last_filter_info = None
 
     def on_well_changed(self, index: int) -> None:
         """Обработка смены выбранной скважины."""
@@ -900,6 +915,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.last_fitted_XY = None
         self.last_fit_coefficients = None
         self.original_calc_XY = None
+        self.last_filter_info = None
         # Обновляем инфо и очищаем графики/чекбоксы
         self.update_grp_parameters()
         self.update_data_tab()
@@ -1249,6 +1265,20 @@ class MyApp(QMainWindow, Ui_mainWindow):
                         f"   Метрики (эталон): MSE={mse:.6e}, MAE={mae:.6e}, R²={r2:.4f}"
                     )
             
+            # Добавляем краткое резюме, если была проведена фильтрация
+            if hasattr(self, 'last_filter_info') and self.last_filter_info:
+                filter_info = self.last_filter_info
+                quality = self._get_quality_label(filter_info['rmse'], short=True)
+                self.text_report.append(
+                    f"📊 Фильтрация: {filter_info['method_name']}, "
+                    f"RMSE={filter_info['rmse']:.6e} ({quality}), "
+                    f"точность={filter_info['accuracy']:.2f}%"
+                )
+                self.text_report.append(
+                    f"   SNR: {filter_info['snr_before']:.2f} → {filter_info['snr_after']:.2f} дБ "
+                    f"({filter_info['snr_improvement']:+.2f} дБ)"
+                )
+            
             # Добавляем краткое резюме, если была проведена экстраполяция
             if hasattr(self, 'last_extrapolation_result') and self.last_extrapolation_result:
                 result = self.last_extrapolation_result
@@ -1285,16 +1315,160 @@ class MyApp(QMainWindow, Ui_mainWindow):
         """ML-фильтрация данных"""
         if self.current_data is None:
             return
-            
+        
         try:
-            filtered = apply_ml_filter(self.current_data.pressure, 'savitzky_golay', 
-                                     window_length=DEFAULT_SAVGOL_WINDOW_LENGTH, 
-                                     polyorder=DEFAULT_SAVGOL_POLYORDER)
-            self.current_data.pressure = filtered
+            # Получаем параметры скважины
+            params = self._get_params(self.current_data)
+            
+            # Конвертируем в безразмерные параметры
+            dim_data = convert_to_dimensionless_curves(
+                self.current_data.time,
+                self.current_data.pressure,
+                self.current_data.flow_rate,
+                params,
+                x_mode='alt'
+            )
+            
+            # Получаем безразмерные кривые
+            series = get_dimensionless_series(dim_data)
+            Y = series['Y']
+            pD_original = series['pD']
+            
+            # Удаляем NaN значения для фильтрации
+            valid_mask = np.isfinite(Y) & np.isfinite(pD_original)
+            if not np.any(valid_mask):
+                self.show_warning("Ошибка", "Нет валидных данных для фильтрации")
+                return
+            
+            Y_clean = Y[valid_mask]
+            pD_clean = pD_original[valid_mask]
+            
+            # Вычисляем исходные метрики
+            snr_before = compute_snr(pD_clean)
+            
+            # Автоматический выбор и применение фильтра
+            filtered_pD = SignalFilters.denoise(pD_clean, method=None, x=Y_clean)
+            
+            # Определяем, какой метод был выбран автоматически
+            from helpers.dimensionless.filtration.utils import select_filter_method
+            selected_method = select_filter_method(pD_clean, Y_clean)
+            
+            # Применяем физические ограничения
+            filtered_pD = PhysicsConstraints.enforce_all(
+                filtered_pD,
+                x=Y_clean,
+                monotonic=True,
+                limit_curvature=True,
+                remove_oscillations=True,
+                asymptotic_fix=True
+            )
+            
+            # Вычисляем метрики после фильтрации
+            snr_after = compute_snr(filtered_pD)
+            snr_improvement = snr_after - snr_before
+            
+            # Вычисляем RMSE и другие метрики
+            rmse = np.sqrt(np.mean((pD_clean - filtered_pD) ** 2))
+            mae = np.mean(np.abs(pD_clean - filtered_pD))
+            
+            # Вычисляем относительную ошибку и точность
+            pD_range = np.max(pD_clean) - np.min(pD_clean)
+            relative_error = (rmse / pD_range * 100) if pD_range > 0 else 0.0
+            accuracy = max(0, 100 - relative_error)
+            
+            # Восстанавливаем давление из отфильтрованного pD
+            delta_p_i = dim_data.delta_p_i
+            if delta_p_i > 0:
+                from scipy.interpolate import interp1d
+                try:
+                    interp_func = interp1d(Y_clean, filtered_pD, kind='linear', 
+                                         bounds_error=False, fill_value='extrapolate')
+                    pD_filtered_interp = interp_func(Y)
+                    
+                    pressure_initial = self.current_data.pressure.iloc[0] if len(self.current_data.pressure) > 0 else 0
+                    delta_p_filtered = pD_filtered_interp * delta_p_i
+                    pressure_filtered = pressure_initial - delta_p_filtered
+                    
+                    self.current_data.pressure = pd.Series(
+                        pressure_filtered, 
+                        index=self.current_data.pressure.index
+                    )
+                except Exception as interp_error:
+                    print(f"Предупреждение: не удалось восстановить давление: {interp_error}")
+            
+            # Сохраняем информацию о фильтрации для вывода в отчёте
+            method_names = {
+                'savgol': 'Savitzky-Golay',
+                'gaussian': 'Gaussian',
+                'kalman': 'Kalman',
+                'log_domain': 'Log-domain',
+                'hybrid': 'Hybrid'
+            }
+            
+            self.last_filter_info = {
+                'method': selected_method,
+                'method_name': method_names.get(selected_method, selected_method),
+                'snr_before': snr_before,
+                'snr_after': snr_after,
+                'snr_improvement': snr_improvement,
+                'rmse': rmse,
+                'mae': mae,
+                'relative_error': relative_error,
+                'accuracy': accuracy,
+                'n_points': len(Y_clean)
+            }
+            
+            # Формируем отчёт
+            report = self._create_filter_report()
+            self.text_report.setText(report)
+            
+            # Обновляем график
             self.on_plot_dimensionless_selected()
-            self.show_info("ML фильтрация", "Данные отфильтрованы с помощью ML")
+            
+            # Показываем информационное сообщение
+            quality = self._get_quality_label(rmse)
+            self.show_info("ML фильтрация", 
+                          f"Фильтрация завершена\n\n"
+                          f"Метод: {method_names.get(selected_method, selected_method)}\n"
+                          f"Точность: {accuracy:.2f}%\n"
+                          f"RMSE: {rmse:.6e} ({quality})\n"
+                          f"Улучшение SNR: {snr_improvement:+.2f} дБ")
+            
         except Exception as e:
             self.show_warning("Ошибка", f"Ошибка ML фильтрации: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+    
+    def _create_filter_report(self) -> str:
+        """Создаёт отчёт о результатах фильтрации"""
+        if not hasattr(self, 'last_filter_info') or not self.last_filter_info:
+            return "Фильтрация не выполнялась"
+        
+        info = self.last_filter_info
+        quality = self._get_quality_label(info['rmse'])
+        
+        report = f"📊 Результаты фильтрации\n"
+        report += f"{'=' * 50}\n\n"
+        report += f"Метод фильтрации: {info['method_name']} (автоматический выбор)\n"
+        report += f"Количество точек: {info['n_points']}\n\n"
+        report += f"📈 Метрики качества:\n"
+        report += f"  • SNR до фильтрации: {info['snr_before']:.2f} дБ\n"
+        report += f"  • SNR после фильтрации: {info['snr_after']:.2f} дБ\n"
+        report += f"  • Улучшение SNR: {info['snr_improvement']:+.2f} дБ\n\n"
+        report += f"📉 Точность фильтрации:\n"
+        report += f"  • RMSE: {info['rmse']:.6e} ({quality})\n"
+        report += f"  • MAE: {info['mae']:.6e}\n"
+        report += f"  • Относительная ошибка: {info['relative_error']:.2f}%\n"
+        report += f"  • Точность: {info['accuracy']:.2f}%\n\n"
+        
+        if info['accuracy'] >= 95:
+            report += f"✅ Отличная точность фильтрации!\n"
+        elif info['accuracy'] >= 90:
+            report += f"✓ Хорошая точность фильтрации\n"
+        else:
+            report += f"⚠ Точность ниже ожидаемой\n"
+        
+        return report
             
     def on_detect_outliers(self) -> None:
         """Обнаружение выбросов"""

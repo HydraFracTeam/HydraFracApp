@@ -56,7 +56,7 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     left_panel = QWidget()
     left_layout = QVBoxLayout(left_panel)
     left_layout.setContentsMargins(0, 0, 5, 0)
-    left_panel.setMaximumWidth(LEFT_PANEL_MAX_WIDTH)  # фиксированная ширина
+    left_panel.setMaximumWidth(LEFT_PANEL_MAX_WIDTH)  # Возвращаем обычную ширину
 
     # --- Загрузка файлов ---
     load_group = QGroupBox("Загрузка данных")
@@ -110,7 +110,6 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     # Безразмерные (log-log)
     app.grp_dim = QGroupBox("Безразмерные (log-log)")
     dim_lay = QVBoxLayout(app.grp_dim)
-    app.grp_dim.setFixedHeight(180)
     app.cb_dim_pD = QCheckBox("pD(Y)")
     app.cb_dim_dpD = QCheckBox("dpD/dlogY")
     app.cb_dim_tD = QCheckBox("tD (≈Y)")
@@ -124,7 +123,6 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     dim_lay.addWidget(app.cb_XY_plot)
     dim_lay.addWidget(app.cb_calc_XY)
     controls_layout.addWidget(app.grp_dim)
-    # controls_layout.setStretch(controls_layout.indexOf(app.grp_dim), 1)
 
     # Спец-пространства и типовые кривые
     app.grp_special = QGroupBox("Спец-пространства/типовые")
@@ -167,16 +165,7 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     reset_button_layout.addWidget(app.reset_plots_btn)
     left_layout.addLayout(reset_button_layout)
 
-    # --- Отчёт ПОД ЧЕКБОКСАМИ ---
-    report_group = QGroupBox("Отчёт")
-    report_layout = QVBoxLayout(report_group)
-    app.text_report = QTextEdit()
-    app.text_report.setReadOnly(True)
-    app.text_report.setPlaceholderText("Здесь появится отчёт...")
-    report_layout.addWidget(app.text_report)
-    left_layout.addWidget(report_group)
-
-    # Растягиваем отчёт вниз
+    # Растягиваем вниз
     left_layout.addStretch()
 
     # --- ПРАВАЯ ПАНЕЛЬ: график ---
