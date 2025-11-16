@@ -58,6 +58,13 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     left_layout.setContentsMargins(0, 0, 5, 0)
     left_panel.setMaximumWidth(LEFT_PANEL_MAX_WIDTH)  # фиксированная ширина
 
+    # --- Загрузка файлов ---
+    load_group = QGroupBox("Загрузка данных")
+    load_layout = QGridLayout(load_group)
+    app.load_validation_button = QPushButton("Загрузить файл для проверки")
+    load_layout.addWidget(app.load_validation_button, 0, 0)
+    left_layout.addWidget(load_group)
+
     # --- Кнопки анализа СВЕРХУ ---
     buttons_group = QGroupBox("Управление")
     buttons_layout = QGridLayout(buttons_group)
@@ -67,6 +74,8 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     app.outlier_btn = QPushButton("Обнаружить выбросы")
     app.export_btn = QPushButton("Экспорт данных")
     app.extrapolate_btn = QPushButton("Экстраполировать X-Y")
+    app.fit_xy_btn = QPushButton("Подогнать расчётную кривую")
+    app.cb_fit_only_y = QCheckBox("Подгонять только Y")
 
     buttons_layout.addWidget(app.plot_btn, 0, 0)
     buttons_layout.addWidget(app.interp_btn, 0, 1)
@@ -74,6 +83,8 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     buttons_layout.addWidget(app.outlier_btn, 1, 1)
     buttons_layout.addWidget(app.export_btn, 2, 0)
     buttons_layout.addWidget(app.extrapolate_btn, 2, 1)
+    buttons_layout.addWidget(app.fit_xy_btn, 3, 0)
+    buttons_layout.addWidget(app.cb_fit_only_y, 3, 1)
     left_layout.addWidget(buttons_group)
 
     # --- Выбор скважины ---

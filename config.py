@@ -18,10 +18,10 @@ RMSE_EXCELLENT_THRESHOLD = 0.01
 RMSE_GOOD_THRESHOLD = 0.1
 
 # Параметры по умолчанию для скважины
-DEFAULT_K = 1.0  # проницаемость
+DEFAULT_K = 5.0  # проницаемость
 DEFAULT_MU = 1.0  # вязкость
 DEFAULT_B = 1.0  # объемный коэффициент
-DEFAULT_PHI = 0.1  # пористость
+DEFAULT_PHI = 0.2  # пористость
 DEFAULT_C_T = 1e-4  # общая сжимаемость
 
 # Параметры фильтров

@@ -129,10 +129,10 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
             return arr
 
         # Нормализуем только для других графиков (pD, dpD, tD, CD), но не для X-Y
-        X = normalize_if_flat(X)
-        Y = normalize_if_flat(Y)
-        pD = normalize_if_flat(pD)
-        qD = normalize_if_flat(qD)
+        #X = normalize_if_flat(X)
+        #Y = normalize_if_flat(Y)
+        #pD = normalize_if_flat(pD)
+        #qD = normalize_if_flat(qD)
 
         # Для производных – фильтруем шумы и NaN
         if np.any(np.isnan(pD)) or np.any(np.isnan(Y)) or np.any(np.isnan(qD)):
@@ -195,7 +195,8 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
         
         if checked_groups.get('cb_dim_dpD', False):
             # Вычисляем производную на отфильтрованных данных
-            Yc = np.clip(Y, 1e-30, None)
+            #Yc = np.clip(Y, 1e-30, None)
+            Yc = Y
             # Для обычного графика используем производную по Y, а не по log(Y)
             dpdY = np.gradient(pD, Yc)
             mask = np.isfinite(X) & np.isfinite(dpdY)

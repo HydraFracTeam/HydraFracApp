@@ -58,8 +58,12 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.current_index = 0  # Индекс текущей скважины
         self.validation_data = []  # Данные для проверки качества интерполяции
         self.last_interpolated_mask_XY = None  # Маска восстановленных точек для выделения на X-Y
+        self.last_interpolated_pressure = None  # Интерполированные значения давления (не изменяют исходные данные)
         self.last_extrapolated_XY = None  # Пара экстраполированных X,Y для отображения
         self.last_extrapolation_result = None  # Результат экстраполяции с метриками качества
+        self.last_fitted_XY = None  # Подогнанные X,Y с коэффициентами поправки
+        self.last_fit_coefficients = None  # Коэффициенты подгонки (a, b)
+        self.original_calc_XY = None  # Оригинальные расчётные X,Y (до подгонки)
         
         # Создаем профессиональный интерфейс с вкладками
         setup_professional_interface(self)
@@ -249,7 +253,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 # Если длины не совпадают, используем прямое индексирование
                 pressure_restored.iloc[pressure_is_nan.values] = pressure_interpolated[pressure_is_nan.values]
         
-        self.current_data.pressure = pressure_restored
+        # ВАЖНО: НЕ изменяем исходные данные! Интерполированные значения используются только для отображения
+        # Сохраняем интерполированные значения отдельно для использования в графиках
+        # self.current_data.pressure остается неизменным - это исходные данные
+        self.last_interpolated_pressure = pressure_restored  # Сохраняем для отображения, но не изменяем исходные данные
         
         # Получаем информацию о результатах интерполяции
         interp_info = interp.get_interpolation_info()
@@ -521,9 +528,15 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.ml_filter_btn.clicked.connect(self.on_ml_filter)
         self.outlier_btn.clicked.connect(self.on_detect_outliers)
         self.export_btn.clicked.connect(self.on_export_data)
+        # Загрузка файла для валидации (если кнопка существует)
+        if hasattr(self, 'load_validation_button'):
+            self.load_validation_button.clicked.connect(self.load_validation_file)
         # Экстраполяция
         if hasattr(self, 'extrapolate_btn'):
             self.extrapolate_btn.clicked.connect(self.on_extrapolate_xy)
+        # Подгонка расчётной кривой
+        if hasattr(self, 'fit_xy_btn'):
+            self.fit_xy_btn.clicked.connect(self.on_fit_xy_curve)
         
         # Кнопка сброса графиков (если существует)
         if hasattr(self, 'reset_plots_btn'):
@@ -549,10 +562,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.data_tab = setup_data_tab(self)
         self.tab_widget.addTab(self.data_tab, "Загруженные данные")
 
-    def load_template(self) -> None:
-        """Загрузка CSV файла с данными разведки месторождений"""
+    def _load_data_file(self, target: str = 'main') -> None:
+        """
+        Общий метод загрузки файла данных.
+        
+        Args:
+            target: 'main' - загрузить в loaded_data, 'validation' - загрузить в validation_data
+        """
+        dialog_title = "Загрузить файл данных" if target == 'main' else "Загрузить файл для проверки"
         file_dialog = QFileDialog()
-        file_path, _ = file_dialog.getOpenFileName(self, "Загрузить файл данных", "./", 
+        file_path, _ = file_dialog.getOpenFileName(self, dialog_title, "./", 
                                                  "Data Files (*.csv *.parquet);;CSV Files (*.csv);;Parquet Files (*.parquet);;All Files (*)")
         if not file_path:
             return
@@ -567,45 +586,67 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.show_warning("Ошибка загрузки", f"Неожиданная ошибка при загрузке файла: {str(e)}")
             return
 
-        self.loaded_data = data
-        # Устанавливаем current_index только если данные не пустые
-        if data and len(data) > 0:
-            self.current_index = 0
-        else:
-            self.current_index = -1
-        # Очищаем validation_data при загрузке новых основных данных
-        self.validation_data = []
-        
-        # Обновляем список выбора скважин
-        self.update_well_selection()
-        
-        # Обновляем отображение параметров ГРП
-        self.update_grp_parameters()
-        
-        # Обновляем вкладку с загруженными данными
-        self.update_data_tab()
-        
-        # Обновляем старые поля для совместимости
-        current_item = self.current_data
-        if current_item:
-            self.update_interface_parameters()
-        
-        # Показываем информацию о загруженных данных
-        total_points = sum(len(item.time) for item in data)
-        self.show_info("Данные загружены", 
-                      f"Загружено {len(data)} групп данных\n"
-                      f"Всего измерений: {total_points}\n"
-                      f"Текущая скважина: {self.well_combo_dim.currentText()}")
-        
-        # Запускаем диагностику асинхронно
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(100, lambda: self.run_data_diagnostics(file_path))
-        
-        # Обновляем комбо в новой вкладке
-        self.well_combo_dim.clear()
-        for i, item in enumerate(self.loaded_data):
-            self.well_combo_dim.addItem(f"Скважина {i+1} (Skin={item.skin:.2f})")
+        if target == 'main':
+            self.loaded_data = data
+            # Устанавливаем current_index только если данные не пустые
+            if data and len(data) > 0:
+                self.current_index = 0
+            else:
+                self.current_index = -1
+            # Очищаем validation_data при загрузке новых основных данных
+            self.validation_data = []
+            # Очищаем интерполированные значения при загрузке новых данных
+            self.last_interpolated_mask_XY = None
+            self.last_interpolated_pressure = None
+            self.last_extrapolated_XY = None
+            self.last_extrapolation_result = None
+            
+            # Обновляем список выбора скважин
+            self.update_well_selection()
+            
+            # Обновляем отображение параметров ГРП
+            self.update_grp_parameters()
+            
+            # Обновляем вкладку с загруженными данными
+            self.update_data_tab()
+            
+            # Обновляем старые поля для совместимости
+            current_item = self.current_data
+            if current_item:
+                self.update_interface_parameters()
+            
+            # Показываем информацию о загруженных данных
+            total_points = sum(len(item.time) for item in data)
+            self.show_info("Данные загружены", 
+                          f"Загружено {len(data)} групп данных\n"
+                          f"Всего измерений: {total_points}\n"
+                          f"Текущая скважина: {self.well_combo_dim.currentText()}")
+            
+            # Запускаем диагностику асинхронно
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(100, lambda: self.run_data_diagnostics(file_path))
+            
+            # Обновляем комбо в новой вкладке
+            self.well_combo_dim.clear()
+            for i, item in enumerate(self.loaded_data):
+                self.well_combo_dim.addItem(f"Скважина {i+1} (Skin={item.skin:.2f})")
+        else:  # target == 'validation'
+            self.validation_data = data
+            
+            # Показываем информацию о загруженных данных
+            total_points = sum(len(item.time) for item in data)
+            self.show_info("Файл для проверки загружен", 
+                          f"Загружено {len(data)} групп данных\n"
+                          f"Всего измерений: {total_points}\n"
+                          f"Данные будут использованы как эталон для оценки качества интерполяции")
 
+    def load_template(self) -> None:
+        """Загрузка CSV файла с данными разведки месторождений"""
+        self._load_data_file(target='main')
+
+    def load_validation_file(self) -> None:
+        """Загрузка файла для проверки качества интерполяции (эталонные данные)"""
+        self._load_data_file(target='validation')
 
     def run_data_diagnostics(self, file_path: str) -> None:
         """Запускает диагностику загруженных данных"""
@@ -833,8 +874,12 @@ class MyApp(QMainWindow, Ui_mainWindow):
 
         # Сбрасываем внутренние состояния подсветки/экстраполяции
         self.last_interpolated_mask_XY = None
+        self.last_interpolated_pressure = None
         self.last_extrapolated_XY = None
         self.last_extrapolation_result = None
+        self.last_fitted_XY = None
+        self.last_fit_coefficients = None
+        self.original_calc_XY = None
 
     def on_well_changed(self, index: int) -> None:
         """Обработка смены выбранной скважины."""
@@ -849,8 +894,12 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 self.current_index = -1
         
         self.last_interpolated_mask_XY = None
+        self.last_interpolated_pressure = None
         self.last_extrapolated_XY = None
         self.last_extrapolation_result = None
+        self.last_fitted_XY = None
+        self.last_fit_coefficients = None
+        self.original_calc_XY = None
         # Обновляем инфо и очищаем графики/чекбоксы
         self.update_grp_parameters()
         self.update_data_tab()
@@ -930,10 +979,94 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.show_warning("Ошибка экстраполяции", 
                             f"Не удалось выполнить экстраполяцию: {str(e)}\n{traceback.format_exc()}")
     
+    def on_fit_xy_curve(self) -> None:
+        """Подгонка расчётной кривой X-Y к эталонной из данных."""
+        if self.current_data is None:
+            self.show_warning("Ошибка", "Нет данных для подгонки")
+            return
+        
+        # Проверяем наличие X и Y в данных
+        if not (hasattr(self.current_data, 'X') and self.current_data.X is not None and
+                hasattr(self.current_data, 'Y') and self.current_data.Y is not None):
+            self.show_warning("Ошибка", "В данных отсутствуют X и Y. Невозможно выполнить подгонку.")
+            return
+        
+        try:
+            # Получаем параметры скважины
+            params = self._get_params(self.current_data)
+            
+            # Вычисляем расчётные X и Y
+            dim_data = convert_to_dimensionless_curves(
+                self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, params, x_mode='alt'
+            )
+            
+            # Сохраняем оригинальные расчётные значения
+            self.original_calc_XY = (dim_data.X.copy(), dim_data.Y.copy())
+            
+            # Получаем эталонные значения из данных
+            X_data = self.current_data.X.values
+            Y_data = self.current_data.Y.values
+            X_calc = dim_data.X
+            Y_calc = dim_data.Y
+            
+            # Проверяем, нужно ли подгонять только Y
+            fit_only_y = hasattr(self, 'cb_fit_only_y') and self.cb_fit_only_y.isChecked()
+            
+            # Выполняем подгонку
+            from helpers.dimensionless_analysis import fit_xy_curve_coefficients
+            fit_result = fit_xy_curve_coefficients(X_data, Y_data, X_calc, Y_calc, fit_only_y=fit_only_y)
+            
+            # Сохраняем результаты
+            self.last_fitted_XY = (fit_result['X_fitted'], fit_result['Y_fitted'])
+            self.last_fit_coefficients = {
+                'a': fit_result['a'],
+                'b': fit_result['b'],
+                'rmse': fit_result['rmse'],
+                'accuracy': fit_result['accuracy'],
+                'r2': fit_result['r2']
+            }
+            
+            # Формируем отчёт
+            report = "=" * 60 + "\n"
+            report += "ПОДГОНКА РАСЧЁТНОЙ КРИВОЙ X-Y\n"
+            report += "=" * 60 + "\n\n"
+            report += f"✅ ЛУЧШИЕ КОЭФФИЦИЕНТЫ:\n"
+            if fit_only_y:
+                report += f"   a (по X) = {fit_result['a']:.4g} (фиксирован)\n"
+            else:
+                report += f"   a (по X) = {fit_result['a']:.4g}\n"
+            report += f"   b (по Y) = {fit_result['b']:.4g}\n"
+            report += f"   RMSE = {fit_result['rmse']:.4e}\n"
+            report += f"   Точность = {fit_result['accuracy']:.2f}%\n"
+            report += f"   R² = {fit_result['r2']:.4f}\n\n"
+            report += "📘 Итоговая аппроксимирующая формула:\n"
+            if fit_only_y:
+                report += f"   X_fit = 0.00864 * k * h * ΔP / (μ * B * Q) (без изменений)\n"
+            else:
+                report += f"   X_fit = {fit_result['a']:.3g} * (0.00864 * k * h * ΔP / (μ * B * Q))\n"
+            report += f"   Y_fit = {fit_result['b']:.3g} * (Q * B * t / (24 * φ * ct * h * L² * ΔP))\n"
+            report += "=" * 60 + "\n"
+            
+            # Выводим отчёт
+            if hasattr(self, 'text_report'):
+                self.text_report.setText(report)
+            
+            # Перестраиваем график с подогнанными данными
+            self.on_plot_dimensionless_selected()
+            
+            self.show_info("Подгонка выполнена", 
+                         f"Коэффициенты: a={fit_result['a']:.3g}, b={fit_result['b']:.3g}\n"
+                         f"Точность: {fit_result['accuracy']:.2f}%")
+            
+        except Exception as e:
+            import traceback
+            self.show_warning("Ошибка подгонки", 
+                            f"Не удалось выполнить подгонку: {str(e)}\n{traceback.format_exc()}")
+    
     def on_plot_dimensionless_selected(self) -> None:
         """Обработка нажатия на кнопку 'Построить график'."""
         self.dimensionless_plot.clear()
-        self.text_report.clear()
+        # Не очищаем text_report полностью, чтобы сохранить отчёт о подгонке
 
         current_item = self.current_data
         if current_item is None:
@@ -1048,22 +1181,28 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     validation_data = None
             
             # 4️⃣ Используем новую функцию для отображения сгруппированных графиков
-            # Передаём X и Y из данных, если они есть
-            # ВАЖНО: Если была выполнена интерполяция, используем пересчитанные X и Y из dim_data,
-            # а не старые X_data/Y_data, чтобы восстановленные точки правильно отображались
+            # ВАЖНО: Всегда используем исходные X и Y из данных (current_item), если они есть
+            # X-Y кривые должны вычисляться на основе исходных данных, без изменений
+            # Пересчитанные X и Y из dim_data используются только для отображения расчётных кривых (через чекбокс)
             X_data = None
             Y_data = None
-            if hasattr(self, 'last_interpolated_mask_XY') and self.last_interpolated_mask_XY is not None:
-                # Если была интерполяция, используем пересчитанные X и Y из dim_data
-                # чтобы восстановленные точки имели правильные координаты
-                X_data = pd.Series(dim_data.X, index=current_item.time.index)
-                Y_data = pd.Series(dim_data.Y, index=current_item.time.index)
-            else:
-                # Если интерполяции не было, используем X и Y из данных, если они есть
-                X_data = current_item.X if hasattr(current_item, 'X') and current_item.X is not None else None
-                Y_data = current_item.Y if hasattr(current_item, 'Y') and current_item.Y is not None else None
+            # Всегда используем исходные X и Y из данных, если они есть
+            X_data = current_item.X if hasattr(current_item, 'X') and current_item.X is not None else None
+            Y_data = current_item.Y if hasattr(current_item, 'Y') and current_item.Y is not None else None
             
             show_calc_XY = hasattr(self, 'cb_calc_XY') and self.cb_calc_XY.isChecked()
+            
+            # Если была выполнена подгонка и чекбокс включен, заменяем расчётные X и Y на подогнанные
+            # Если чекбокс выключен, восстанавливаем оригинальные расчётные значения
+            if self.last_fitted_XY is not None:
+                if show_calc_XY:
+                    # Используем подогнанные значения
+                    dim_data.X = self.last_fitted_XY[0]
+                    dim_data.Y = self.last_fitted_XY[1]
+                elif self.original_calc_XY is not None:
+                    # Восстанавливаем оригинальные расчётные значения
+                    dim_data.X = self.original_calc_XY[0]
+                    dim_data.Y = self.original_calc_XY[1]
 
             # Если X и Y отсутствуют в данных, просто не будем их использовать для графика "X-Y (из данных)"
             # Расчётные X и Y можно отображать независимо через чекбокс "Отобразить расчётные X и Y"

@@ -102,7 +102,7 @@ class DimensionlessPreprocessor:
                                  pressure_col="P",
                                  flow_col="Q",
                                  well_params: dict | None = None,
-                                 x_mode: str = "darcy",
+                                 x_mode: str = "constant",
                                  delta_p_mode: str = "initial"):
         """
         Возвращает КОПИЮ df с добавленными колонками:
