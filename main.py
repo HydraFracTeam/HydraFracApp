@@ -462,7 +462,43 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         report += "\n"
         
-        # Оценка качества экстраполяции
+        # Train/validation split информация
+        if 'train_split' in meta:
+            train_split = meta['train_split']
+            n_train = meta.get('n_train_points', 0)
+            n_val = meta.get('n_val_points', 0)
+            split_pct = int(train_split * 100)
+            report += f"  Разделение данных: {split_pct}% train / {100-split_pct}% validation\n"
+            report += f"  Точки train: {n_train}, validation: {n_val}\n"
+            report += "\n"
+        
+        # Оценка качества на validation window
+        validation_metrics = result.get('validation_metrics', {})
+        if validation_metrics:
+            report += "ОЦЕНКА КАЧЕСТВА НА VALIDATION WINDOW:\n"
+            report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+            
+            if 'RMSE_X_val' in validation_metrics:
+                report += f"  RMSE_X_val: {validation_metrics['RMSE_X_val']:.6e}\n"
+                report += f"  RMSE_Y_val: {validation_metrics['RMSE_Y_val']:.6e}\n"
+                report += f"  RMSE_mean: {validation_metrics['RMSE_mean']:.6e}\n"
+            
+            if 'MAE_X_val' in validation_metrics:
+                report += f"  MAE_X_val: {validation_metrics['MAE_X_val']:.6e}\n"
+                report += f"  MAE_Y_val: {validation_metrics['MAE_Y_val']:.6e}\n"
+            
+            if 'MAPE_mean' in validation_metrics:
+                report += f"  MAPE_mean: {validation_metrics['MAPE_mean']:.2f}%\n"
+            
+            if 'R2_mean' in validation_metrics:
+                report += f"  R²_mean: {validation_metrics['R2_mean']:.4f}\n"
+            
+            if 'Max_error' in validation_metrics:
+                report += f"  Max_error: {validation_metrics['Max_error']:.6e}\n"
+            
+            report += "\n"
+        
+        # Оценка качества экстраполяции (обратная совместимость)
         report += "ОЦЕНКА КАЧЕСТВА ЭКСТРАПОЛЯЦИИ:\n"
         report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
         
@@ -491,11 +527,42 @@ class MyApp(QMainWindow, Ui_mainWindow):
         else:
             report += "  RMSE не рассчитан (нет эталонных данных)\n"
         
-        # Стабильность
+        # Оценка физичности хвоста (ERI)
+        tail_metrics = result.get('tail_metrics', {})
+        eri = result.get('ERI', None)
+        
+        if tail_metrics or eri is not None:
+            report += "\nОЦЕНКА ФИЗИЧНОСТИ ХВОСТА (ERI):\n"
+            report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
+            
+            if eri is not None:
+                report += f"  ERI (Extrapolation Reliability Index): {eri:.4f}\n"
+                if eri >= 0.8:
+                    eri_quality = "отличная"
+                elif eri >= 0.6:
+                    eri_quality = "хорошая"
+                elif eri >= 0.4:
+                    eri_quality = "удовлетворительная"
+                else:
+                    eri_quality = "требует улучшения"
+                report += f"  Качество экстраполяции: {eri_quality}\n"
+                report += "\n"
+            
+            if tail_metrics:
+                report += "  Компоненты ERI:\n"
+                report += f"    Stability score: {tail_metrics.get('stability_score', 0):.4f}\n"
+                report += f"    Physics slope score: {tail_metrics.get('physics_slope_score', 0):.4f}\n"
+                report += f"    Physics curvature score: {tail_metrics.get('physics_curvature_score', 0):.4f}\n"
+                report += f"    Mass balance score: {tail_metrics.get('mass_balance_score', 0):.4f}\n"
+                report += f"    Smoothness score: {tail_metrics.get('smoothness_score', 0):.4f}\n"
+                report += f"    Lipschitz score: {tail_metrics.get('lipschitz_score', 0):.4f}\n"
+                report += f"    Ensemble score: {tail_metrics.get('ensemble_score', 0):.4f}\n"
+        
+        # Стабильность (обратная совместимость)
         if 'stability' in meta:
             stability = meta['stability']
             stability_ru = "хорошая" if stability == 'good' else "требует улучшения"
-            report += f"  Стабильность: {stability_ru}\n"
+            report += f"\n  Стабильность (legacy): {stability_ru}\n"
         
         # Статистика по экстраполированным данным
         if not df_pred.empty and 'X' in df_pred.columns and 'Y' in df_pred.columns:
@@ -950,10 +1017,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 'a/L': [self.current_data.a_l_ratio] * n_points
             })
             
-            # Используем новый класс DimensionlessExtrapolatorAgent
-            from helpers.ml_methods import DimensionlessExtrapolatorAgent
+            # Используем новый класс DimensionlessExtrapolator
+            from helpers.ml_methods import DimensionlessExtrapolator
             
-            extrapolator = DimensionlessExtrapolatorAgent()
+            extrapolator = DimensionlessExtrapolator()
             result = extrapolator.run(
                 df=df,
                 well_params=params,
@@ -962,10 +1029,14 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 check_rmse=True  # Проверяем RMSE для оценки качества
             )
             
-            # Извлекаем экстраполированные X и Y
-            df_pred = result['df_pred']
-            X_ext = df_pred['X'].values
-            Y_ext = df_pred['Y'].values
+            # Извлекаем экстраполированные X и Y (новый формат или старый для обратной совместимости)
+            if 'X_ext' in result and 'Y_ext' in result:
+                X_ext = result['X_ext']
+                Y_ext = result['Y_ext']
+            else:
+                df_pred = result['df_pred']
+                X_ext = df_pred['X'].values
+                Y_ext = df_pred['Y'].values
             
             self.last_extrapolated_XY = (X_ext, Y_ext)
             self.last_extrapolation_result = result  # Сохраняем результат для отчёта
