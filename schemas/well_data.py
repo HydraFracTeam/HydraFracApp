@@ -38,6 +38,7 @@ class WellTimeSeries(BaseModel):
     time: pd.Series = Field(description="Временной ряд")
     pressure: pd.Series = Field(description="Давление")
     pressure_derivative: Optional[pd.Series] = Field(default=None, description="Производная давления")
+    pressure_drop: Optional[pd.Series] = Field(default=None, description="Разница давления")
     flow_rate: pd.Series = Field(description="Дебит")
     flow_rate_derivative: Optional[pd.Series] = Field(default=None, description="Производная дебита")
     dP: Optional[pd.Series] = Field(default=None, description="Приращение давления из данных CSV, атм")

@@ -21,7 +21,7 @@ from helpers.dimensionless_plotting import plot_dimensionless_grouped
 from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
 from schemas.well_data import WellTimeSeries
 from helpers.ui_setup import (
-    setup_professional_interface,
+    setup_interface,
     setup_timeseries_tab,
     setup_grp_tab,
     setup_type_curves_tab,
@@ -67,8 +67,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.last_fit_coefficients = None  # Коэффициенты подгонки (a, b)
         self.original_calc_XY = None  # Оригинальные расчётные X,Y (до подгонки)
         
-        # Создаем профессиональный интерфейс с вкладками
-        setup_professional_interface(self)
+        # Создаем  интерфейс с вкладками
+        setup_interface(self)
         
         # Добавляем отчёт в centralwidget под параметрами (вне вкладок)
         from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTextEdit
@@ -172,9 +172,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
         report += separator + "\n"
         return report
     
-    def _perform_interpolation(self, n_nan_pressure: int, n_nan_flow: int) -> Tuple[Dict[str, Any], Any]:
+    def _perform_interpolation(self) -> Tuple[Dict[str, Any], Any]:
         """Выполняет интерполяцию безразмерных кривых"""
-        params = self._get_params(self.current_data)
+        params = self._get_params(self.curupdate_well_selectionrent_data)
         
         # Конвертируем в безразмерные параметры
         from helpers.dimensionless_analysis import convert_to_dimensionless_curves
@@ -626,6 +626,24 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if hasattr(self, 'well_combo_dim'):
             self.well_combo_dim.currentIndexChanged.connect(self.on_well_changed)
         
+        # обновление данных при смене 
+        self.well_combo_dim.currentIndexChanged.connect(self.on_well_changed)
+        
+        # Привязываем чекбоксы к перестройке графика
+        self.cb_dim_pD.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_dim_dpD.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_dim_tD.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_dim_CD.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_XY_plot.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_calc_XY.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_type_gry.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_type_cinco.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_type_valko.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_gfunc.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_mbt.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_real_p.stateChanged.connect(self.on_checkbox_toggled)
+        self.cb_real_q.stateChanged.connect(self.on_checkbox_toggled)
+        
         # Анализ ГРП
         self.flow_regime_btn.clicked.connect(self.on_analyze_flow_regime)
         self.productivity_btn.clicked.connect(self.on_compute_productivity_index)
@@ -786,6 +804,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.width_doubleSpinBox.setValue(self.current_data.fracture_width)
         self.n_spinBox.setValue(self.current_data.fractures_count)
         self.aL_doubleSpinBox.setValue(self.current_data.a_l_ratio)
+        
     def update_data_tab(self) -> None:
         """Обновляет таблицу на вкладке 'Загруженные данные'"""
         if not self.loaded_data:
@@ -803,9 +822,12 @@ class MyApp(QMainWindow, Ui_mainWindow):
             return
         
         df = pd.DataFrame({
-            "time": current_item.time,
-            "pressure": current_item.pressure,
-            "rate": current_item.flow_rate
+            "Время t, ч": current_item.time,
+            "Давление P, кгс/см²": current_item.pressure,
+            "Депрессия, кгс/см²": current_item.pressure_drop,
+            "Поток Q, м³/сут": current_item.flow_rate,
+            "X": current_item.X,
+            "Y": current_item.Y,
         })
 
         # Создаем модель для QTableView
@@ -821,17 +843,30 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.data_table.setModel(model)
         self.data_info_label.setText(f"Отображены данные скважины {self.current_index + 1} — {len(df)} строк")
 
-        
     def update_well_selection(self) -> None:
         """Обновляет список выбора скважин"""
         self.well_combo_dim.clear()
         
         for i, item in enumerate(self.loaded_data):
-            item_name = f"Скважина {i+1} (Skin={item.skin:.3f}, N={item.fractures_count})"
+            item_name = f"Скважина {i+1} (Skin={item.skin:.3f}, N={item.fractures_count}, a/L={item.a_l_ratio})"
             self.well_combo_dim.addItem(item_name)
         
         if self.loaded_data:
             self.well_combo_dim.setCurrentIndex(self.current_index)
+    
+    def on_well_changed(self, index: int) -> None:
+        """Обработка смены выбранной скважины."""
+        if self.loaded_data and 0 <= index < len(self.loaded_data):
+            self.current_index = index
+        else:
+            # Если индекс невалидный, устанавливаем 0 или оставляем как есть
+            if self.loaded_data:
+                self.current_index = 0
+            else:
+                self.current_index = -1
+        self.update_interface_parameters()
+        self.update_grp_parameters()
+        self.update_data_tab()
     
     def update_grp_parameters(self) -> None:
         """Обновляет отображение параметров ГРП"""
@@ -879,7 +914,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 self.last_interpolated_mask_XY = None
 
             # Выполняем интерполяцию
-            interp_info, _ = self._perform_interpolation(n_nan_pressure, n_nan_flow)
+            interp_info, _ = self._perform_interpolation()
             
             # Формируем отчет
             report = self._create_interpolation_report(n_nan_pressure, n_nan_flow, interp_info)
@@ -1380,7 +1415,11 @@ class MyApp(QMainWindow, Ui_mainWindow):
         except Exception as e:
             self.text_report.setText(f"❌ Ошибка построения графика: {str(e)}")
             import traceback
-            print(traceback.format_exc())        
+            print(traceback.format_exc())      
+
+    def on_checkbox_toggled(self):
+        """Вызывается при изменении состояния любого чекбокса"""
+        self.on_plot_dimensionless_selected() 
 
     def on_ml_filter(self) -> None:
         """ML-фильтрация данных"""
