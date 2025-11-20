@@ -854,6 +854,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.loaded_data:
             self.well_combo_dim.setCurrentIndex(self.current_index)
     
+    
     def on_well_changed(self, index: int) -> None:
         """Обработка смены выбранной скважины."""
         if self.loaded_data and 0 <= index < len(self.loaded_data):
@@ -864,9 +865,21 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 self.current_index = 0
             else:
                 self.current_index = -1
+        
+        self.last_interpolated_mask_XY = None
+        self.last_interpolated_pressure = None
+        self.last_extrapolated_XY = None
+        self.last_extrapolation_result = None
+        self.last_fitted_XY = None
+        self.last_fit_coefficients = None
+        self.original_calc_XY = None
+        self.last_filter_info = None
+        self.reset_plots()
+        
         self.update_interface_parameters()
         self.update_grp_parameters()
         self.update_data_tab()
+        
     
     def update_grp_parameters(self) -> None:
         """Обновляет отображение параметров ГРП"""
@@ -943,7 +956,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             import traceback
             print(traceback.format_exc())
     
-    def on_reset_plots(self) -> None:
+    def reset_plots(self) -> None:
         """Сброс всех графиков и чекбоксов"""
         # Очищаем график
         if hasattr(self, 'dimensionless_plot'):
@@ -985,9 +998,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if hasattr(self, 'text_report'):
             self.text_report.clear()
         
-        if not self.test_mode:
-            self.show_info("Графики очищены", "Все графики и чекбоксы сброшены")
-
         # Сбрасываем внутренние состояния подсветки/экстраполяции/фильтрации
         self.last_interpolated_mask_XY = None
         self.last_interpolated_pressure = None
@@ -997,36 +1007,14 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.last_fit_coefficients = None
         self.original_calc_XY = None
         self.last_filter_info = None
-
-    def on_well_changed(self, index: int) -> None:
-        """Обработка смены выбранной скважины."""
-        # Просто обновляем индекс - current_data будет автоматически обновлён через property
-        if self.loaded_data and 0 <= index < len(self.loaded_data):
-            self.current_index = index
-        else:
-            # Если индекс невалидный, устанавливаем 0 или оставляем как есть
-            if self.loaded_data:
-                self.current_index = 0
-            else:
-                self.current_index = -1
         
-        self.last_interpolated_mask_XY = None
-        self.last_interpolated_pressure = None
-        self.last_extrapolated_XY = None
-        self.last_extrapolation_result = None
-        self.last_fitted_XY = None
-        self.last_fit_coefficients = None
-        self.original_calc_XY = None
-        self.last_filter_info = None
-        # Обновляем инфо и очищаем графики/чекбоксы
-        self.update_grp_parameters()
-        self.update_data_tab()
-        if hasattr(self, 'dimensionless_plot'):
-            self.dimensionless_plot.clear()
-            self.dimensionless_plot.setLabel('bottom', 'X (безразмерный фильтрационный параметр)')
-            self.dimensionless_plot.setLabel('left', 'Безразмерный параметр')
-            self.dimensionless_plot.setTitle("Безразмерные кривые МГРП")
-            self.dimensionless_plot.showGrid(x=True, y=True)
+        
+    def on_reset_plots(self) -> None:
+        """Сброс графиков с уведомлением"""
+        self.reset_plots()
+        if not self.test_mode:
+            self.show_info("Графики очищены", "Все графики и чекбоксы сброшены")
+
 
     def on_extrapolate_xy(self) -> None:
         """Экстраполяция и наложение X–Y кривой на график на основе экстраполированных размерных параметров."""
