@@ -1,19 +1,22 @@
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict, Union
+from typing import Tuple, Dict, Union, Optional, Callable, Any
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.linear_model import LinearRegression, Ridge, RidgeCV
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import mean_squared_error
+from sklearn.multioutput import MultiOutputRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, Matern
 from scipy import signal
 from scipy.interpolate import interp1d, UnivariateSpline
 from scipy.interpolate import RBFInterpolator as ScipyRBFInterpolator
+from datetime import datetime
 import warnings
 
 warnings.filterwarnings('ignore')
+np.random.seed(42)  # Детерминированность согласно контракту
 
 
 class MLInterpolator:
@@ -608,6 +611,824 @@ class AdaptiveInterpolator:
 
 
 # Функции для удобного использования новых интерполяторов
+
+def extrapolate_series_math(series: pd.Series, steps: int = 10, degree: int = 2) -> pd.Series:
+    """Экстраполяция ряда полиномиальной регрессией (безопасный фоллбэк к линейной).
+    Возвращает продолжение ряда длиной steps с тем же индексом типа, что у входа (если числовой индекс).
+    """
+    values = series.dropna().values
+    if len(values) < 3 or steps <= 0:
+        return pd.Series(dtype=float)
+    x = np.arange(len(values))
+    try:
+        coeffs = np.polyfit(x, values, deg=min(degree, len(values) - 1))
+        poly = np.poly1d(coeffs)
+        x_future = np.arange(len(values), len(values) + steps)
+        y_future = poly(x_future)
+    except Exception:
+        # Линейный фоллбэк
+        if len(values) < 2:
+            return pd.Series(dtype=float)
+        slope = values[-1] - values[-2]
+        y_future = values[-1] + slope * np.arange(1, steps + 1)
+    return pd.Series(y_future)
+
+
+def extrapolate_series_ml(series: pd.Series, steps: int = 10, method: str = 'ridge') -> pd.Series:
+    """Экстраполяция ряда с помощью ML (простая регрессия по индексу)."""
+    values = series.dropna().values
+    if len(values) < 3 or steps <= 0:
+        return pd.Series(dtype=float)
+    x = np.arange(len(values)).reshape(-1, 1)
+    if method == 'random_forest':
+        model = RandomForestRegressor(n_estimators=200, random_state=42)
+    elif method == 'ridge':
+        model = Ridge(alpha=1.0)
+    else:
+        model = LinearRegression()
+    model.fit(x, values)
+    x_future = np.arange(len(values), len(values) + steps).reshape(-1, 1)
+    y_future = model.predict(x_future)
+    return pd.Series(y_future)
+
+
+def extrapolate_parameters_df(df: pd.DataFrame,
+                              steps: int = 10,
+                              method: str = 'math',
+                              exclude: Tuple[str, ...] = ('X', 'Y')) -> pd.DataFrame:
+    """Экстраполирует все столбцы параметров (кроме exclude) на указанное число шагов."""
+    future = {}
+    for col in df.columns:
+        if col in exclude:
+            continue
+        series = pd.Series(df[col])
+        if method == 'math':
+            ext = extrapolate_series_math(series, steps=steps)
+        else:
+            ext = extrapolate_series_ml(series, steps=steps)
+        future[col] = ext.values
+    return pd.DataFrame(future)
+
+def generate_xy_from_params(params_row: Dict[str, float], n_points: int = 64) -> Tuple[np.ndarray, np.ndarray]:
+    """Генерирует кривую X-Y по размерным параметрам (skin, N, a_L) через физическую модель."""
+    # Импортируем здесь, чтобы избежать циклических зависимостей на уровне модуля
+    from helpers.physics import predict_production_curve
+    time_range = np.logspace(-3, 3, n_points)
+    skin = float(params_row.get('skin', 0.0))
+    N = int(params_row.get('N', params_row.get('fractures_count', 1)))
+    a_L = float(params_row.get('a_L', params_row.get('a_l_ratio', 0.1)))
+    X, Y = predict_production_curve(skin=skin, n=N, aL=a_L, time_range=time_range)
+    return X, Y
+
+
+# ============================================================================
+# Враппер для правильной интерполяции
+# ============================================================================
+
+def interpolate_missing_only(interpolator_class: type, time: pd.Series, values: pd.Series, **kwargs) -> pd.Series:
+    """
+    Универсальный враппер, который интерполирует только реальные пропуски,
+    не трогая уже известные точки и не смещая индексы.
+    """
+    mask_missing = values.isna()
+    if not mask_missing.any():
+        return values.copy()
+
+    # Используем только валидные точки
+    valid_mask = ~(mask_missing | time.isna())
+    time_valid = time[valid_mask]
+    values_valid = values[valid_mask]
+
+    if len(time_valid) < 2:
+        return values.copy()
+
+    # Обучаем интерполятор (универсальная проверка интерфейса)
+    interpolator = interpolator_class(**kwargs)
+    try:
+        # Поддержка классов, где fit ждёт pd.Series
+        interpolator.fit(time_valid, values_valid)
+    except TypeError:
+        # Фоллбэк для scikit-learn совместимых моделей
+        interpolator.fit(time_valid.values.reshape(-1, 1), values_valid.values)
+
+    # Предсказываем только для пропусков
+    time_missing = time[mask_missing]
+    try:
+        predicted_values = interpolator.predict(time_missing)
+        if isinstance(predicted_values, (tuple, list)):  # GP возвращает mean, std
+            predicted_values = predicted_values[0]
+    except TypeError:
+        predicted_values = interpolator.predict(time_missing.values.reshape(-1, 1))
+
+    # Вставляем в оригинальный ряд
+    result = values.copy()
+    result.loc[mask_missing] = np.array(predicted_values).flatten()
+
+    return result
+
+
+
+# ============================================================================
+# ExtrapolationReliabilityEvaluator перенесен в helpers.dimensionless.extrapolation.eri
+# ============================================================================
+
+# ============================================================================
+# DimensionlessExtrapolator 
+# ============================================================================
+
+class DimensionlessExtrapolator:
+    """
+    Модуль для экстраполяции безразмерных кривых X-Y на основе экстраполированных
+    размерных параметров (P, dP, Q)
+    """
+    
+    def __init__(self):
+        self.interp_model = None
+        self.dt = None
+        self.t_last = None
+        self.well_params = None
+    
+    def run(
+        self,
+        df: pd.DataFrame,
+        well_params: Dict[str, float],
+        n_future: int = 20,
+        method: str = "adaptive",
+        check_rmse: bool = True,
+        alt_method: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Выполняет построение модели, экстраполяцию и оценку качества.
+        
+        Args:
+            df: Исторические данные по скважине (должны содержать t, P, dP, Q и статичные параметры)
+            well_params: Физические параметры (k, phi, ct, mu, B, L, h)
+            n_future: Количество временных шагов для экстраполяции
+            method: Тип регрессора ("poly", "ridge", "rf", "adaptive", "phys")
+            check_rmse: Если True, выполняется сравнение с эталонными X-Y
+            alt_method: Альтернативная функция вычисления эталонных X-Y
+        
+        Returns:
+            {
+                "P_ext": экстраполированные P,
+                "dP_ext": экстраполированные dP,
+                "Q_ext": экстраполированные Q,
+                "X_ext": экстраполированные X,
+                "Y_ext": экстраполированные Y,
+                "df_ref": DataFrame эталонных X-Y,
+                "df_pred": DataFrame экстраполированных X-Y,
+                "interp_model": обученный регрессор,
+                "rmse": float или Dict[str, float],
+                "validation_metrics": метрики на validation window,
+                "tail_metrics": метрики физичности хвоста,
+                "ERI": итоговая метрика достоверности хвоста,
+                "meta": служебная информация
+            }
+        """
+        # Сохраняем параметры
+        self.well_params = well_params
+        
+        # 1. Подготовка данных
+        df_clean = self._prepare_data(df)
+        
+        # Определяем частоту временных меток
+        self.dt = float(np.median(np.diff(df_clean["t"].values)))
+        self.t_last = float(df_clean["t"].iloc[-1])
+        
+        # 2. Train/validation split (70/30 если >200 точек, иначе 80/20)
+        n_points = len(df_clean)
+        train_split = 0.7 if n_points > 200 else 0.8
+        split_idx = int(len(df_clean) * train_split)
+        df_train = df_clean.iloc[:split_idx].copy()
+        df_val = df_clean.iloc[split_idx:].copy()
+        
+        # 3. Оценка методов на validation (если method="adaptive")
+        if method == "adaptive":
+            best_method = self._select_best_method(df_train, df_val, well_params)
+        else:
+            best_method = method
+        
+        # 4. Переобучение лучшего метода на всех данных
+        X_train_full, y_train_full = self._prepare_features(df_clean)
+        self.interp_model = self._train_interpolator(X_train_full, y_train_full, best_method)
+        
+        # 5. Экстраполяция на основе всего массива
+        df_pred = self._extrapolate_dimensionless(df_clean, n_future)
+        df_pred = self._calculate_xy_from_extrapolated(df_pred)
+        
+        # 6. Расчёт эталонных безразмерных X–Y (для обратной совместимости)
+        df_ref = self._calculate_reference_xy(df_clean, alt_method)
+        
+        # 7. Оценка на validation window (для исторических данных)
+        validation_metrics = {}
+        if len(df_val) > 0:
+            validation_metrics = self._calculate_validation_metrics(
+                df_train, df_val, well_params, best_method
+            )
+        
+        # 8. Оценка физичности хвоста (ERI)
+        from helpers.dimensionless.extrapolation.eri import ExtrapolationReliabilityEvaluator
+        evaluator = ExtrapolationReliabilityEvaluator()
+        tail_metrics, eri = evaluator.evaluate(df_pred, df_train, well_params)
+        
+        # 9. Оценка качества (валидация) - для обратной совместимости
+        rmse = self._calculate_rmse(df_ref, df_pred) if check_rmse else {}
+        
+        # 10. Метаданные
+        meta = self._create_metadata(df_clean, df_pred, best_method, rmse)
+        meta['train_split'] = train_split
+        meta['n_train_points'] = len(df_train)
+        meta['n_val_points'] = len(df_val)
+        
+        # Вывод RMSE в лог
+        if rmse:
+            if isinstance(rmse, dict):
+                print(f"RMSE(X): {rmse.get('X', 0):.3e}, RMSE(Y): {rmse.get('Y', 0):.3e}, "
+                      f"mean: {rmse.get('mean', 0):.3e}")
+            else:
+                print(f"RMSE: {rmse:.3e}")
+        
+        # Формирование результата
+        result = {
+            # Новые поля
+            "P_ext": df_pred['P'].values,
+            "dP_ext": df_pred['dP'].values,
+            "Q_ext": df_pred['Q'].values,
+            "X_ext": df_pred['X'].values,
+            "Y_ext": df_pred['Y'].values,
+            "validation_metrics": validation_metrics,
+            "tail_metrics": tail_metrics,
+            "ERI": eri,
+            # Старые поля для обратной совместимости
+            "df_ref": df_ref,
+            "df_pred": df_pred,
+            "interp_model": self.interp_model,
+            "rmse": rmse,
+            "meta": meta
+        }
+        
+        return result
+    
+    def _prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """4.1. Подготовка данных: проверка столбцов, обработка NaN"""
+        required_cols = ['t', 'P', 'dP', 'Q']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Отсутствуют обязательные столбцы: {missing_cols}")
+        
+        df_clean = df.copy()
+        
+        # Проверка на NaN и линейная интерполяция
+        for col in ['P', 'dP', 'Q']:
+            if df_clean[col].isna().any():
+                df_clean[col] = df_clean[col].interpolate(method='linear', limit_direction='both')
+        
+        # Удаляем строки, где все ключевые параметры NaN
+        df_clean = df_clean.dropna(subset=['t', 'P', 'Q'])
+        
+        # Проверка на нулевые/отрицательные значения (заменяем на NaN)
+        df_clean.loc[df_clean['dP'] <= 0, 'dP'] = np.nan
+        df_clean.loc[df_clean['Q'] <= 0, 'Q'] = np.nan
+        
+        # Повторная интерполяция после замены
+        for col in ['dP', 'Q']:
+            if df_clean[col].isna().any():
+                df_clean[col] = df_clean[col].interpolate(method='linear', limit_direction='both')
+        
+        # Сортировка по времени
+        df_clean = df_clean.sort_values('t').reset_index(drop=True)
+        
+        if len(df_clean) < 5:
+            raise ValueError("Недостаточно данных для экстраполяции (требуется минимум 5 точек)")
+        
+        return df_clean
+    
+    def _calculate_reference_xy(self, df: pd.DataFrame, alt_method: Optional[Callable]) -> pd.DataFrame:
+        """4.2. Расчёт эталонных безразмерных X–Y"""
+        if alt_method is not None:
+            return alt_method(df, self.well_params)
+        
+        # Используем встроенный convert_to_dimensionless
+        from helpers.dimensionless_analysis import convert_to_dimensionless_curves
+        
+        time_series = pd.Series(df['t'].values)
+        pressure_series = pd.Series(df['P'].values)
+        flow_rate_series = pd.Series(df['Q'].values)
+        
+        dim_data = convert_to_dimensionless_curves(
+            time_series, pressure_series, flow_rate_series, 
+            self.well_params, x_mode='alt'
+        )
+        
+        df_ref = pd.DataFrame({
+            't': df['t'].values,
+            'X': dim_data.X,
+            'Y': dim_data.Y
+        })
+        
+        return df_ref
+    
+    def _prepare_features(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+        """4.3. Формирование регрессионного признакового вектора"""
+        # Статичные параметры скважины
+        static_features = []
+        static_cols = ['Skin', 'h', 'N', 'W', 'L', 'a/L']
+        for col in static_cols:
+            if col in df.columns:
+                # Берем первое значение (все одинаковые для одной скважины)
+                static_features.append(df[col].iloc[0] if len(df) > 0 else 0.0)
+            else:
+                static_features.append(0.0)
+        
+        # Исторические значения размерных параметров
+        historical_features = df[['P', 'dP', 'Q']].values
+        
+        # Повторяем статичные параметры для каждой строки
+        static_array = np.tile(static_features, (len(df), 1))
+        
+        # Объединяем признаки
+        X_train = np.hstack([static_array, historical_features])
+        
+        # Целевые значения (следующие значения P, dP, Q)
+        # Для экстраполяции используем текущие значения как цели (для обучения тренда)
+        y_train = historical_features
+        
+        return X_train, y_train
+    
+    def _train_interpolator(self, X_train: np.ndarray, y_train: np.ndarray, method: str):
+        """4.4. Обучение интерполятора"""
+        if method == "poly":
+            # PolynomialFeatures + RidgeCV
+            model = Pipeline([
+                ('poly', PolynomialFeatures(degree=2)),
+                ('ridge', RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0]))
+            ])
+        elif method == "ridge":
+            # Линейная Ridge-регрессия
+            model = Ridge(alpha=1.0)
+        elif method == "rf":
+            # RandomForestRegressor
+            model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
+        elif method == "adaptive":
+            # Выбор модели по минимальному RMSE на валидации
+            models = {
+                'ridge': Ridge(alpha=1.0),
+                'poly': Pipeline([
+                    ('poly', PolynomialFeatures(degree=2)),
+                    ('ridge', RidgeCV(alphas=[0.1, 1.0, 10.0]))
+                ]),
+                'rf': RandomForestRegressor(n_estimators=50, random_state=42, max_depth=5)
+            }
+            
+            # Простая валидация: последние 20% данных
+            split_idx = int(len(X_train) * 0.8)
+            X_val = X_train[split_idx:]
+            y_val = y_train[split_idx:]
+            X_train_split = X_train[:split_idx]
+            y_train_split = y_train[:split_idx]
+            
+            best_rmse = np.inf
+            best_model = None
+            best_method_name = 'ridge'
+            
+            for name, model in models.items():
+                try:
+                    model.fit(X_train_split, y_train_split)
+                    y_pred = model.predict(X_val)
+                    rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+                    if rmse < best_rmse:
+                        best_rmse = rmse
+                        best_model = model
+                        best_method_name = name
+                except Exception:
+                    continue
+            
+            if best_model is None:
+                best_model = Ridge(alpha=1.0)
+                best_method_name = 'ridge'
+            
+            model = best_model
+            method = best_method_name  # Обновляем метод для метаданных
+        elif method == "phys":
+            # Модель на основе аппроксимации тренда (экспоненциальная/логарифмическая)
+            # Используем Ridge с полиномиальными признаками для аппроксимации тренда
+            model = Pipeline([
+                ('poly', PolynomialFeatures(degree=3)),
+                ('ridge', Ridge(alpha=10.0))  # Усиленная регуляризация
+            ])
+        else:
+            raise ValueError(f"Неизвестный метод: {method}")
+        
+        # Обучаем модель
+        model.fit(X_train, y_train)
+        
+        return model
+    
+    def _extrapolate_dimensionless(self, df: pd.DataFrame, n_future: int) -> pd.DataFrame:
+        """Экстраполяция размерных параметров с использованием нового модуля"""
+        from helpers.dimensionless.extrapolation import extrapolate_parameters
+        
+        # Построить временную сетку
+        t_future = np.arange(
+            self.t_last + self.dt,
+            self.t_last + (n_future + 1) * self.dt,
+            self.dt
+        )
+        
+        # Подготавливаем статичные параметры
+        static_cols = ['Skin', 'h', 'N', 'W', 'L', 'a/L']
+        static_features = []
+        for col in static_cols:
+            if col in df.columns:
+                static_features.append(df[col].iloc[-1])
+            else:
+                static_features.append(0.0)
+        static_features = np.array(static_features)
+        
+        # Последние известные значения
+        P_current = df['P'].iloc[-1]
+        dP_current = df['dP'].iloc[-1]
+        Q_current = df['Q'].iloc[-1]
+        
+        # Экстраполируем с использованием нового модуля
+        P_ext, dP_ext, Q_ext = extrapolate_parameters(
+            model=self.interp_model,
+            P_current=P_current,
+            dP_current=dP_current,
+            Q_current=Q_current,
+            static_features=static_features,
+            dt=self.dt,
+            n=n_future
+        )
+        
+        # Создаем DataFrame с экстраполированными данными
+        df_pred = pd.DataFrame({
+            't': t_future,
+            'P': P_ext,
+            'dP': dP_ext,
+            'Q': Q_ext
+        })
+        
+        # Копируем статичные параметры
+        for col in static_cols:
+            if col in df.columns:
+                df_pred[col] = df[col].iloc[-1]
+        
+        return df_pred
+    
+    def _calculate_xy_from_extrapolated(self, df_pred: pd.DataFrame) -> pd.DataFrame:
+        """Расчёт X–Y по экстраполированным данным (используем ту же формулу, что и для основной кривой)"""
+        from helpers.dimensionless_analysis import convert_to_dimensionless_curves
+        
+        time_series = pd.Series(df_pred['t'].values)
+        pressure_series = pd.Series(df_pred['P'].values)
+        flow_rate_series = pd.Series(df_pred['Q'].values)
+        
+        # Используем dP из экстраполированных данных (передаем как pd.Series)
+        well_params_with_dp = self.well_params.copy()
+        well_params_with_dp['dP'] = pd.Series(df_pred['dP'].values, index=time_series.index)
+        
+        dim_data = convert_to_dimensionless_curves(
+            time_series, pressure_series, flow_rate_series,
+            well_params_with_dp, x_mode='alt'
+        )
+        
+        df_pred['X'] = dim_data.X
+        df_pred['Y'] = dim_data.Y
+        
+        return df_pred
+    
+    def _calculate_rmse(self, df_ref: pd.DataFrame, df_pred: pd.DataFrame) -> Dict[str, float]:
+        """Оценка качества (валидация) с использованием нормированных метрик Y"""
+        from helpers.dimensionless.extrapolation import compute_validation_metrics_y
+        
+        if df_ref is None or len(df_ref) == 0:
+            return {}
+        
+        # Выравниваем по времени для сравнения
+        common_times = np.intersect1d(df_ref['t'].values, df_pred['t'].values)
+        
+        if len(common_times) == 0:
+            from scipy.interpolate import interp1d
+            X_ref_interp = interp1d(df_ref['t'].values, df_ref['X'].values, 
+                                    kind='linear', bounds_error=False, fill_value='extrapolate')
+            Y_ref_interp = interp1d(df_ref['t'].values, df_ref['Y'].values,
+                                    kind='linear', bounds_error=False, fill_value='extrapolate')
+            
+            X_ref_aligned = X_ref_interp(df_pred['t'].values)
+            Y_ref_aligned = Y_ref_interp(df_pred['t'].values)
+            
+            X_pred = df_pred['X'].values
+            Y_pred = df_pred['Y'].values
+            
+            # Интерполируем dP для валидации Y
+            if 'dP' in df_ref.columns and 'dP' in df_pred.columns:
+                dP_ref_interp = interp1d(df_ref['t'].values, df_ref['dP'].values,
+                                        kind='linear', bounds_error=False, fill_value='extrapolate')
+                dP_ref_aligned = dP_ref_interp(df_pred['t'].values)
+                dP_pred_aligned = df_pred['dP'].values
+            else:
+                dP_ref_aligned = None
+                dP_pred_aligned = None
+        else:
+            ref_common = df_ref[df_ref['t'].isin(common_times)].sort_values('t')
+            pred_common = df_pred[df_pred['t'].isin(common_times)].sort_values('t')
+            
+            X_ref_aligned = ref_common['X'].values
+            Y_ref_aligned = ref_common['Y'].values
+            X_pred = pred_common['X'].values
+            Y_pred = pred_common['Y'].values
+        
+            dP_ref_aligned = ref_common['dP'].values if 'dP' in ref_common.columns else None
+            dP_pred_aligned = pred_common['dP'].values if 'dP' in pred_common.columns else None
+        
+        # Вычисляем RMSE для X
+        rmse_x = np.sqrt(np.nanmean((X_ref_aligned - X_pred)**2))
+        
+        # Вычисляем нормированные метрики для Y
+        y_metrics = compute_validation_metrics_y(
+            Y_ref=Y_ref_aligned,
+            Y_pred=Y_pred,
+            dP_ref=dP_ref_aligned,
+            dP_pred=dP_pred_aligned
+        )
+        
+        # Базовый RMSE для Y (для обратной совместимости)
+        rmse_y = np.sqrt(np.nanmean((Y_ref_aligned - Y_pred)**2))
+        rmse_total = np.mean([rmse_x, rmse_y])
+        
+        result = {
+            'X': rmse_x,
+            'Y': rmse_y,
+            'mean': rmse_total,
+            'filtered_RMSE_Y': y_metrics.get('filtered_RMSE_Y', np.inf),
+            'RMSE_log_Y': y_metrics.get('RMSE_log_Y', np.inf),
+            'physically_acceptable_share': y_metrics.get('physically_acceptable_share', 0.0)
+        }
+        
+        return result
+    
+    def _select_best_method(self, df_train: pd.DataFrame, df_val: pd.DataFrame,
+                           well_params: Dict[str, float]) -> str:
+        """
+        Выбирает лучший метод на основе метрик на validation window.
+        
+        Args:
+            df_train: Обучающие данные
+            df_val: Validation данные
+            well_params: Физические параметры скважины
+        
+        Returns:
+            Название лучшего метода ('poly' или 'rf')
+        """
+        # Временно исключаем ridge из-за некорректной работы
+        methods = ['poly', 'rf']
+        best_method = 'poly'
+        best_score = np.inf
+        
+        # Сохраняем текущие параметры
+        dt_original = self.dt
+        t_last_original = self.t_last
+        well_params_original = self.well_params
+        interp_model_original = self.interp_model  # Сохраняем текущую модель
+        
+        # Устанавливаем параметры для train данных
+        self.dt = float(np.median(np.diff(df_train["t"].values)))
+        self.t_last = float(df_train["t"].iloc[-1])
+        self.well_params = well_params
+        
+        try:
+            for method_name in methods:
+                try:
+                    # Обучаем модель на train
+                    X_train, y_train = self._prepare_features(df_train)
+                    model = self._train_interpolator(X_train, y_train, method_name)
+                    
+                    # Временно устанавливаем модель для экстраполяции
+                    self.interp_model = model
+                    
+                    # Экстраполируем на validation window
+                    n_val = len(df_val)
+                    df_pred_val = self._extrapolate_dimensionless(df_train, n_val)
+                    df_pred_val = self._calculate_xy_from_extrapolated(df_pred_val)
+                    
+                    # Вычисляем эталонные X-Y для validation
+                    df_ref_val = self._calculate_reference_xy(df_val, None)
+                    
+                    # Вычисляем метрики
+                    metrics = self._calculate_validation_metrics(
+                        df_train, df_val, well_params, method_name, df_pred_val, df_ref_val
+                    )
+                    
+                    # Комбинированная оценка: filtered_RMSE_Y + RMSE_log_Y + physically_acceptable_share
+                    filtered_rmse_y = metrics.get('filtered_RMSE_Y', np.inf)
+                    rmse_log_y = metrics.get('RMSE_log_Y', np.inf)
+                    phys_share = metrics.get('physically_acceptable_share', 0.0)
+                    
+                    # Комбинированный score (меньше = лучше)
+                    # Штрафуем за низкую долю физически корректных точек
+                    if phys_share < 0.5:
+                        score = np.inf
+                    elif np.isfinite(filtered_rmse_y) and filtered_rmse_y < 1e10:
+                        # Используем geometric mean filtered_RMSE_Y и RMSE_log_Y
+                        score = np.sqrt(filtered_rmse_y * rmse_log_y) / (phys_share + 0.1)
+                    else:
+                        score = metrics.get('RMSE_mean', np.inf)
+                    
+                    # Логирование для отладки
+                    print(f"  Метод {method_name}: ")
+                    print(f"    filtered_RMSE_Y = {filtered_rmse_y:.6e}")
+                    print(f"    RMSE_log_Y = {rmse_log_y:.6e}")
+                    print(f"    physically_acceptable_share = {phys_share:.2%}")
+                    print(f"    combined_score = {score:.6e}")
+                    
+                    if score < best_score and np.isfinite(score):
+                        best_score = score
+                        best_method = method_name
+                except Exception as e:
+                    # Пропускаем метод при ошибке, но логируем
+                    print(f"  Метод {method_name} пропущен из-за ошибки: {str(e)}")
+                    continue
+        finally:
+            # Восстанавливаем параметры
+            self.dt = dt_original
+            self.t_last = t_last_original
+            self.well_params = well_params_original
+            self.interp_model = interp_model_original  # Восстанавливаем модель
+        
+        print(f"Выбран лучший метод: {best_method} (score = {best_score:.6e})")
+        return best_method
+    
+    def _calculate_validation_metrics(self, df_train: pd.DataFrame, df_val: pd.DataFrame,
+                                      well_params: Dict[str, float], method: str,
+                                      df_pred_val: Optional[pd.DataFrame] = None,
+                                      df_ref_val: Optional[pd.DataFrame] = None) -> Dict[str, float]:
+        """
+        Вычисляет метрики на validation window.
+        
+        Args:
+            df_train: Обучающие данные
+            df_val: Validation данные
+            well_params: Физические параметры скважины
+            method: Метод экстраполяции
+            df_pred_val: Предсказанные данные на validation (если None, вычисляются)
+            df_ref_val: Эталонные данные на validation (если None, вычисляются)
+        
+        Returns:
+            Словарь с метриками: RMSE_X_val, RMSE_Y_val, MAE_X_val, MAE_Y_val, MAPE, R2, Max_error
+        """
+        try:
+            # Сохраняем текущие параметры
+            dt_original = self.dt
+            t_last_original = self.t_last
+            well_params_original = self.well_params
+            
+            # Устанавливаем параметры для train данных
+            self.dt = float(np.median(np.diff(df_train["t"].values)))
+            self.t_last = float(df_train["t"].iloc[-1])
+            self.well_params = well_params
+            
+            interp_model_original = self.interp_model  # Сохраняем текущую модель
+            
+            try:
+                # Если предсказания не переданы, вычисляем их
+                if df_pred_val is None:
+                    # Обучаем модель на train
+                    X_train, y_train = self._prepare_features(df_train)
+                    model = self._train_interpolator(X_train, y_train, method)
+                    
+                    # Временно устанавливаем модель для экстраполяции
+                    self.interp_model = model
+                    
+                    # Экстраполируем на validation window
+                    n_val = len(df_val)
+                    df_pred_val = self._extrapolate_dimensionless(df_train, n_val)
+                    df_pred_val = self._calculate_xy_from_extrapolated(df_pred_val)
+                
+                # Если эталон не передан, вычисляем его
+                if df_ref_val is None:
+                    df_ref_val = self._calculate_reference_xy(df_val, None)
+            finally:
+                # Восстанавливаем параметры
+                self.dt = dt_original
+                self.t_last = t_last_original
+                self.well_params = well_params_original
+                self.interp_model = interp_model_original  # Восстанавливаем модель
+            
+            # Выравниваем по времени
+            common_times = np.intersect1d(df_ref_val['t'].values, df_pred_val['t'].values)
+            
+            if len(common_times) == 0:
+                # Интерполируем эталонные значения
+                from scipy.interpolate import interp1d
+                X_ref_interp = interp1d(df_ref_val['t'].values, df_ref_val['X'].values,
+                                       kind='linear', bounds_error=False, fill_value='extrapolate')
+                Y_ref_interp = interp1d(df_ref_val['t'].values, df_ref_val['Y'].values,
+                                       kind='linear', bounds_error=False, fill_value='extrapolate')
+                
+                X_ref_aligned = X_ref_interp(df_pred_val['t'].values)
+                Y_ref_aligned = Y_ref_interp(df_pred_val['t'].values)
+                
+                X_pred = df_pred_val['X'].values
+                Y_pred = df_pred_val['Y'].values
+            else:
+                # Используем общие временные точки
+                ref_common = df_ref_val[df_ref_val['t'].isin(common_times)].sort_values('t')
+                pred_common = df_pred_val[df_pred_val['t'].isin(common_times)].sort_values('t')
+                
+                X_ref_aligned = ref_common['X'].values
+                Y_ref_aligned = ref_common['Y'].values
+                X_pred = pred_common['X'].values
+                Y_pred = pred_common['Y'].values
+                
+                dP_ref_aligned = ref_common['dP'].values if 'dP' in ref_common.columns else None
+                dP_pred_aligned = pred_common['dP'].values if 'dP' in pred_common.columns else None
+            
+            # Вычисляем метрики с использованием нормированной валидации Y
+            from helpers.dimensionless.extrapolation import compute_validation_metrics_y
+            
+            # RMSE для X
+            rmse_x = np.sqrt(np.nanmean((X_ref_aligned - X_pred)**2))
+            
+            # Нормированные метрики для Y
+            y_metrics = compute_validation_metrics_y(
+                Y_ref=Y_ref_aligned,
+                Y_pred=Y_pred,
+                dP_ref=dP_ref_aligned,
+                dP_pred=dP_pred_aligned
+            )
+            
+            # Базовый RMSE для Y (для обратной совместимости)
+            rmse_y = np.sqrt(np.nanmean((Y_ref_aligned - Y_pred)**2))
+            rmse_mean = np.mean([rmse_x, y_metrics.get('filtered_RMSE_Y', rmse_y)])
+            
+            # MAE
+            mae_x = np.nanmean(np.abs(X_ref_aligned - X_pred))
+            mae_y = np.nanmean(np.abs(Y_ref_aligned - Y_pred))
+            
+            # MAPE
+            X_ref_safe = np.where(np.abs(X_ref_aligned) < 1e-12, 1e-12, X_ref_aligned)
+            Y_ref_safe = np.where(np.abs(Y_ref_aligned) < 1e-12, 1e-12, Y_ref_aligned)
+            
+            mape_x = np.nanmean(np.abs((X_ref_aligned - X_pred) / X_ref_safe)) * 100
+            mape_y = np.nanmean(np.abs((Y_ref_aligned - Y_pred) / Y_ref_safe)) * 100
+            mape_mean = np.mean([mape_x, mape_y])
+            
+            # R²
+            ss_res_x = np.nansum((X_ref_aligned - X_pred)**2)
+            ss_tot_x = np.nansum((X_ref_aligned - np.nanmean(X_ref_aligned))**2)
+            r2_x = 1 - (ss_res_x / (ss_tot_x + 1e-12)) if ss_tot_x > 1e-12 else 0.0
+            
+            ss_res_y = np.nansum((Y_ref_aligned - Y_pred)**2)
+            ss_tot_y = np.nansum((Y_ref_aligned - np.nanmean(Y_ref_aligned))**2)
+            r2_y = 1 - (ss_res_y / (ss_tot_y + 1e-12)) if ss_tot_y > 1e-12 else 0.0
+            r2_mean = np.mean([r2_x, r2_y])
+            
+            # Max error
+            max_error_x = np.nanmax(np.abs(X_ref_aligned - X_pred))
+            max_error_y = np.nanmax(np.abs(Y_ref_aligned - Y_pred))
+            max_error = np.max([max_error_x, max_error_y])
+            
+            return {
+                'RMSE_X_val': float(rmse_x),
+                'RMSE_Y_val': float(rmse_y),
+                'RMSE_mean': float(rmse_mean),
+                'filtered_RMSE_Y': y_metrics.get('filtered_RMSE_Y', np.inf),
+                'RMSE_log_Y': y_metrics.get('RMSE_log_Y', np.inf),
+                'physically_acceptable_share': y_metrics.get('physically_acceptable_share', 0.0),
+                'MAE_X_val': float(mae_x),
+                'MAE_Y_val': float(mae_y),
+                'MAPE_X': float(mape_x),
+                'MAPE_Y': float(mape_y),
+                'MAPE_mean': float(mape_mean),
+                'R2_X': float(r2_x),
+                'R2_Y': float(r2_y),
+                'R2_mean': float(r2_mean),
+                'Max_error_X': float(max_error_x),
+                'Max_error_Y': float(max_error_y),
+                'Max_error': float(max_error)
+            }
+        except Exception as e:
+            # Возвращаем пустые метрики при ошибке
+            return {}
+    
+    def _create_metadata(self, df_clean: pd.DataFrame, df_pred: pd.DataFrame, 
+                        method: str, rmse: Dict[str, float]) -> Dict[str, Any]:
+        """Создание метаданных"""
+        return {
+            'time_range_historical': (float(df_clean['t'].min()), float(df_clean['t'].max())),
+            'time_range_predicted': (float(df_pred['t'].min()), float(df_pred['t'].max())),
+            'dt': self.dt,
+            'method': method,
+            'n_historical_points': len(df_clean),
+            'n_future_points': len(df_pred),
+            'date': datetime.now().isoformat(),
+            'rmse': rmse if rmse else None,
+            'stability': 'good' if (rmse and rmse.get('mean', 1.0) < 0.05) else 'needs_improvement'
+        }
+
+
+
 def apply_kriging_interpolation(time: pd.Series, values: pd.Series) -> pd.Series:
     """Применение кригинг-интерполяции"""
     kriging = KrigingInterpolator()

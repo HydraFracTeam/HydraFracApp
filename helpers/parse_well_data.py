@@ -37,16 +37,25 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
         return None, "Недостаточно строк в файле"
 
     # Проверяем наличие обязательных колонок
-    required_columns = ['Skin', 'h', 'N', 'W', 'L', 'a/L', 'ElemIdx', 'X', 'Y', 't', 'P', 'dP', 'Q']
+    # X и Y опциональны - они могут быть рассчитаны из других параметров
+    required_columns = ['Skin', 'h', 'N', 'W', 'L', 'a/L', 'ElemIdx', 't', 'P', 'dP', 'Q']
+    optional_columns = ['X', 'Y']  # Опциональные колонки
     available_columns = list(df.columns)
     
     missing_columns = [col for col in required_columns if col not in available_columns]
     if missing_columns:
         return None, f"Отсутствуют обязательные колонки: {', '.join(missing_columns)}"
     
-    extra_columns = [col for col in available_columns if col not in required_columns]
+    # Проверяем наличие опциональных колонок
+    missing_optional = [col for col in optional_columns if col not in available_columns]
+    if missing_optional:
+        print(f"Предупреждение: отсутствуют опциональные колонки (будут рассчитаны): {', '.join(missing_optional)}")
+    
+    # Проверяем на дополнительные колонки (игнорируя опциональные)
+    all_expected_columns = required_columns + optional_columns
+    extra_columns = [col for col in available_columns if col not in all_expected_columns]
     if extra_columns:
-        return None, f"Присутствуют дополнительные колонки: {', '.join(extra_columns)}"
+        print(f"Предупреждение: присутствуют дополнительные колонки (будут проигнорированы): {', '.join(extra_columns)}")
 
     try:
         print("Очистка данных...")
@@ -88,7 +97,7 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
                     time=group_data['t'].reset_index(drop=True),
                     pressure=group_data['P'].reset_index(drop=True),
                     flow_rate=group_data['Q'].reset_index(drop=True),
-                    pressure_drop=group_data['dP'].reset_index(drop=True),
+                    pressure_drop=group_data['dP'].reset_index(drop=True) if 'dP' in group_data.columns else None,
                     X=group_data['X'].reset_index(drop=True) if 'X' in group_data.columns else None,
                     Y=group_data['Y'].reset_index(drop=True) if 'Y' in group_data.columns else None,
                     skin=float(group_data['Skin'].iloc[0]),

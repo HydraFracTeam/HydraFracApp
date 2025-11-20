@@ -5,7 +5,7 @@
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict, Optional, List, Union
+from typing import Tuple, Dict, Optional, List, Union, Any
 from dataclasses import dataclass
 from scipy.interpolate import griddata, RBFInterpolator, UnivariateSpline
 from scipy.signal import savgol_filter
@@ -26,6 +26,7 @@ class DimensionlessParameters:
     # Исходные физические данные
     pressure: np.ndarray  # Исходное давление, атм
     flow_rate: np.ndarray  # Исходный дебит, м³/сут
+    dP: np.ndarray  # Приращение давления, вычисленное из данных, атм
     
     # Исходные физические параметры
     k: float  # Проницаемость, мД
@@ -35,12 +36,29 @@ class DimensionlessParameters:
     phi: float  # Пористость
     c_t: float  # Общая сжимаемость, 1/атм
     L: float  # Длина трещины, м
-    delta_p_i: float  # Начальное падение давления, атм
+    delta_p_i: float  # Нормировочный перепад давления для pD (может быть скаляр)
     Q: float  # Дебит, м³/сут
     t: np.ndarray  # Время, ч
 
 
 class DimensionlessConverter:
+    @staticmethod
+    def compute_delta_p_array(pressure: np.ndarray, mode: str = 'initial') -> np.ndarray:
+        """Вычисляет массив приращений давления Δp по выбранному режиму.
+        mode='initial': Δp[i] = p_initial - p[i]
+        mode='prev':    Δp[i] = p[i-1] - p[i], Δp[0] = 0
+        """
+        if pressure is None or len(pressure) == 0:
+            return np.asarray([])
+        p = np.asarray(pressure, dtype=float)
+        if mode == 'prev':
+            dp = np.empty_like(p)
+            dp[0] = 0.0
+            dp[1:] = p[:-1] - p[1:]
+            return dp
+        # default 'initial'
+        p_initial = p[0]
+        return p_initial - p
     """Конвертер в безразмерные параметры для МГРП"""
     
     def __init__(self):
@@ -56,15 +74,22 @@ class DimensionlessConverter:
                                 time: pd.Series,
                                 pressure: pd.Series,
                                 flow_rate: pd.Series,
-                                well_params: Dict[str, float]) -> DimensionlessParameters:
+                                well_params: Dict[str, float],
+                                x_mode: str = 'alt',
+                                delta_p_mode: str = 'initial') -> DimensionlessParameters:
         """
-        Конвертация в безразмерные параметры
+        Конвертация в безразмерные параметры    
         
         Args:
             time: Временной ряд, ч
             pressure: Давление, атм
             flow_rate: Дебит, м³/сут
-            well_params: Параметры скважины (k, h, mu, B, phi, c_t, L, skin, N, a_L)
+            well_params: Параметры скважины (k, h, mu, B, phi, c_t, L, skin, N, a_L, dP)
+            x_mode: Режим вычисления X:
+                - 'darcy': X = (dp/dt) * (k * h) / (Q * mu * B)
+                - 'constant': X = (0.00864 * k * h * Δp) / (μ * B * Q) (использует вектор Δp)
+                - 'alt': X = (0.00864 * k * h * Δp_i) / (μ * B * Q) (использует вектор Δp_i и вектор Q)
+            delta_p_mode: Режим вычисления Δp ('initial' или 'prev')
         """
         # Извлекаем параметры
         k = well_params.get('k', self.default_params['k'])
@@ -75,24 +100,13 @@ class DimensionlessConverter:
         c_t = well_params.get('c_t', self.default_params['c_t'])
         L = well_params.get('L', 100.0)
         
-        # Начальное падение давления Δp_i
-        # По умолчанию: p_initial - p_shut_in, где p_shut_in ≈ p[0]
+        # Нормировочный перепад давления (скаляр) для pD: используем размах как надёжную норму
         try:
-            p_shut_in = float(pressure.iloc[0]) if len(pressure) > 0 else float(pressure)
-            p_initial = float(pressure.max()) if hasattr(pressure, 'max') else float(pressure)
-            delta_p_i = p_initial - p_shut_in
+            delta_p_i = float(pressure.max()) - float(pressure.min())
         except Exception:
-            # Фоллбэк: перепад по всему ряду
-            try:
-                delta_p_i = float(pressure.max()) - float(pressure.min())
-            except Exception:
-                delta_p_i = 1.0
+            delta_p_i = 1.0
         if not np.isfinite(delta_p_i) or delta_p_i == 0:
-            # Последний фоллбэк: перепад по ряду или 1.0
-            try:
-                delta_p_i = float(pressure.max()) - float(pressure.min())
-            except Exception:
-                delta_p_i = 1.0
+            delta_p_i = 1.0
         
         # Средний дебит
         Q = flow_rate.mean() if not flow_rate.empty else 1.0
@@ -101,18 +115,87 @@ class DimensionlessConverter:
         t = time.values
         p = pressure.values
         q = flow_rate.values
+
+        # Вектор приращений давления: ПРИОРИТЕТНО используем dP из данных CSV, если есть, иначе вычисляем
+        dP_from_params = well_params.get('dP', None)
+        dP_from_data = False  # Флаг, что dP взят из данных
         
-        # Фильтрационный параметр X = (0.00864 * k * h * Δp_i) / (μ * B * Q)
-        X = (0.00864 * k * h * delta_p_i) / (mu * B * Q)
+        if dP_from_params is not None:
+            # dP передан из CSV данных - используем его с приоритетом
+            if hasattr(dP_from_params, 'values'):
+                # pd.Series - извлекаем значения
+                delta_p_vec = np.asarray(dP_from_params.values, dtype=float)
+            elif isinstance(dP_from_params, (list, tuple, np.ndarray)):
+                # Уже массив или список
+                delta_p_vec = np.asarray(dP_from_params, dtype=float)
+            else:
+                # Скаляр - создаем массив
+                delta_p_vec = np.full(len(p), float(dP_from_params))
+            
+            # Проверяем, что длина совпадает
+            if len(delta_p_vec) != len(p):
+                # Если длина не совпадает, вычисляем dP из давления
+                delta_p_vec = self.compute_delta_p_array(p, mode=delta_p_mode)
+                dP_from_data = False
+            else:
+                dP_from_data = True
+            
+            # Обрабатываем NaN в dP из данных: заполняем вычисленными значениями только там, где есть NaN
+            if dP_from_data and np.any(np.isnan(delta_p_vec)):
+                # Вычисляем dP для всех точек
+                delta_p_computed = self.compute_delta_p_array(p, mode=delta_p_mode)
+                # Заменяем только NaN значения на вычисленные
+                nan_mask = np.isnan(delta_p_vec)
+                delta_p_vec[nan_mask] = delta_p_computed[nan_mask]
+            
+            dP = delta_p_vec.copy()
+        else:
+            # dP из данных отсутствует - вычисляем dP из давления по выбранному режиму
+            delta_p_vec = self.compute_delta_p_array(p, mode=delta_p_mode)
+            dP = delta_p_vec.copy()
+            dP_from_data = False
         
-        # Ёмкостной параметр Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i)
-        Y = (Q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_i)
+        # Безопасная замена нулей на маленькое число во избежание деления на ноль
+        # Используем безопасную версию для формул, чтобы избежать деления на ноль
+        delta_p_vec_safe = np.where(np.abs(delta_p_vec) < 1e-12, 1e-12, delta_p_vec)
+        
+        # Фильтрационный параметр X
+        if x_mode == 'darcy':
+            # X = (dp/dt) * (k * h) / (Q * mu * B)
+            dt = np.gradient(t)
+            dt = np.where(np.abs(dt) < 1e-12, 1e-12, dt)
+            dp = np.gradient(p)
+            X = (dp / dt) * (k * h) / ((Q if Q != 0 else 1e-12) * mu * B)
+        elif x_mode == 'alt':
+            # Стандартная формула: X = (0.00864 * k * h * Δp_i) / (μ * B * Q)
+            # где Δp_i - вектор приращений давления (из данных или вычисленный), Q - вектор дебита
+            # Используем векторы delta_p_vec и q (как было), добавляем mu и B в знаменатель
+            q_safe = np.where(np.abs(q) < 1e-12, 1e-12, q)
+            X = (0.00864 * k * h * delta_p_vec) / (mu * B * q_safe)
+        else:
+            # Константный X по определению
+            # Используем вектор Δp (dP из данных CSV, если передан, иначе вычисленный)
+            # С защитой от деления на ноль
+            Q_safe = Q if Q != 0 else 1.0
+            X = (0.00864 * k * h * delta_p_vec) / (mu * B * Q_safe)
+        
+        # Ёмкостной параметр Y
+        if x_mode == 'alt':
+            # Стандартная формула: Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i)
+            # где Δp_i - вектор приращений давления (из данных или вычисленный), Q - вектор дебита
+            # Используем векторы delta_p_vec и q (как было), добавляем B в числитель
+            Y = (q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
+        else:
+            # Стандартная формула: Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp)
+            # Используем delta_p_vec_safe для защиты от деления на ноль
+            Y = (Q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
         
         return DimensionlessParameters(
-            X=np.full_like(t, X),  # X постоянен для всех временных точек
+            X=X,
             Y=Y,
             pressure=p,  # Сохраняем исходные данные
             flow_rate=q,
+            dP=dP,  # Приращение давления из CSV данных или вычисленное из давления
             k=k, h=h, mu=mu, B=B, phi=phi, c_t=c_t, L=L, 
             delta_p_i=delta_p_i, Q=Q, t=t
         )
@@ -137,8 +220,9 @@ class DimensionlessConverter:
         """Грубая оценка коэффициента емкости CD ≈ Y * d(pD)/dY."""
         Y = np.asarray(dimensionless.Y)
         pD = DimensionlessConverter.compute_dimensionless_pressure(dimensionless)
-        Yc = np.clip(Y, 1e-30, None)
-        dpdY = np.gradient(pD, np.log10(Yc), edge_order=1)
+        #Yc = np.clip(Y, 1e-30, None)
+        Yc = Y
+        dpdY = np.gradient(pD, Yc, edge_order=1)
         return Y * dpdY
 
     @staticmethod
@@ -280,6 +364,7 @@ class DimensionlessInterpolator:
         
         # Подготавливаем координаты для интерполяции
         X_coords = target_dimensionless.X.reshape(-1, 1)
+        
         Y_coords = target_dimensionless.Y.reshape(-1, 1)
         target_coords = np.hstack([X_coords, Y_coords])
         
@@ -386,8 +471,6 @@ def resample_dimensionless_series(dimensionless: DimensionlessParameters,
     Y = series["Y"]
     pD = series["pD"]
     qD = series["qD"]
-    if np.any(Y <= 0):
-        Y = np.clip(Y, 1e-30, None)
     y_min, y_max = np.nanmin(Y), np.nanmax(Y)
     if not np.isfinite(y_min) or not np.isfinite(y_max) or y_min <= 0 or y_min == y_max:
         return {"Y_new": Y, "pD_new": pD, "qD_new": qD}
@@ -534,10 +617,12 @@ class DimensionlessExtrapolator:
 def convert_to_dimensionless_curves(time: pd.Series,
                                    pressure: pd.Series,
                                    flow_rate: pd.Series,
-                                   well_params: Dict[str, float]) -> DimensionlessParameters:
+                                   well_params: Dict[str, float],
+                                   x_mode: str = 'alt',
+                                   delta_p_mode: str = 'initial') -> DimensionlessParameters:
     """Конвертация в безразмерные кривые"""
     converter = DimensionlessConverter()
-    return converter.convert_to_dimensionless(time, pressure, flow_rate, well_params)
+    return converter.convert_to_dimensionless(time, pressure, flow_rate, well_params, x_mode=x_mode, delta_p_mode=delta_p_mode)
 
 
 def interpolate_dimensionless_curves(time: pd.Series,
@@ -564,6 +649,130 @@ def extrapolate_dimensionless_curves(time: pd.Series,
     extrapolator = DimensionlessExtrapolator(method=method)
     extrapolator.fit(time, pressure, flow_rate, well_params)
     return extrapolator.extrapolate(future_times, extrapolation_params)
+
+
+def fit_xy_curve_coefficients(
+    X_data: np.ndarray,
+    Y_data: np.ndarray,
+    X_calc: np.ndarray,
+    Y_calc: np.ndarray,
+    a_range: np.ndarray = None,
+    b_range: np.ndarray = None,
+    n_points: int = 200,
+    fit_only_y: bool = False
+) -> Dict[str, Any]:
+    """
+    Подбор коэффициентов поправки для расчётной кривой X-Y, чтобы она совпадала с эталонной.
+    
+    Args:
+        X_data: Эталонные значения X из данных
+        Y_data: Эталонные значения Y из данных
+        X_calc: Расчётные значения X
+        Y_calc: Расчётные значения Y
+        a_range: Диапазон перебора коэффициента a (по X). Если None, используется np.linspace(-3, 3, n_points)
+        b_range: Диапазон перебора коэффициента b (по Y). Если None, используется np.linspace(-3, 3, n_points)
+        n_points: Количество точек для перебора (если диапазоны не заданы)
+        fit_only_y: Если True, подгоняется только Y (коэффициент a = 1.0)
+    
+    Returns:
+        Словарь с результатами:
+        - 'a': лучший коэффициент для X
+        - 'b': лучший коэффициент для Y
+        - 'rmse': RMSE ошибка
+        - 'accuracy': точность в процентах
+        - 'r2': грубая оценка R²
+        - 'X_fitted': подогнанные значения X
+        - 'Y_fitted': подогнанные значения Y
+    """
+    from sklearn.metrics import mean_squared_error
+    
+    # Убираем NaN и Inf
+    mask = np.isfinite(X_data) & np.isfinite(Y_data) & np.isfinite(X_calc) & np.isfinite(Y_calc)
+    X_data_clean = X_data[mask]
+    Y_data_clean = Y_data[mask]
+    X_calc_clean = X_calc[mask]
+    Y_calc_clean = Y_calc[mask]
+    
+    if len(X_data_clean) < 2:
+        return {
+            'a': 1.0,
+            'b': 1.0,
+            'rmse': np.inf,
+            'accuracy': 0.0,
+            'r2': 0.0,
+            'X_fitted': X_calc,
+            'Y_fitted': Y_calc
+        }
+    
+    # Определяем диапазон перебора коэффициентов
+    if fit_only_y:
+        # Если подгоняем только Y, коэффициент a всегда равен 1.0
+        a_range = [1.0]
+    else:
+        if a_range is None:
+            a_range = np.linspace(-3, 3, n_points)
+    
+    if b_range is None:
+        b_range = np.linspace(-3, 3, n_points)
+    
+    best_rmse = np.inf
+    best_a, best_b = 1.0, 1.0
+    
+    # Перебор коэффициентов
+    for a in a_range:
+        for b in b_range:
+            # Масштабируем расчётные кривые
+            X_fit = X_calc_clean * a
+            Y_fit = Y_calc_clean * b
+            
+            # Интерполяция для выравнивания по X (чтобы длины совпадали)
+            try:
+                # Сортируем по X для интерполяции
+                sort_idx = np.argsort(X_fit)
+                X_fit_sorted = X_fit[sort_idx]
+                Y_fit_sorted = Y_fit[sort_idx]
+                
+                # Интерполируем Y_fit на сетку X_data_clean
+                Y_interp = np.interp(X_data_clean, X_fit_sorted, Y_fit_sorted)
+                
+                # Вычисляем RMSE
+                rmse = np.sqrt(mean_squared_error(Y_data_clean, Y_interp))
+                
+                if rmse < best_rmse:
+                    best_rmse = rmse
+                    best_a, best_b = a, b
+            except Exception:
+                continue
+    
+    # Вычисляем финальные подогнанные значения
+    X_fitted = X_calc * best_a
+    Y_fitted = Y_calc * best_b
+    
+    # Вычисляем метрики
+    # Грубая оценка R²
+    y_mean = np.nanmean(Y_data_clean)
+    ss_tot = np.sum((Y_data_clean - y_mean) ** 2)
+    if ss_tot > 0:
+        r2 = 1 - (best_rmse ** 2 * len(Y_data_clean)) / ss_tot
+    else:
+        r2 = 0.0
+    
+    # Точность в процентах (нормализованная)
+    y_range = np.nanmax(Y_data_clean) - np.nanmin(Y_data_clean)
+    if y_range > 0:
+        accuracy = max(0, (1 - best_rmse / y_range) * 100)
+    else:
+        accuracy = 0.0
+    
+    return {
+        'a': best_a,
+        'b': best_b,
+        'rmse': best_rmse,
+        'accuracy': accuracy,
+        'r2': r2,
+        'X_fitted': X_fitted,
+        'Y_fitted': Y_fitted
+    }
 
 
 def create_dimensionless_type_curves(skin_range: Tuple[float, float] = (-5, 20),

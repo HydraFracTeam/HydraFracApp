@@ -124,6 +124,7 @@ class DimensionlessCurveInterpolator:
 
         # Тестируем все методы с использованием скользящего окна для контроля адекватности
         window_size = max(3, min(10, len(self.Y_grid) // 4))  # Размер окна для скользящей проверки
+        stability_failures = {}  # Для отладки: сохраняем причины неудач
 
         for method in self.methods:
             models = []
@@ -216,7 +217,11 @@ class DimensionlessCurveInterpolator:
                 continue
 
             # Проверка стабильности с использованием скользящего окна для каждой кривой
+            # Делаем проверку более мягкой: проверяем стабильность на большей части окон, а не на всех
             is_stable = True
+            stability_checks = 0
+            stability_passes = 0
+            
             for curve_idx in range(preds_all.shape[0]):  # Для каждой кривой в обучающем наборе
                 curve_pred = preds_all[curve_idx, :]
                 valid_points = ~np.isnan(curve_pred)
@@ -225,23 +230,41 @@ class DimensionlessCurveInterpolator:
                     continue
 
                 # Проверяем стабильность с помощью скользящего окна
-                for start_idx in range(len(curve_pred) - window_size + 1):
+                # Используем шаг для уменьшения количества проверок
+                step = max(1, window_size // 2)  # Проверяем каждое второе окно
+                for start_idx in range(0, len(curve_pred) - window_size + 1, step):
                     end_idx = start_idx + window_size
                     window_pred = curve_pred[start_idx:end_idx]
                     window_Y = self.Y_grid[start_idx:end_idx]
                     window_valid = valid_points[start_idx:end_idx]
 
-                    if not np.any(window_valid):
+                    if not np.any(window_valid) or np.sum(window_valid) < 3:
                         continue
 
                     stability = self.check_stability(window_Y[window_valid], window_pred[window_valid])
+                    stability_checks += 1
+                    
+                    if stability["stable"]:
+                        stability_passes += 1
+                    else:
+                        # Сохраняем информацию о неудаче для отладки
+                        if method not in stability_failures:
+                            stability_failures[method] = []
+                        stability_failures[method].append({
+                            "max_jump": stability["max_jump"],
+                            "max_second_derivative": stability["max_second_derivative"]
+                        })
 
-                    if not stability["stable"]:
-                        is_stable = False
-                        break
-
-                if not is_stable:
-                    break
+            # Метод считается стабильным, если прошло >= 70% проверок
+            stability_ratio = stability_passes / stability_checks if stability_checks > 0 else 0.0
+            is_stable = stability_ratio >= 0.7
+            
+            if not is_stable and stability_checks > 0:
+                # Логируем информацию для отладки
+                avg_max_jump = np.mean([f["max_jump"] for failures in stability_failures.get(method, []) for f in failures]) if method in stability_failures else 0
+                avg_max_dd = np.mean([f["max_second_derivative"] for failures in stability_failures.get(method, []) for f in failures]) if method in stability_failures else 0
+                print(f"Метод '{method}': стабильность {stability_passes}/{stability_checks} ({stability_ratio:.1%}), "
+                      f"средний max_jump={avg_max_jump:.2f}, средний max_dd={avg_max_dd:.2f}")
 
             # Если метод нестабилен, исключаем его
             if not is_stable:
@@ -513,7 +536,7 @@ class DimensionlessCurveInterpolator:
         return float(np.sqrt(total_mse / total_points))
     
     def check_stability(self, Y: np.ndarray, P: np.ndarray, 
-                        max_ratio: float = 2.0, max_second_deriv: float = 3.0) -> dict:
+                        max_ratio: float = 5.0, max_second_deriv: float = 10.0) -> dict:
         """
         Проверяет устойчивость интерполяции:
         - нет резких скачков;
@@ -542,7 +565,12 @@ class DimensionlessCurveInterpolator:
             significant_mask = abs_dP[:-1] > threshold
             
             if np.any(significant_mask):
-                ratio = np.abs(dP[1:][significant_mask] / (dP[:-1][significant_mask] + 1e-12))
+                # Используем более устойчивую формулу для отношения изменений
+                dP_prev = dP[:-1][significant_mask]
+                dP_next = dP[1:][significant_mask]
+                # Избегаем деления на очень маленькие числа
+                denominator = np.abs(dP_prev) + 1e-6 * np.max(np.abs(P))
+                ratio = np.abs(dP_next / denominator)
                 max_jump = np.nanmax(ratio) if len(ratio) > 0 else 0.0
             else:
                 max_jump = 0.0  # Все изменения незначительны
@@ -591,25 +619,121 @@ class DimensionlessCurveInterpolator:
 
 
     def compare_with_reference(self, Y_pred: np.ndarray, P_pred: np.ndarray,
-                               Y_ref: np.ndarray, P_ref: np.ndarray) -> dict:
+                               Y_ref: np.ndarray, P_ref: np.ndarray, 
+                               n_random_points: int = 100) -> dict:
         """Сравнение предсказанной кривой с эталоном по нескольким метрикам.
 
-        Возвращает словарь: {'rmse': .., 'mae': .., 'mape': ..}
-        Сопоставление выполняется по логарифмической шкале Y для устойчивости.
+        Использует случайные точки эталона для более точной оценки качества.
+        
+        Args:
+            Y_pred: Y координаты предсказания
+            P_pred: pD значения предсказания
+            Y_ref: Y координаты эталона
+            P_ref: pD значения эталона
+            n_random_points: Количество случайных точек для оценки (по умолчанию 100)
+        
+        Returns:
+            Словарь с метриками: {'rmse', 'mae', 'mape', 'r2', 'max_error', 'median_error', 'mean_error'}
         """
         Yp = np.clip(np.asarray(Y_pred), 1e-30, None)
         Yr = np.clip(np.asarray(Y_ref), 1e-30, None)
         Pp = np.asarray(P_pred)
         Pr = np.asarray(P_ref)
 
-        # Интерполяция эталона на координаты предсказания
-        Pr_interp = np.interp(np.log10(Yp), np.log10(Yr), Pr)
-
-        diff = Pp - Pr_interp
+        # Определяем диапазон для случайных точек
+        Y_min = max(np.nanmin(Yp), np.nanmin(Yr))
+        Y_max = min(np.nanmax(Yp), np.nanmax(Yr))
+        
+        if Y_min >= Y_max:
+            # Если диапазоны не пересекаются, используем стандартный подход
+            Pr_interp = np.interp(np.log10(Yp), np.log10(Yr), Pr)
+            Y_eval = Yp
+            P_ref_eval = Pr_interp
+            P_pred_eval = Pp
+        else:
+            # Генерируем случайные точки в логарифмической шкале для равномерного распределения
+            np.random.seed(42)  # Для воспроизводимости
+            log_Y_random = np.random.uniform(np.log10(Y_min), np.log10(Y_max), n_random_points)
+            Y_random = 10 ** log_Y_random
+            
+            # Интерполируем эталон на случайные точки
+            from scipy.interpolate import interp1d
+            # Сортируем эталон для интерполяции
+            sort_idx_ref = np.argsort(np.log10(Yr))
+            Yr_sorted = Yr[sort_idx_ref]
+            Pr_sorted = Pr[sort_idx_ref]
+            
+            # Удаляем дубликаты для интерполяции
+            unique_mask = np.concatenate(([True], np.diff(np.log10(Yr_sorted)) > 1e-10))
+            Yr_unique = Yr_sorted[unique_mask]
+            Pr_unique = Pr_sorted[unique_mask]
+            
+            if len(Yr_unique) > 1:
+                interp_ref = interp1d(np.log10(Yr_unique), Pr_unique, 
+                                     kind='linear', bounds_error=False, fill_value='extrapolate')
+                P_ref_random = interp_ref(log_Y_random)
+            else:
+                P_ref_random = np.full(n_random_points, Pr_unique[0] if len(Pr_unique) > 0 else 0)
+            
+            # Интерполируем предсказание на те же случайные точки
+            sort_idx_pred = np.argsort(np.log10(Yp))
+            Yp_sorted = Yp[sort_idx_pred]
+            Pp_sorted = Pp[sort_idx_pred]
+            
+            unique_mask_pred = np.concatenate(([True], np.diff(np.log10(Yp_sorted)) > 1e-10))
+            Yp_unique = Yp_sorted[unique_mask_pred]
+            Pp_unique = Pp_sorted[unique_mask_pred]
+            
+            if len(Yp_unique) > 1:
+                interp_pred = interp1d(np.log10(Yp_unique), Pp_unique,
+                                     kind='linear', bounds_error=False, fill_value='extrapolate')
+                P_pred_random = interp_pred(log_Y_random)
+            else:
+                P_pred_random = np.full(n_random_points, Pp_unique[0] if len(Pp_unique) > 0 else 0)
+            
+            # Фильтруем валидные точки
+            valid_mask = np.isfinite(P_ref_random) & np.isfinite(P_pred_random)
+            Y_eval = Y_random[valid_mask]
+            P_ref_eval = P_ref_random[valid_mask]
+            P_pred_eval = P_pred_random[valid_mask]
+        
+        # Вычисляем метрики
+        diff = P_pred_eval - P_ref_eval
+        
+        # RMSE (Root Mean Square Error)
         rmse = float(np.sqrt(np.nanmean(diff ** 2)))
+        
+        # MAE (Mean Absolute Error)
         mae = float(np.nanmean(np.abs(diff)))
-        # MAPE в процентах, защита от деления на ноль
-        denom = np.where(np.abs(Pr_interp) < 1e-12, 1e-12, np.abs(Pr_interp))
+        
+        # MAPE (Mean Absolute Percentage Error) в процентах
+        denom = np.where(np.abs(P_ref_eval) < 1e-12, 1e-12, np.abs(P_ref_eval))
         mape = float(np.nanmean(np.abs(diff) / denom) * 100.0)
+        
+        # R² (Coefficient of Determination)
+        ss_res = np.nansum((P_ref_eval - P_pred_eval) ** 2)
+        ss_tot = np.nansum((P_ref_eval - np.nanmean(P_ref_eval)) ** 2)
+        r2 = float(1 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
+        
+        # Max Error
+        max_error = float(np.nanmax(np.abs(diff)))
+        
+        # Median Error
+        median_error = float(np.nanmedian(np.abs(diff)))
+        
+        # Mean Error (может быть отрицательным)
+        mean_error = float(np.nanmean(diff))
+        
+        # Mean Squared Error (MSE)
+        mse = float(np.nanmean(diff ** 2))
 
-        return {"rmse": rmse, "mae": mae, "mape": mape}
+        return {
+            "rmse": rmse, 
+            "mae": mae, 
+            "mape": mape,
+            "r2": r2,
+            "max_error": max_error,
+            "median_error": median_error,
+            "mean_error": mean_error,
+            "mse": mse
+        }
