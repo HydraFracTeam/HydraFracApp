@@ -1322,6 +1322,23 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 
                 # Обновляем last_fitted_XY для совместимости
                 self.last_fitted_XY = (dim_data.X.copy(), dim_data.Y.copy())
+            
+            # Применяем коэффициенты подгонки к экстраполированным X и Y, если они есть
+            if self.last_extrapolated_XY is not None and self.last_fit_coefficients is not None:
+                X_ext, Y_ext = self.last_extrapolated_XY
+                a = self.last_fit_coefficients['a']  # Коэффициент для X
+                a_y = self.last_fit_coefficients.get('a_y', 1.0)  # Коэффициент для Y (линейный член)
+                b = self.last_fit_coefficients['b']  # Свободный член для Y
+                c = self.last_fit_coefficients.get('c', 0.0)  # Квадратичный коэффициент для Y
+                
+                # Применяем те же коэффициенты к экстраполированным значениям
+                if not (hasattr(self, 'cb_fit_only_y') and self.cb_fit_only_y.isChecked()):
+                    X_ext = X_ext * a
+                
+                Y_ext = a_y * Y_ext + b + c * (Y_ext ** 2)
+                
+                # Обновляем экстраполированные значения с применёнными коэффициентами
+                self.last_extrapolated_XY = (X_ext.copy(), Y_ext.copy())
 
             # Если X и Y отсутствуют в данных, просто не будем их использовать для графика "X-Y (из данных)"
             # Расчётные X и Y можно отображать независимо через чекбокс "Отобразить расчётные X и Y"
