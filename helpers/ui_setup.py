@@ -75,7 +75,7 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     app.export_btn = QPushButton("Экспорт данных")
     app.extrapolate_btn = QPushButton("Экстраполировать X-Y")
     app.fit_xy_btn = QPushButton("Подогнать расчётную кривую")
-    app.cb_fit_only_y = QCheckBox("Подгонять только Y")
+    app.cb_fit_only_y = QCheckBox("Подгонять Y")
 
     buttons_layout.addWidget(app.plot_btn, 0, 0)
     buttons_layout.addWidget(app.interp_btn, 0, 1)
