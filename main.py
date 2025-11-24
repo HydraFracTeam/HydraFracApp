@@ -2,24 +2,32 @@ from PySide6.QtWidgets import (QLabel, QTableView, QApplication, QMainWindow, QF
                                QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout, QDialog,
                                QDialogButtonBox)
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 import sys
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, List, Tuple, Any
+from scipy.interpolate import interp1d
+
 
 from ui import Ui_mainWindow
 
 from helpers.parse_well_data import parse_well_data
 from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
                                detect_outliers)
-from helpers.dimensionless_analysis import convert_to_dimensionless_curves, get_dimensionless_series
+from helpers.dimensionless_analysis import convert_to_dimensionless_curves, get_dimensionless_series, fit_xy_curve_coefficients
 from helpers.dimensionless.filtration import SignalFilters, PhysicsConstraints, compute_snr
 from helpers.dimensionless_plotting import plot_dimensionless_grouped
+from helpers.dimensionless.filtration.utils import select_filter_method
 from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
+from helpers.ml_methods import DimensionlessExtrapolator
+from helpers.grp_analysis import analyze_flow_regime, compute_productivity_index, detect_flow_regime_transitions, generate_type_curves, match_type_curves
+
 from schemas.well_data import WellTimeSeries
+
+from helpers.input_test import diag_dimensional
 from helpers.ui_setup import (
     setup_interface,
     setup_timeseries_tab,
@@ -71,7 +79,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         setup_interface(self)
         
         # Добавляем отчёт в centralwidget под параметрами (вне вкладок)
-        from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTextEdit
         report_group = QGroupBox("Отчёт", self.centralwidget)
         report_group.setGeometry(20, 330, 300, 400)  # Под параметрами (последний на y=300)
         report_layout = QVBoxLayout(report_group)
@@ -177,19 +184,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
         params = self._get_params(self.curupdate_well_selectionrent_data)
         
         # Конвертируем в безразмерные параметры
-        from helpers.dimensionless_analysis import convert_to_dimensionless_curves
         dim_data = convert_to_dimensionless_curves(
             self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, params, x_mode='alt'
         )
-        
-        # Используем интерполятор безразмерных кривых для восстановления пропусков
-        from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
         
         # Для интерполяции используем текущие параметры
         param_grid = np.array([[self.current_data.skin, self.current_data.fractures_count, self.current_data.a_l_ratio]])
         Y_grid = dim_data.Y
         P_curves = np.asarray([dim_data.pressure / (dim_data.delta_p_i if dim_data.delta_p_i != 0 else 1.0)])
         
+        # Используем интерполятор безразмерных кривых для восстановления пропусков
         interp = DimensionlessCurveInterpolator(methods=INTERPOLATION_METHODS)
         interp.fit(param_grid, Y_grid, P_curves)
         
@@ -210,7 +214,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Проверяем, что pred_series содержит достаточно точек
         if len(pressure_values) != len(self.current_data.time):
             # Если количество точек не совпадает, интерполируем на временную сетку
-            from scipy.interpolate import interp1d
             Y_grid_values = pred_series.index.values
             # Интерполируем pD обратно на Y из dim_data, затем на time
             if len(pressure_values) > 1 and len(dim_data.Y) > 1:
@@ -227,7 +230,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Убеждаемся, что pressure_values имеет правильную длину
         if len(pressure_values) != len(self.current_data.time):
             # Если все еще не совпадает, используем линейную интерполяцию по времени
-            from scipy.interpolate import interp1d
             # Используем доступные точки для интерполяции
             valid_indices = np.arange(len(pressure_values))
             interp_temp = interp1d(valid_indices, pressure_values, kind='linear', 
@@ -244,7 +246,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
             # Убеждаемся, что длина совпадает
             if len(pressure_values_array) != len(self.current_data.time):
                 # Если не совпадает, интерполируем точно на временную сетку
-                from scipy.interpolate import interp1d
                 # Используем Y_grid для интерполяции обратно на time
                 if len(pressure_values_array) > 1 and len(dim_data.Y) > 1:
                     # Интерполируем pD по Y, затем маппим на time через Y
@@ -722,7 +723,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
                           f"Текущая скважина: {self.well_combo_dim.currentText()}")
             
             # Запускаем диагностику асинхронно
-            from PySide6.QtCore import QTimer
             QTimer.singleShot(100, lambda: self.run_data_diagnostics(file_path))
             
             # Обновляем комбо в новой вкладке
@@ -754,11 +754,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             print(f"ДИАГНОСТИКА ДАННЫХ: {file_path}")
             print("="*60)
             
-            # Импортируем функцию диагностики
-            from helpers.input_test import diag_dimensional
-            
             # Читаем CSV для диагностики
-            import pandas as pd
             df = pd.read_csv(file_path)
             
             # Конвертируем в формат для diag_dimensional если нужно
@@ -768,7 +764,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 if self.loaded_data and len(self.loaded_data) > 0:
                     item = self.loaded_data[0]
                     # Конвертируем в безразмерные параметры
-                    from helpers.dimensionless_analysis import convert_to_dimensionless_curves
                     params = self._get_params(item)
                     dim_data = convert_to_dimensionless_curves(
                         item.time, item.pressure, item.flow_rate, params, x_mode='alt'
@@ -1040,9 +1035,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 'a/L': [self.current_data.a_l_ratio] * n_points
             })
             
-            # Используем новый класс DimensionlessExtrapolator
-            from helpers.ml_methods import DimensionlessExtrapolator
-            
             extrapolator = DimensionlessExtrapolator()
             result = extrapolator.run(
                 df=df,
@@ -1123,7 +1115,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
             fit_only_y = hasattr(self, 'cb_fit_only_y') and self.cb_fit_only_y.isChecked()
             
             # Выполняем подгонку
-            from helpers.dimensionless_analysis import fit_xy_curve_coefficients
             fit_result = fit_xy_curve_coefficients(X_data, Y_data, X_calc, Y_calc, fit_only_y=fit_only_y)
             
             # Сохраняем результаты
@@ -1448,7 +1439,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
             filtered_pD = SignalFilters.denoise(pD_clean, method=None, x=Y_clean)
             
             # Определяем, какой метод был выбран автоматически
-            from helpers.dimensionless.filtration.utils import select_filter_method
             selected_method = select_filter_method(pD_clean, Y_clean)
             
             # Применяем физические ограничения
@@ -1477,7 +1467,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
             # Восстанавливаем давление из отфильтрованного pD
             delta_p_i = dim_data.delta_p_i
             if delta_p_i > 0:
-                from scipy.interpolate import interp1d
                 try:
                     interp_func = interp1d(Y_clean, filtered_pD, kind='linear', 
                                          bounds_error=False, fill_value='extrapolate')
@@ -1645,7 +1634,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.current_data is None:
             return
             
-        from helpers.grp_analysis import analyze_flow_regime
         analysis = analyze_flow_regime(self.current_data)
         
         result_text = f"""
@@ -1664,7 +1652,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.current_data is None:
             return
 
-        from helpers.grp_analysis import compute_productivity_index
         productivity = compute_productivity_index(self.current_data)
 
         result_text = f"""
@@ -1684,7 +1671,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.current_data is None:
             return
 
-        from helpers.grp_analysis import detect_flow_regime_transitions
         transitions = detect_flow_regime_transitions(self.current_data)
 
         if transitions:
@@ -1705,7 +1691,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.current_data is None or self.type_curves_widget is None:
             return
 
-        from helpers.grp_analysis import generate_type_curves
         time_range = np.logspace(TYPE_CURVE_TIME_MIN, TYPE_CURVE_TIME_MAX, TYPE_CURVE_N_POINTS)
         curves = generate_type_curves(self.current_data.skin, self.current_data.fractures_count,
                                      self.current_data.a_l_ratio, time_range)
@@ -1722,7 +1707,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.current_data is None or self.type_curves_widget is None:
             return
 
-        from helpers.grp_analysis import generate_type_curves
         time_range = np.logspace(TYPE_CURVE_TIME_MIN, TYPE_CURVE_TIME_MAX, TYPE_CURVE_N_POINTS)
         curves = generate_type_curves(self.current_data.skin, self.current_data.fractures_count,
                                      self.current_data.a_l_ratio, time_range)
@@ -1739,7 +1723,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.current_data is None or self.type_curves_widget is None:
             return
 
-        from helpers.grp_analysis import generate_type_curves
         time_range = np.logspace(TYPE_CURVE_TIME_MIN, TYPE_CURVE_TIME_MAX, TYPE_CURVE_N_POINTS)
         curves = generate_type_curves(self.current_data.skin, self.current_data.fractures_count,
                                      self.current_data.a_l_ratio, time_range)
@@ -1756,7 +1739,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
         if self.current_data is None:
             return
 
-        from helpers.grp_analysis import match_type_curves
         match_result = match_type_curves(self.current_data)
 
         result_text = f"""
@@ -1787,14 +1769,12 @@ class MyApp(QMainWindow, Ui_mainWindow):
                            f"a/L={self.current_data.a_l_ratio:.3f}\n\n")
 
                     # Анализ режима течения
-                    from helpers.grp_analysis import analyze_flow_regime
                     analysis = analyze_flow_regime(self.current_data)
                     f.write(f"Режим течения: {analysis.regime_type}\n")
                     f.write(f"Уверенность: {analysis.confidence:.2f}\n")
                     f.write(f"Характерное время: {analysis.characteristic_time or 'Не определено'}\n\n")
 
                     # Индекс продуктивности
-                    from helpers.grp_analysis import compute_productivity_index
                     productivity = compute_productivity_index(self.current_data)
                     f.write("Индекс продуктивности:\n")
                     f.write(f"  Индекс продуктивности: {productivity['productivity_index']:.4f}\n")
