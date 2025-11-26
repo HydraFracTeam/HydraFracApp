@@ -120,11 +120,6 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
         
     except Exception as exc:
         return None, f"Ошибка обработки данных: {exc}"
-import pandas as pd
-from typing import Optional, Tuple, List, Dict
-import numpy as np
-
-from schemas.well_data import WellData, WellTimeSeries
 
 
 def group_data_by_well_parameters(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
@@ -169,8 +164,7 @@ def group_data_by_well_parameters(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
             group_clean = group.drop(columns=[col for col in group.columns if col.endswith('_rounded')], errors='ignore')
             
             # Сортируем по времени для правильного отображения изменений
-            if 't' in group_clean.columns:
-                group_clean = group_clean.sort_values('t')
+            group_clean = group_clean.sort_values('t')
                 
             groups[f"well_{i}"] = group_clean.reset_index(drop=True)
             
