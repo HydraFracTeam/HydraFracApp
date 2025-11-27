@@ -154,7 +154,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             'skin': data_item.skin,
             'N': data_item.fractures_count,
             'a_L': data_item.a_l_ratio,
-            'dP': data_item.dP if data_item.dP is not None else None  # dP из CSV данных
+            'dP': data_item.depression,
         }
     
     def _get_quality_label(self, rmse: float, short: bool = False) -> str:
@@ -181,7 +181,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
     
     def _perform_interpolation(self) -> Tuple[Dict[str, Any], Any]:
         """Выполняет интерполяцию безразмерных кривых"""
-        params = self._get_params(self.curupdate_well_selectionrent_data)
+        params = self._get_params(self.current_data)
         
         # Конвертируем в безразмерные параметры
         dim_data = convert_to_dimensionless_curves(
@@ -610,15 +610,9 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.ml_filter_btn.clicked.connect(self.on_ml_filter)
         self.outlier_btn.clicked.connect(self.on_detect_outliers)
         self.export_btn.clicked.connect(self.on_export_data)
-        # Загрузка файла для валидации (если кнопка существует)
-        if hasattr(self, 'load_validation_button'):
-            self.load_validation_button.clicked.connect(self.load_validation_file)
-        # Экстраполяция
-        if hasattr(self, 'extrapolate_btn'):
-            self.extrapolate_btn.clicked.connect(self.on_extrapolate_xy)
-        # Подгонка расчётной кривой
-        if hasattr(self, 'fit_xy_btn'):
-            self.fit_xy_btn.clicked.connect(self.on_fit_xy_curve)
+        self.load_validation_button.clicked.connect(self.load_validation_file)
+        self.extrapolate_btn.clicked.connect(self.on_extrapolate_xy)
+        self.fit_xy_btn.clicked.connect(self.on_fit_xy_curve)
         
         # Кнопка сброса графиков (если существует)
         if hasattr(self, 'reset_plots_btn'):
@@ -819,7 +813,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         df = pd.DataFrame({
             "Время t, ч": current_item.time,
             "Давление P, кгс/см²": current_item.pressure,
-            "Депрессия, кгс/см²": current_item.pressure_drop,
+            "Депрессия, кгс/см²": current_item.depression,
             "Поток Q, м³/сут": current_item.flow_rate,
             "X": current_item.X,
             "Y": current_item.Y,
@@ -1024,8 +1018,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             df = pd.DataFrame({
                 't': self.current_data.time.values,
                 'P': self.current_data.pressure.values,
-                'dP': self.current_data.dP.values if self.current_data.dP is not None else 
-                      (self.current_data.pressure.diff().fillna(0).values),
+                'dP': self.current_data.depression.values,
                 'Q': self.current_data.flow_rate.values,
                 'Skin': [self.current_data.skin] * n_points,  # Статичные параметры для всех строк
                 'h': [self.current_data.thickness] * n_points,

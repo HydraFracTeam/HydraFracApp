@@ -787,7 +787,7 @@ class DimensionlessExtrapolator:
         """
         # Сохраняем параметры
         self.well_params = well_params
-        
+        print(df)
         # 1. Подготовка данных
         df_clean = self._prepare_data(df)
         
@@ -887,7 +887,7 @@ class DimensionlessExtrapolator:
         df_clean = df_clean.dropna(subset=['t', 'P', 'Q'])
         
         # Проверка на нулевые/отрицательные значения (заменяем на NaN)
-        df_clean.loc[df_clean['dP'] <= 0, 'dP'] = np.nan
+        # df_clean.loc[df_clean['dP'] <= 0, 'dP'] = np.nan
         df_clean.loc[df_clean['Q'] <= 0, 'Q'] = np.nan
         
         # Повторная интерполяция после замены
