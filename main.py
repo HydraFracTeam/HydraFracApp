@@ -614,12 +614,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.extrapolate_btn.clicked.connect(self.on_extrapolate_xy)
         self.fit_xy_btn.clicked.connect(self.on_fit_xy_curve)
         
-        # Кнопка сброса графиков (если существует)
-        if hasattr(self, 'reset_plots_btn'):
-            self.reset_plots_btn.clicked.connect(self.on_reset_plots)
-        # Смена скважины: сбрасываем график и маски
-        if hasattr(self, 'well_combo_dim'):
-            self.well_combo_dim.currentIndexChanged.connect(self.on_well_changed)
+        # Кнопка сброса графиков
+        self.reset_plots_btn.clicked.connect(self.on_reset_plots)
         
         # обновление данных при смене 
         self.well_combo_dim.currentIndexChanged.connect(self.on_well_changed)
