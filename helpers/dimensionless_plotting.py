@@ -682,11 +682,12 @@ class PyQtGraphDimensionlessPlotter:
 def plot_dimensionless_analysis(current_well_time: pd.Series,
                                current_well_pressure: pd.Series,
                                current_well_flow_rate: pd.Series,
+                               current_well_depression: pd.Series,
                                well_params: Dict[str, float],
                                plot_type: str = 'current_well_pressure') -> Figure:
     """Быстрое построение анализа безразмерных кривых"""
     dimensionless_data = convert_to_dimensionless_curves(
-        current_well_time, current_well_pressure, current_well_flow_rate, well_params
+        current_well_time, current_well_pressure, current_well_flow_rate, current_well_depression, well_params
     )
     plotter = DimensionlessPlotter()
     return plotter.plot_dimensionless_curves(dimensionless_data, plot_type)

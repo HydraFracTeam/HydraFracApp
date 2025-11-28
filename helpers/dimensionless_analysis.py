@@ -42,23 +42,6 @@ class DimensionlessParameters:
 
 
 class DimensionlessConverter:
-    @staticmethod
-    def compute_delta_p_array(pressure: np.ndarray, mode: str = 'initial') -> np.ndarray:
-        """Вычисляет массив приращений давления Δp по выбранному режиму.
-        mode='initial': Δp[i] = p_initial - p[i]
-        mode='prev':    Δp[i] = p[i-1] - p[i], Δp[0] = 0
-        """
-        if pressure is None or len(pressure) == 0:
-            return np.asarray([])
-        p = np.asarray(pressure, dtype=float)
-        if mode == 'prev':
-            dp = np.empty_like(p)
-            dp[0] = 0.0
-            dp[1:] = p[:-1] - p[1:]
-            return dp
-        # default 'initial'
-        p_initial = p[0]
-        return p_initial - p
     """Конвертер в безразмерные параметры для МГРП"""
     
     def __init__(self):
@@ -74,9 +57,10 @@ class DimensionlessConverter:
                                 time: pd.Series,
                                 pressure: pd.Series,
                                 flow_rate: pd.Series,
+                                depression: pd.Series,
                                 well_params: Dict[str, float],
                                 x_mode: str = 'alt',
-                                delta_p_mode: str = 'initial') -> DimensionlessParameters:
+                                ) -> DimensionlessParameters:
         """
         Конвертация в безразмерные параметры    
         
@@ -89,7 +73,6 @@ class DimensionlessConverter:
                 - 'darcy': X = (dp/dt) * (k * h) / (Q * mu * B)
                 - 'constant': X = (0.00864 * k * h * Δp) / (μ * B * Q) (использует вектор Δp)
                 - 'alt': X = (0.00864 * k * h * Δp_i) / (μ * B * Q) (использует вектор Δp_i и вектор Q)
-            delta_p_mode: Режим вычисления Δp ('initial' или 'prev')
         """
         # Извлекаем параметры
         k = well_params.get('k', self.default_params['k'])
@@ -115,45 +98,10 @@ class DimensionlessConverter:
         t = time.values
         p = pressure.values
         q = flow_rate.values
+        dP = depression.values
 
-        # Вектор приращений давления: ПРИОРИТЕТНО используем dP из данных CSV, если есть, иначе вычисляем
-        dP_from_params = well_params.get('dP', None)
-        dP_from_data = False  # Флаг, что dP взят из данных
-        
-        if dP_from_params is not None:
-            # dP передан из CSV данных - используем его с приоритетом
-            if hasattr(dP_from_params, 'values'):
-                # pd.Series - извлекаем значения
-                delta_p_vec = np.asarray(dP_from_params.values, dtype=float)
-            elif isinstance(dP_from_params, (list, tuple, np.ndarray)):
-                # Уже массив или список
-                delta_p_vec = np.asarray(dP_from_params, dtype=float)
-            else:
-                # Скаляр - создаем массив
-                delta_p_vec = np.full(len(p), float(dP_from_params))
+        delta_p_vec = dP
             
-            # Проверяем, что длина совпадает
-            if len(delta_p_vec) != len(p):
-                # Если длина не совпадает, вычисляем dP из давления
-                delta_p_vec = self.compute_delta_p_array(p, mode=delta_p_mode)
-                dP_from_data = False
-            else:
-                dP_from_data = True
-            
-            # Обрабатываем NaN в dP из данных: заполняем вычисленными значениями только там, где есть NaN
-            if dP_from_data and np.any(np.isnan(delta_p_vec)):
-                # Вычисляем dP для всех точек
-                delta_p_computed = self.compute_delta_p_array(p, mode=delta_p_mode)
-                # Заменяем только NaN значения на вычисленные
-                nan_mask = np.isnan(delta_p_vec)
-                delta_p_vec[nan_mask] = delta_p_computed[nan_mask]
-            
-            dP = delta_p_vec.copy()
-        else:
-            # dP из данных отсутствует - вычисляем dP из давления по выбранному режиму
-            delta_p_vec = self.compute_delta_p_array(p, mode=delta_p_mode)
-            dP = delta_p_vec.copy()
-            dP_from_data = False
         
         # Безопасная замена нулей на маленькое число во избежание деления на ноль
         # Используем безопасную версию для формул, чтобы избежать деления на ноль
@@ -617,12 +565,13 @@ class DimensionlessExtrapolator:
 def convert_to_dimensionless_curves(time: pd.Series,
                                    pressure: pd.Series,
                                    flow_rate: pd.Series,
+                                   depression: pd.Series,
                                    well_params: Dict[str, float],
                                    x_mode: str = 'alt',
-                                   delta_p_mode: str = 'initial') -> DimensionlessParameters:
+                                   ) -> DimensionlessParameters:
     """Конвертация в безразмерные кривые"""
     converter = DimensionlessConverter()
-    return converter.convert_to_dimensionless(time, pressure, flow_rate, well_params, x_mode=x_mode, delta_p_mode=delta_p_mode)
+    return converter.convert_to_dimensionless(time, pressure, flow_rate, depression, well_params, x_mode=x_mode)
 
 
 def interpolate_dimensionless_curves(time: pd.Series,

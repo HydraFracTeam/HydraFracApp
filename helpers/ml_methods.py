@@ -812,7 +812,7 @@ class DimensionlessExtrapolator:
         self.interp_model = self._train_interpolator(X_train_full, y_train_full, best_method)
         
         # 5. Экстраполяция на основе всего массива
-        df_pred = self._extrapolate_dimensionless(df_clean, n_future)
+        df_pred = self._extrapolate_dimensionless(df_clean, n_future) # приходит t_future, P_ext, dP_ext, Q_ext,
         df_pred = self._calculate_xy_from_extrapolated(df_pred)
         
         # 6. Расчёт эталонных безразмерных X–Y (для обратной совместимости)
@@ -913,9 +913,10 @@ class DimensionlessExtrapolator:
         time_series = pd.Series(df['t'].values)
         pressure_series = pd.Series(df['P'].values)
         flow_rate_series = pd.Series(df['Q'].values)
+        depression_series = pd.Series(df['dP'].values)
         
         dim_data = convert_to_dimensionless_curves(
-            time_series, pressure_series, flow_rate_series, 
+            time_series, pressure_series, flow_rate_series, depression_series,
             self.well_params, x_mode='alt'
         )
         
@@ -968,46 +969,6 @@ class DimensionlessExtrapolator:
         elif method == "rf":
             # RandomForestRegressor
             model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
-        elif method == "adaptive":
-            # Выбор модели по минимальному RMSE на валидации
-            models = {
-                'ridge': Ridge(alpha=1.0),
-                'poly': Pipeline([
-                    ('poly', PolynomialFeatures(degree=2)),
-                    ('ridge', RidgeCV(alphas=[0.1, 1.0, 10.0]))
-                ]),
-                'rf': RandomForestRegressor(n_estimators=50, random_state=42, max_depth=5)
-            }
-            
-            # Простая валидация: последние 20% данных
-            split_idx = int(len(X_train) * 0.8)
-            X_val = X_train[split_idx:]
-            y_val = y_train[split_idx:]
-            X_train_split = X_train[:split_idx]
-            y_train_split = y_train[:split_idx]
-            
-            best_rmse = np.inf
-            best_model = None
-            best_method_name = 'ridge'
-            
-            for name, model in models.items():
-                try:
-                    model.fit(X_train_split, y_train_split)
-                    y_pred = model.predict(X_val)
-                    rmse = np.sqrt(mean_squared_error(y_val, y_pred))
-                    if rmse < best_rmse:
-                        best_rmse = rmse
-                        best_model = model
-                        best_method_name = name
-                except Exception:
-                    continue
-            
-            if best_model is None:
-                best_model = Ridge(alpha=1.0)
-                best_method_name = 'ridge'
-            
-            model = best_model
-            method = best_method_name  # Обновляем метод для метаданных
         elif method == "phys":
             # Модель на основе аппроксимации тренда (экспоненциальная/логарифмическая)
             # Используем Ridge с полиномиальными признаками для аппроксимации тренда
@@ -1082,14 +1043,11 @@ class DimensionlessExtrapolator:
         time_series = pd.Series(df_pred['t'].values)
         pressure_series = pd.Series(df_pred['P'].values)
         flow_rate_series = pd.Series(df_pred['Q'].values)
-        
-        # Используем dP из экстраполированных данных (передаем как pd.Series)
-        well_params_with_dp = self.well_params.copy()
-        well_params_with_dp['dP'] = pd.Series(df_pred['dP'].values, index=time_series.index)
+        depression_series = pd.Series(df_pred['dP'].values)
         
         dim_data = convert_to_dimensionless_curves(
-            time_series, pressure_series, flow_rate_series,
-            well_params_with_dp, x_mode='alt'
+            time_series, pressure_series, flow_rate_series, depression_series, 
+            self.well_params, x_mode='alt'
         )
         
         df_pred['X'] = dim_data.X
@@ -1181,8 +1139,8 @@ class DimensionlessExtrapolator:
             Название лучшего метода ('poly' или 'rf')
         """
         # Временно исключаем ridge из-за некорректной работы
-        methods = ['poly', 'rf']
-        best_method = 'poly'
+        methods = ['poly', 'phys', 'rf', 'ridge']
+        best_method = methods[0]
         best_score = np.inf
         
         # Сохраняем текущие параметры
@@ -1254,7 +1212,6 @@ class DimensionlessExtrapolator:
             self.t_last = t_last_original
             self.well_params = well_params_original
             self.interp_model = interp_model_original  # Восстанавливаем модель
-        
         print(f"Выбран лучший метод: {best_method} (score = {best_score:.6e})")
         return best_method
     
