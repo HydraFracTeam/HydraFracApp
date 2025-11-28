@@ -185,7 +185,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         # Конвертируем в безразмерные параметры
         dim_data = convert_to_dimensionless_curves(
-            self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, params, x_mode='alt'
+            self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, self.current_data.depression, params, x_mode='alt'
         )
         
         # Для интерполяции используем текущие параметры
@@ -291,7 +291,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     # Конвертируем эталон в безразмерные параметры
                     ref_params = self._get_params(ref_item)
                     ref_dim = convert_to_dimensionless_curves(
-                        ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params, x_mode='alt'
+                        ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_item.depression, ref_params, x_mode='alt'
                     )
                     
                     # Получаем предсказанные значения в безразмерных координатах
@@ -614,12 +614,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.extrapolate_btn.clicked.connect(self.on_extrapolate_xy)
         self.fit_xy_btn.clicked.connect(self.on_fit_xy_curve)
         
-        # Кнопка сброса графиков (если существует)
-        if hasattr(self, 'reset_plots_btn'):
-            self.reset_plots_btn.clicked.connect(self.on_reset_plots)
-        # Смена скважины: сбрасываем график и маски
-        if hasattr(self, 'well_combo_dim'):
-            self.well_combo_dim.currentIndexChanged.connect(self.on_well_changed)
+        # Кнопка сброса графиков
+        self.reset_plots_btn.clicked.connect(self.on_reset_plots)
         
         # обновление данных при смене 
         self.well_combo_dim.currentIndexChanged.connect(self.on_well_changed)
@@ -760,7 +756,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     # Конвертируем в безразмерные параметры
                     params = self._get_params(item)
                     dim_data = convert_to_dimensionless_curves(
-                        item.time, item.pressure, item.flow_rate, params, x_mode='alt'
+                        item.time, item.pressure, item.flow_rate, item.depression, params, x_mode='alt'
                     )
                     
                     # Создаем DataFrame в нужном формате
@@ -1092,7 +1088,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # Вычисляем расчётные X и Y
             dim_data = convert_to_dimensionless_curves(
-                self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, params, x_mode='alt'
+                self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, self.current_data.depression, params, x_mode='alt'
             )
             
             # Сохраняем оригинальные расчётные значения
@@ -1179,7 +1175,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # 1️⃣ Конвертация в безразмерные параметры
             dim_data = convert_to_dimensionless_curves(
-                current_item.time, current_item.pressure, current_item.flow_rate, params, x_mode='alt'
+                current_item.time, current_item.pressure, current_item.flow_rate, current_item.depression, params, x_mode='alt'
             )
 
             # 2️⃣ Определяем, какие группы графиков выбраны
@@ -1264,7 +1260,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     if is_different:
                         ref_params = self._get_params(ref_item)
                         ref_dim = convert_to_dimensionless_curves(
-                            ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_params, x_mode='alt'
+                            ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_item.depression, ref_params, x_mode='alt'
                         )
                         validation_data = {'ref_dim': ref_dim}
                     else:
@@ -1407,6 +1403,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 self.current_data.time,
                 self.current_data.pressure,
                 self.current_data.flow_rate,
+                self.current_data.depression,
                 params,
                 x_mode='alt'
             )
