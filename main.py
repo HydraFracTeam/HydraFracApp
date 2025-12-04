@@ -1028,7 +1028,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             result = extrapolator.run(
                 df=df,
                 well_params=params,
-                n_future=20,
+                n_future=n_points//2,
                 method="adaptive",
                 check_rmse=True  # Проверяем RMSE для оценки качества
             )
@@ -1363,7 +1363,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 n_points = meta.get('n_future_points', 0)
                 
                 self.text_report.append(
-                    f"📈 Экстраполяция: метод={method_used}, точек={n_points}"
+                    f"Экстраполяция: метод={method_used}, точек={n_points}"
                 )
                 
                 if rmse:
@@ -1381,7 +1381,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                         )
             
         except Exception as e:
-            self.text_report.setText(f"❌ Ошибка построения графика: {str(e)}")
+            self.text_report.setText(f"Ошибка построения графика: {str(e)}")
             import traceback
             print(traceback.format_exc())      
 
@@ -1524,15 +1524,15 @@ class MyApp(QMainWindow, Ui_mainWindow):
         info = self.last_filter_info
         quality = self._get_quality_label(info['rmse'])
         
-        report = f"📊 Результаты фильтрации\n"
+        report = f"Результаты фильтрации\n"
         report += f"{'=' * 50}\n\n"
         report += f"Метод фильтрации: {info['method_name']} (автоматический выбор)\n"
         report += f"Количество точек: {info['n_points']}\n\n"
-        report += f"📈 Метрики качества:\n"
+        report += f"Метрики качества:\n"
         report += f"  • SNR до фильтрации: {info['snr_before']:.2f} дБ\n"
         report += f"  • SNR после фильтрации: {info['snr_after']:.2f} дБ\n"
         report += f"  • Улучшение SNR: {info['snr_improvement']:+.2f} дБ\n\n"
-        report += f"📉 Точность фильтрации:\n"
+        report += f"Точность фильтрации:\n"
         report += f"  • RMSE: {info['rmse']:.6e} ({quality})\n"
         report += f"  • MAE: {info['mae']:.6e}\n"
         report += f"  • Относительная ошибка: {info['relative_error']:.2f}%\n"

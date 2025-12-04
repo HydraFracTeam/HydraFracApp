@@ -1,52 +1,46 @@
 """
 Модуль экстраполяции размерных параметров (P, dP, Q).
-Чистый интерфейс без зависимости от self.
 """
 
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple
 from sklearn.base import BaseEstimator
 
 
 def extrapolate_parameters(
-    model: BaseEstimator,
-    P_current: float,
-    dP_current: float,
-    Q_current: float,
+    model_P: BaseEstimator,
+    model_Q: BaseEstimator,
+    P_start: float,
+    t_future: np.ndarray,
     static_features: np.ndarray,
-    dt: float,
-    n: int
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Экстраполирует размерные параметры P, dP, Q на n шагов вперед.
+    Экстраполирует P, Q, dP на n шагов вперёд по времени.
     
     Args:
-        model: Обученная модель (Ridge, Poly, RF и т.д.)
-        P_current: Текущее значение давления
-        dP_current: Текущее значение приращения давления
-        Q_current: Текущее значение дебита
-        static_features: Статичные параметры скважины [Skin, h, N, W, L, a/L]
-        dt: Шаг времени
-        n: Количество шагов экстраполяции
+        model_P, model_Q, model_dP: Обученные модели для каждой величины
+        t_future: временные точки для экстраполяции
+        static_features: Статические параметры [Skin, h, ...]
     
     Returns:
-        (P_ext, dP_ext, Q_ext): Экстраполированные массивы
+        P_ext, Q_ext, dP_ext
     """
-    predictions = []
-    current_values = np.array([P_current, dP_current, Q_current])
     
-    for _ in range(n):
-        # Формируем признаковый вектор
-        features = np.hstack([static_features, current_values]).reshape(1, -1)
-        
-        # Предсказываем следующие значения
-        pred = model.predict(features)[0]
-        
-        # Обновляем текущие значения для следующей итерации
-        current_values = pred
-        predictions.append(pred)
+    # Добавляем статические признаки к каждому моменту времени
+    X_future = np.hstack([
+        np.tile(static_features, (len(t_future), 1)),
+        t_future.reshape(-1, 1)
+    ])
     
-    predictions = np.array(predictions)
+    P_ext = model_P.predict(X_future)
+    Q_ext = model_Q.predict(X_future)
+    # dP_ext = model_dP.predict(X_future)
+    print(f"P_ext origin: {P_ext}")
+    P_ext = np.clip(P_ext, a_min=0.0, a_max=None)
     
-    return predictions[:, 0], predictions[:, 1], predictions[:, 2]
-
+    dP_ext = P_start - P_ext
+    
+    import pandas as pd
+    print(pd.DataFrame([P_ext, dP_ext, Q_ext]))
+    
+    return P_ext, dP_ext, Q_ext
