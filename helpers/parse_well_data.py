@@ -97,7 +97,7 @@ def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Opt
                     time=group_data['t'].reset_index(drop=True),
                     pressure=group_data['P'].reset_index(drop=True),
                     flow_rate=group_data['Q'].reset_index(drop=True),
-                    dP=group_data['dP'].reset_index(drop=True) if 'dP' in group_data.columns else None,
+                    depression=group_data['dP'].reset_index(drop=True),
                     X=group_data['X'].reset_index(drop=True) if 'X' in group_data.columns else None,
                     Y=group_data['Y'].reset_index(drop=True) if 'Y' in group_data.columns else None,
                     skin=float(group_data['Skin'].iloc[0]),
@@ -164,8 +164,7 @@ def group_data_by_well_parameters(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
             group_clean = group.drop(columns=[col for col in group.columns if col.endswith('_rounded')], errors='ignore')
             
             # Сортируем по времени для правильного отображения изменений
-            if 't' in group_clean.columns:
-                group_clean = group_clean.sort_values('t')
+            group_clean = group_clean.sort_values('t')
                 
             groups[f"well_{i}"] = group_clean.reset_index(drop=True)
             
@@ -214,7 +213,8 @@ def analyze_well_groups(df: pd.DataFrame) -> Dict[str, any]:
             'a_l_ratio': float(group_data['a/L'].iloc[0]),
             'time_range': (float(group_data['t'].min()), float(group_data['t'].max())),
             'pressure_range': (float(group_data['P'].min()), float(group_data['P'].max())),
-            'flow_rate_range': (float(group_data['Q'].min()), float(group_data['Q'].max()))
+            'flow_rate_range': (float(group_data['Q'].min()), float(group_data['Q'].max())),
+            
         }
         analysis['groups_info'].append(group_info)
     

@@ -3,7 +3,7 @@ import pandas as pd
 
 def diag_dimensional(df):
     # основные колонки — проверяем наличие и типы
-    for c in ['X','Y','P','Q','t']:
+    for c in ['X','Y','P','Q','t', "dP"]:
         if c not in df.columns:
             print(f"⚠️ Нет колонки {c}")
     X = df['X'].astype(float).values
@@ -11,6 +11,7 @@ def diag_dimensional(df):
     P = df['P'].astype(float).values
     Q = df['Q'].astype(float).ffill().bfill().values
     t = df['t'].astype(float).values
+    # dP = df['dP'].astype(float).values
 
     def rng(a):
         mn = np.nanmin(a); mx = np.nanmax(a)
@@ -21,12 +22,13 @@ def diag_dimensional(df):
     print(" P:", rng(P))
     print(" Q:", rng(Q))
     print(" t:", rng(t))
+    # print(" dP:", rng(dP))
 
     # orders of magnitude (log10 span)
     def log_span(a):
         a = np.clip(a, 1e-30, None)
         return np.log10(np.nanmax(a)) - np.log10(np.nanmin(a))
-    print("Log10 spans:")
+    print("Log10 spans:") # кол-во порядков между min и max
     print(" X span (dex):", log_span(X))
     print(" Y span (dex):", log_span(Y))
     print(" pD span (dex):", log_span(np.clip((P - np.nanmin(P)),1e-30,None)))
@@ -97,6 +99,3 @@ def diag_dimensional(df):
     Ys, pDs, dpdlogY, CD = compute_dpdlogY(Y, pD)
     print("dpdlogY min/max:", np.nanmin(dpdlogY), np.nanmax(dpdlogY))
     print("CD min/max:", np.nanmin(CD), np.nanmax(CD))
-
-
-    

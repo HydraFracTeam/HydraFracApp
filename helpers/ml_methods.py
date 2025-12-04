@@ -3,7 +3,7 @@ import pandas as pd
 from typing import Tuple, Dict, Union, Optional, Callable, Any
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression, Ridge, RidgeCV
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
@@ -610,127 +610,6 @@ class AdaptiveInterpolator:
         return pd.Series(pred, index=time.index, name=f'adaptive_{self.best_method}')
 
 
-# Функции для удобного использования новых интерполяторов
-
-def extrapolate_series_math(series: pd.Series, steps: int = 10, degree: int = 2) -> pd.Series:
-    """Экстраполяция ряда полиномиальной регрессией (безопасный фоллбэк к линейной).
-    Возвращает продолжение ряда длиной steps с тем же индексом типа, что у входа (если числовой индекс).
-    """
-    values = series.dropna().values
-    if len(values) < 3 or steps <= 0:
-        return pd.Series(dtype=float)
-    x = np.arange(len(values))
-    try:
-        coeffs = np.polyfit(x, values, deg=min(degree, len(values) - 1))
-        poly = np.poly1d(coeffs)
-        x_future = np.arange(len(values), len(values) + steps)
-        y_future = poly(x_future)
-    except Exception:
-        # Линейный фоллбэк
-        if len(values) < 2:
-            return pd.Series(dtype=float)
-        slope = values[-1] - values[-2]
-        y_future = values[-1] + slope * np.arange(1, steps + 1)
-    return pd.Series(y_future)
-
-
-def extrapolate_series_ml(series: pd.Series, steps: int = 10, method: str = 'ridge') -> pd.Series:
-    """Экстраполяция ряда с помощью ML (простая регрессия по индексу)."""
-    values = series.dropna().values
-    if len(values) < 3 or steps <= 0:
-        return pd.Series(dtype=float)
-    x = np.arange(len(values)).reshape(-1, 1)
-    if method == 'random_forest':
-        model = RandomForestRegressor(n_estimators=200, random_state=42)
-    elif method == 'ridge':
-        model = Ridge(alpha=1.0)
-    else:
-        model = LinearRegression()
-    model.fit(x, values)
-    x_future = np.arange(len(values), len(values) + steps).reshape(-1, 1)
-    y_future = model.predict(x_future)
-    return pd.Series(y_future)
-
-
-def extrapolate_parameters_df(df: pd.DataFrame,
-                              steps: int = 10,
-                              method: str = 'math',
-                              exclude: Tuple[str, ...] = ('X', 'Y')) -> pd.DataFrame:
-    """Экстраполирует все столбцы параметров (кроме exclude) на указанное число шагов."""
-    future = {}
-    for col in df.columns:
-        if col in exclude:
-            continue
-        series = pd.Series(df[col])
-        if method == 'math':
-            ext = extrapolate_series_math(series, steps=steps)
-        else:
-            ext = extrapolate_series_ml(series, steps=steps)
-        future[col] = ext.values
-    return pd.DataFrame(future)
-
-def generate_xy_from_params(params_row: Dict[str, float], n_points: int = 64) -> Tuple[np.ndarray, np.ndarray]:
-    """Генерирует кривую X-Y по размерным параметрам (skin, N, a_L) через физическую модель."""
-    # Импортируем здесь, чтобы избежать циклических зависимостей на уровне модуля
-    from helpers.physics import predict_production_curve
-    time_range = np.logspace(-3, 3, n_points)
-    skin = float(params_row.get('skin', 0.0))
-    N = int(params_row.get('N', params_row.get('fractures_count', 1)))
-    a_L = float(params_row.get('a_L', params_row.get('a_l_ratio', 0.1)))
-    X, Y = predict_production_curve(skin=skin, n=N, aL=a_L, time_range=time_range)
-    return X, Y
-
-
-# ============================================================================
-# Враппер для правильной интерполяции
-# ============================================================================
-
-def interpolate_missing_only(interpolator_class: type, time: pd.Series, values: pd.Series, **kwargs) -> pd.Series:
-    """
-    Универсальный враппер, который интерполирует только реальные пропуски,
-    не трогая уже известные точки и не смещая индексы.
-    """
-    mask_missing = values.isna()
-    if not mask_missing.any():
-        return values.copy()
-
-    # Используем только валидные точки
-    valid_mask = ~(mask_missing | time.isna())
-    time_valid = time[valid_mask]
-    values_valid = values[valid_mask]
-
-    if len(time_valid) < 2:
-        return values.copy()
-
-    # Обучаем интерполятор (универсальная проверка интерфейса)
-    interpolator = interpolator_class(**kwargs)
-    try:
-        # Поддержка классов, где fit ждёт pd.Series
-        interpolator.fit(time_valid, values_valid)
-    except TypeError:
-        # Фоллбэк для scikit-learn совместимых моделей
-        interpolator.fit(time_valid.values.reshape(-1, 1), values_valid.values)
-
-    # Предсказываем только для пропусков
-    time_missing = time[mask_missing]
-    try:
-        predicted_values = interpolator.predict(time_missing)
-        if isinstance(predicted_values, (tuple, list)):  # GP возвращает mean, std
-            predicted_values = predicted_values[0]
-    except TypeError:
-        predicted_values = interpolator.predict(time_missing.values.reshape(-1, 1))
-
-    # Вставляем в оригинальный ряд
-    result = values.copy()
-    result.loc[mask_missing] = np.array(predicted_values).flatten()
-
-    return result
-
-
-
-# ============================================================================
-# ExtrapolationReliabilityEvaluator перенесен в helpers.dimensionless.extrapolation.eri
-# ============================================================================
 
 # ============================================================================
 # DimensionlessExtrapolator 
@@ -787,7 +666,6 @@ class DimensionlessExtrapolator:
         """
         # Сохраняем параметры
         self.well_params = well_params
-        
         # 1. Подготовка данных
         df_clean = self._prepare_data(df)
         
@@ -803,17 +681,18 @@ class DimensionlessExtrapolator:
         df_val = df_clean.iloc[split_idx:].copy()
         
         # 3. Оценка методов на validation (если method="adaptive")
-        if method == "adaptive":
-            best_method = self._select_best_method(df_train, df_val, well_params)
-        else:
-            best_method = method
-        
+        # if method == "adaptive":
+        #     best_method = self._select_best_method(df_train, df_val, well_params)
+        # else:
+        #     best_method = method
+        best_method = "poly"
+
         # 4. Переобучение лучшего метода на всех данных
         X_train_full, y_train_full = self._prepare_features(df_clean)
         self.interp_model = self._train_interpolator(X_train_full, y_train_full, best_method)
         
         # 5. Экстраполяция на основе всего массива
-        df_pred = self._extrapolate_dimensionless(df_clean, n_future)
+        df_pred = self._extrapolate_dimensionless(df_clean, n_future) # приходит t_future, P_ext, dP_ext, Q_ext,
         df_pred = self._calculate_xy_from_extrapolated(df_pred)
         
         # 6. Расчёт эталонных безразмерных X–Y (для обратной совместимости)
@@ -848,6 +727,7 @@ class DimensionlessExtrapolator:
             else:
                 print(f"RMSE: {rmse:.3e}")
         
+        print(df_pred)
         # Формирование результата
         result = {
             # Новые поля
@@ -887,11 +767,11 @@ class DimensionlessExtrapolator:
         df_clean = df_clean.dropna(subset=['t', 'P', 'Q'])
         
         # Проверка на нулевые/отрицательные значения (заменяем на NaN)
-        df_clean.loc[df_clean['dP'] <= 0, 'dP'] = np.nan
-        df_clean.loc[df_clean['Q'] <= 0, 'Q'] = np.nan
+        df_clean.loc[df_clean['dP'] < 0, 'dP'] = np.nan
+        df_clean.loc[df_clean['Q'] < 0, 'Q'] = np.nan
         
         # Повторная интерполяция после замены
-        for col in ['dP', 'Q']:
+        for col in ['P', 'dP', 'Q']:
             if df_clean[col].isna().any():
                 df_clean[col] = df_clean[col].interpolate(method='linear', limit_direction='both')
         
@@ -914,9 +794,10 @@ class DimensionlessExtrapolator:
         time_series = pd.Series(df['t'].values)
         pressure_series = pd.Series(df['P'].values)
         flow_rate_series = pd.Series(df['Q'].values)
+        depression_series = pd.Series(df['dP'].values)
         
         dim_data = convert_to_dimensionless_curves(
-            time_series, pressure_series, flow_rate_series, 
+            time_series, pressure_series, flow_rate_series, depression_series,
             self.well_params, x_mode='alt'
         )
         
@@ -938,7 +819,7 @@ class DimensionlessExtrapolator:
                 # Берем первое значение (все одинаковые для одной скважины)
                 static_features.append(df[col].iloc[0] if len(df) > 0 else 0.0)
             else:
-                static_features.append(0.0)
+                raise BaseException(f"Отсутствует необходимая колонка {col} для выполнения экстраполяции.")    
         
         # Исторические значения размерных параметров
         historical_features = df[['P', 'dP', 'Q']].values
@@ -951,7 +832,8 @@ class DimensionlessExtrapolator:
         
         # Целевые значения (следующие значения P, dP, Q)
         # Для экстраполяции используем текущие значения как цели (для обучения тренда)
-        y_train = historical_features
+        X_train = X_train[:-1]
+        y_train = historical_features[1:]
         
         return X_train, y_train
     
@@ -959,62 +841,28 @@ class DimensionlessExtrapolator:
         """4.4. Обучение интерполятора"""
         if method == "poly":
             # PolynomialFeatures + RidgeCV
+            # model = PolynomialFeatures(degree=2)
+            # model = Pipeline([
+            #    ('poly', PolynomialFeatures(degree=2)),
+                # ('ridge', RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0]))
+            # ])
             model = Pipeline([
-                ('poly', PolynomialFeatures(degree=2)),
-                ('ridge', RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0]))
-            ])
+            ('poly', PolynomialFeatures(degree=2)),
+            ('scaler', StandardScaler()),
+            ('ridge', RidgeCV(alphas=[0.01, 0.1, 1, 10.0]))
+        ])
         elif method == "ridge":
             # Линейная Ridge-регрессия
             model = Ridge(alpha=1.0)
         elif method == "rf":
             # RandomForestRegressor
             model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
-        elif method == "adaptive":
-            # Выбор модели по минимальному RMSE на валидации
-            models = {
-                'ridge': Ridge(alpha=1.0),
-                'poly': Pipeline([
-                    ('poly', PolynomialFeatures(degree=2)),
-                    ('ridge', RidgeCV(alphas=[0.1, 1.0, 10.0]))
-                ]),
-                'rf': RandomForestRegressor(n_estimators=50, random_state=42, max_depth=5)
-            }
-            
-            # Простая валидация: последние 20% данных
-            split_idx = int(len(X_train) * 0.8)
-            X_val = X_train[split_idx:]
-            y_val = y_train[split_idx:]
-            X_train_split = X_train[:split_idx]
-            y_train_split = y_train[:split_idx]
-            
-            best_rmse = np.inf
-            best_model = None
-            best_method_name = 'ridge'
-            
-            for name, model in models.items():
-                try:
-                    model.fit(X_train_split, y_train_split)
-                    y_pred = model.predict(X_val)
-                    rmse = np.sqrt(mean_squared_error(y_val, y_pred))
-                    if rmse < best_rmse:
-                        best_rmse = rmse
-                        best_model = model
-                        best_method_name = name
-                except Exception:
-                    continue
-            
-            if best_model is None:
-                best_model = Ridge(alpha=1.0)
-                best_method_name = 'ridge'
-            
-            model = best_model
-            method = best_method_name  # Обновляем метод для метаданных
         elif method == "phys":
             # Модель на основе аппроксимации тренда (экспоненциальная/логарифмическая)
             # Используем Ridge с полиномиальными признаками для аппроксимации тренда
             model = Pipeline([
                 ('poly', PolynomialFeatures(degree=3)),
-                ('ridge', Ridge(alpha=10.0))  # Усиленная регуляризация
+                ('ridge', RidgeCV(alphas=[0.01, 0.1, 1, 10.0]))
             ])
         else:
             raise ValueError(f"Неизвестный метод: {method}")
@@ -1034,7 +882,7 @@ class DimensionlessExtrapolator:
             self.t_last + (n_future + 1) * self.dt,
             self.dt
         )
-        
+
         # Подготавливаем статичные параметры
         static_cols = ['Skin', 'h', 'N', 'W', 'L', 'a/L']
         static_features = []
@@ -1042,24 +890,36 @@ class DimensionlessExtrapolator:
             if col in df.columns:
                 static_features.append(df[col].iloc[-1])
             else:
-                static_features.append(0.0)
+                raise BaseException(f"Отсутствует необходимая колонка {col} для выполнения экстраполяции.")  
         static_features = np.array(static_features)
         
-        # Последние известные значения
-        P_current = df['P'].iloc[-1]
-        dP_current = df['dP'].iloc[-1]
-        Q_current = df['Q'].iloc[-1]
+        t_train = np.arange(len(df)) * self.dt  # или используй реальное t из df
+        X_train = np.hstack([
+            np.tile(static_features, (len(df), 1)),
+            t_train.reshape(-1, 1)
+        ])
+        
+        model_P = self._train_interpolator(X_train, df['P'].values, method="poly")
+        model_Q = self._train_interpolator(X_train, df['Q'].values, method="poly")
         
         # Экстраполируем с использованием нового модуля
         P_ext, dP_ext, Q_ext = extrapolate_parameters(
-            model=self.interp_model,
-            P_current=P_current,
-            dP_current=dP_current,
-            Q_current=Q_current,
+            P_start = df['P'].iloc[0],
+            model_P=model_P,
+            model_Q=model_Q,
+            t_future = t_future,
             static_features=static_features,
-            dt=self.dt,
-            n=n_future
         )
+        
+        # import matplotlib.pyplot as plt
+        # plt.figure(figsize=(10, 6))
+        # press = static_features[:, 0] # P падает, dP растет, модель обучается ровно наоборот
+        # t = df["t"].values
+        # plt.plot(t, press, )
+        # plt.grid(True)
+        # plt.ylabel("Давление P")
+        # plt.xlabel("Время t")
+        # plt.show()
         
         # Создаем DataFrame с экстраполированными данными
         df_pred = pd.DataFrame({
@@ -1083,14 +943,11 @@ class DimensionlessExtrapolator:
         time_series = pd.Series(df_pred['t'].values)
         pressure_series = pd.Series(df_pred['P'].values)
         flow_rate_series = pd.Series(df_pred['Q'].values)
-        
-        # Используем dP из экстраполированных данных (передаем как pd.Series)
-        well_params_with_dp = self.well_params.copy()
-        well_params_with_dp['dP'] = pd.Series(df_pred['dP'].values, index=time_series.index)
+        depression_series = pd.Series(df_pred['dP'].values)
         
         dim_data = convert_to_dimensionless_curves(
-            time_series, pressure_series, flow_rate_series,
-            well_params_with_dp, x_mode='alt'
+            time_series, pressure_series, flow_rate_series, depression_series, 
+            self.well_params, x_mode='alt'
         )
         
         df_pred['X'] = dim_data.X
@@ -1182,8 +1039,8 @@ class DimensionlessExtrapolator:
             Название лучшего метода ('poly' или 'rf')
         """
         # Временно исключаем ridge из-за некорректной работы
-        methods = ['poly', 'rf']
-        best_method = 'poly'
+        methods = ['poly', 'phys', 'rf', 'ridge']
+        best_method = methods[0]
         best_score = np.inf
         
         # Сохраняем текущие параметры
@@ -1255,7 +1112,7 @@ class DimensionlessExtrapolator:
             self.t_last = t_last_original
             self.well_params = well_params_original
             self.interp_model = interp_model_original  # Восстанавливаем модель
-        
+            print(self.interp_model)
         print(f"Выбран лучший метод: {best_method} (score = {best_score:.6e})")
         return best_method
     
