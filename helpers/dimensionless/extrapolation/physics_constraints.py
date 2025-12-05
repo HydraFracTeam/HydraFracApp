@@ -38,10 +38,6 @@ def apply_physical_constraints(
         (P_ext_corrected, dP_ext_corrected, Q_ext_corrected): Исправленные значения
     """
     
-    P_ext = np.asarray(P_ext).copy()
-    dP_ext = np.asarray(dP_ext).copy()
-    Q_ext = np.asarray(Q_ext).copy()
-    
     # 1. Ограничения на давление P
     if enforce_P_monotonicity:
         # Давление должно только падать (или оставаться постоянным)

@@ -689,7 +689,8 @@ class DimensionlessExtrapolator:
 
         # 4. Переобучение лучшего метода на всех данных
         X_train_full, y_train_full = self._prepare_features(df_clean)
-        self.interp_model = self._train_interpolator(X_train_full, y_train_full, best_method)
+        self.interp_model = None
+        # self._train_interpolator(X_train_full, y_train_full, best_method)
         
         # 5. Экстраполяция на основе всего массива
         df_pred = self._extrapolate_dimensionless(df_clean, n_future) # приходит t_future, P_ext, dP_ext, Q_ext,
@@ -727,7 +728,6 @@ class DimensionlessExtrapolator:
             else:
                 print(f"RMSE: {rmse:.3e}")
         
-        print(df_pred)
         # Формирование результата
         result = {
             # Новые поля
@@ -828,7 +828,8 @@ class DimensionlessExtrapolator:
         static_array = np.tile(static_features, (len(df), 1))
         
         # Объединяем признаки
-        X_train = np.hstack([static_array, historical_features])
+        t_feature = df['t'].values.reshape(-1, 1)   
+        X_train = np.hstack([static_array, historical_features, t_feature])
         
         # Целевые значения (следующие значения P, dP, Q)
         # Для экстраполяции используем текущие значения как цели (для обучения тренда)
@@ -838,14 +839,9 @@ class DimensionlessExtrapolator:
         return X_train, y_train
     
     def _train_interpolator(self, X_train: np.ndarray, y_train: np.ndarray, method: str):
+        from helpers.dimensionless.extrapolation.log_model import _LogModel
         """4.4. Обучение интерполятора"""
         if method == "poly":
-            # PolynomialFeatures + RidgeCV
-            # model = PolynomialFeatures(degree=2)
-            # model = Pipeline([
-            #    ('poly', PolynomialFeatures(degree=2)),
-                # ('ridge', RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0]))
-            # ])
             model = Pipeline([
             ('poly', PolynomialFeatures(degree=2)),
             ('scaler', StandardScaler()),
@@ -857,6 +853,9 @@ class DimensionlessExtrapolator:
         elif method == "rf":
             # RandomForestRegressor
             model = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=10)
+        elif method == "log":
+            # Логарифмическая модель: P(t) = a + b * ln(t + c)
+            model = _LogModel()
         elif method == "phys":
             # Модель на основе аппроксимации тренда (экспоненциальная/логарифмическая)
             # Используем Ridge с полиномиальными признаками для аппроксимации тренда
@@ -893,22 +892,26 @@ class DimensionlessExtrapolator:
                 raise BaseException(f"Отсутствует необходимая колонка {col} для выполнения экстраполяции.")  
         static_features = np.array(static_features)
         
-        t_train = np.arange(len(df)) * self.dt  # или используй реальное t из df
+        t_train = df['t'].values.reshape(-1, 1)  # реальное время из данных
         X_train = np.hstack([
             np.tile(static_features, (len(df), 1)),
-            t_train.reshape(-1, 1)
+            t_train
         ])
         
-        model_P = self._train_interpolator(X_train, df['P'].values, method="poly")
+        model_P = self._train_interpolator(X_train, df['P'].values, method="log")
         model_Q = self._train_interpolator(X_train, df['Q'].values, method="poly")
+        model_dP = self._train_interpolator(X_train, df['dP'].values, method="log")
         
         # Экстраполируем с использованием нового модуля
         P_ext, dP_ext, Q_ext = extrapolate_parameters(
-            P_start = df['P'].iloc[0],
-            model_P=model_P,
-            model_Q=model_Q,
+            model_P = model_P,
+            model_Q = model_Q,
+            model_dP = model_dP,
+            P_last = df['P'].iloc[0],
+            dP_last = df['dP'].iloc[0],
+            Q_last = df['Q'].iloc[0],
             t_future = t_future,
-            static_features=static_features,
+            static_features = static_features,
         )
         
         # import matplotlib.pyplot as plt
@@ -1112,7 +1115,6 @@ class DimensionlessExtrapolator:
             self.t_last = t_last_original
             self.well_params = well_params_original
             self.interp_model = interp_model_original  # Восстанавливаем модель
-            print(self.interp_model)
         print(f"Выбран лучший метод: {best_method} (score = {best_score:.6e})")
         return best_method
     
