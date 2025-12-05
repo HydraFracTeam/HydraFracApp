@@ -43,6 +43,23 @@ class SignalFilters:
         if not np.any(valid_mask) or np.sum(valid_mask) < 3:
             return curve
         
+        # Если все значения валидны, работаем напрямую
+        if np.all(valid_mask):
+            n = len(curve)
+            if window_length is None:
+                window_length = min(max(5, n // 4), n if n % 2 == 1 else n - 1)
+                window_length = max(window_length, polyorder + 1)
+                if window_length % 2 == 0:
+                    window_length += 1
+            window_length = min(window_length, n if n % 2 == 1 else n - 1)
+            window_length = max(window_length, polyorder + 1)
+            if window_length > n:
+                return curve
+            try:
+                return savgol_filter(curve, window_length, polyorder, mode=mode)
+            except (ValueError, np.linalg.LinAlgError):
+                return curve
+        
         curve_clean = curve[valid_mask]
         n = len(curve_clean)
         
@@ -91,6 +108,15 @@ class SignalFilters:
         
         if not np.any(valid_mask):
             return curve
+        
+        # Если все значения валидны, работаем напрямую
+        if np.all(valid_mask):
+            if len(curve) < 3:
+                return curve
+            try:
+                return gaussian_filter1d(curve, sigma=sigma, mode=mode)
+            except Exception:
+                return curve
         
         curve_clean = curve[valid_mask]
         
@@ -240,19 +266,33 @@ class SignalFilters:
         
         # 1. Savitzky-Golay для начального сглаживания
         try:
-            filtered = SignalFilters.savgol(filtered, window_length=None, polyorder=2)
+            # Работаем напрямую с очищенным массивом
+            n = len(filtered)
+            if n >= 3:
+                window_length = min(max(5, n // 4), n if n % 2 == 1 else n - 1)
+                window_length = max(window_length, 3)  # polyorder + 1
+                if window_length % 2 == 0:
+                    window_length += 1
+                window_length = min(window_length, n if n % 2 == 1 else n - 1)
+                if window_length <= n:
+                    filtered = savgol_filter(filtered, window_length, polyorder=2, mode='nearest')
         except Exception:
             pass
         
         # 2. Gaussian для дополнительного сглаживания
         try:
-            filtered = SignalFilters.gaussian(filtered, sigma=0.5)
+            if len(filtered) >= 3:
+                filtered = gaussian_filter1d(filtered, sigma=0.5, mode='nearest')
         except Exception:
             pass
         
-        result = curve.copy()
-        result[valid_mask] = filtered
-        return result
+        # Восстанавливаем исходный размер только если были NaN
+        if np.all(valid_mask):
+            return filtered
+        else:
+            result = curve.copy()
+            result[valid_mask] = filtered
+            return result
     
     @staticmethod
     def denoise(

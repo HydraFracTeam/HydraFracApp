@@ -91,14 +91,14 @@ class DimensionlessConverter:
         if not np.isfinite(delta_p_i) or delta_p_i == 0:
             delta_p_i = 1.0
         
-        # Средний дебит
-        Q = flow_rate.mean() if not flow_rate.empty else 1.0
-        
         # Конвертируем в numpy массивы
         t = time.values
         p = pressure.values
         q = flow_rate.values
         dP = depression.values
+        
+        # Средний дебит (используется только для режима 'constant')
+        Q = flow_rate.mean() if not flow_rate.empty else 1.0
 
         delta_p_vec = dP
             
@@ -116,8 +116,8 @@ class DimensionlessConverter:
             X = (dp / dt) * (k * h) / ((Q if Q != 0 else 1e-12) * mu * B)
         elif x_mode == 'alt':
             # Стандартная формула: X = (0.00864 * k * h * Δp_i) / (μ * B * Q)
-            # где Δp_i - вектор приращений давления (из данных или вычисленный), Q - вектор дебита
-            # Используем векторы delta_p_vec и q (как было), добавляем mu и B в знаменатель
+            # где Δp_i - вектор приращений давления из данных (dP), Q - вектор дебита из данных
+            # Никакое масштабирование не применяется
             q_safe = np.where(np.abs(q) < 1e-12, 1e-12, q)
             X = (0.00864 * k * h * delta_p_vec) / (mu * B * q_safe)
         else:
@@ -130,8 +130,8 @@ class DimensionlessConverter:
         # Ёмкостной параметр Y
         if x_mode == 'alt':
             # Стандартная формула: Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i)
-            # где Δp_i - вектор приращений давления (из данных или вычисленный), Q - вектор дебита
-            # Используем векторы delta_p_vec и q (как было), добавляем B в числитель
+            # где Δp_i - вектор приращений давления из данных (dP), Q - вектор дебита из данных
+            # Никакое масштабирование не применяется
             Y = (q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
         else:
             # Стандартная формула: Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp)
@@ -612,29 +612,32 @@ def fit_xy_curve_coefficients(
 ) -> Dict[str, Any]:
     """
     Подбор коэффициентов поправки для расчётной кривой X-Y, чтобы она совпадала с эталонной.
+    Использует OLS-регрессию с квадратичным членом: Y_fit = a * Y + b + c * (Y**2)
     
     Args:
         X_data: Эталонные значения X из данных
         Y_data: Эталонные значения Y из данных
         X_calc: Расчётные значения X
         Y_calc: Расчётные значения Y
-        a_range: Диапазон перебора коэффициента a (по X). Если None, используется np.linspace(-3, 3, n_points)
-        b_range: Диапазон перебора коэффициента b (по Y). Если None, используется np.linspace(-3, 3, n_points)
-        n_points: Количество точек для перебора (если диапазоны не заданы)
+        a_range: Диапазон перебора коэффициента a (по X). Игнорируется, используется OLS для X
+        b_range: Диапазон перебора коэффициента b (по Y). Игнорируется, используется OLS для Y
+        n_points: Количество точек для перебора (игнорируется)
         fit_only_y: Если True, подгоняется только Y (коэффициент a = 1.0)
     
     Returns:
         Словарь с результатами:
         - 'a': лучший коэффициент для X
         - 'b': лучший коэффициент для Y
-        - 'rmse': RMSE ошибка
+        - 'c': коэффициент квадратичного члена для Y
+        - 'rmse': RMSE ошибка после подгонки
+        - 'rmse_before': RMSE ошибка до подгонки
         - 'accuracy': точность в процентах
         - 'r2': грубая оценка R²
         - 'X_fitted': подогнанные значения X
         - 'Y_fitted': подогнанные значения Y
+        - 'c_clipped': True если c был обрезан до bounds
+        - 'fallback_used': True если использован fallback (c=0)
     """
-    from sklearn.metrics import mean_squared_error
-    
     # Убираем NaN и Inf
     mask = np.isfinite(X_data) & np.isfinite(Y_data) & np.isfinite(X_calc) & np.isfinite(Y_calc)
     X_data_clean = X_data[mask]
@@ -645,82 +648,164 @@ def fit_xy_curve_coefficients(
     if len(X_data_clean) < 2:
         return {
             'a': 1.0,
-            'b': 1.0,
+            'b': 0.0,
+            'c': 0.0,
             'rmse': np.inf,
+            'rmse_before': np.inf,
             'accuracy': 0.0,
             'r2': 0.0,
             'X_fitted': X_calc,
-            'Y_fitted': Y_calc
+            'Y_fitted': Y_calc,
+            'c_clipped': False,
+            'fallback_used': False
         }
     
-    # Определяем диапазон перебора коэффициентов
+    # Интерполяция для выравнивания по X (чтобы длины совпадали)
+    # Интерполируем Y_calc и X_calc на сетку X_data_clean
+    X_calc_unique = None
+    Y_calc_unique = None
+    try:
+        # Сортируем по X для интерполяции
+        sort_idx = np.argsort(X_calc_clean)
+        X_calc_sorted = X_calc_clean[sort_idx]
+        Y_calc_sorted = Y_calc_clean[sort_idx]
+        
+        # Убираем дубликаты для интерполяции
+        unique_mask = np.concatenate(([True], np.diff(X_calc_sorted) > 1e-10))
+        X_calc_unique = X_calc_sorted[unique_mask]
+        Y_calc_unique = Y_calc_sorted[unique_mask]
+        
+        # Интерполируем Y_calc на сетку X_data_clean
+        Y_calc_interp = np.interp(X_data_clean, X_calc_unique, Y_calc_unique)
+        
+        # Заменяем NaN на линейную интерполяцию, если есть
+        nan_mask = np.isnan(Y_calc_interp)
+        if np.any(nan_mask):
+            valid_mask = ~nan_mask
+            if np.any(valid_mask):
+                Y_calc_interp[nan_mask] = np.interp(
+                    X_data_clean[nan_mask],
+                    X_data_clean[valid_mask],
+                    Y_calc_interp[valid_mask]
+                )
+    except Exception:
+        # Если интерполяция не удалась, используем исходные данные
+        Y_calc_interp = Y_calc_clean
+        if len(X_data_clean) != len(X_calc_clean):
+            # Если длины не совпадают, используем только общие точки
+            min_len = min(len(X_data_clean), len(X_calc_clean))
+            X_data_clean = X_data_clean[:min_len]
+            Y_data_clean = Y_data_clean[:min_len]
+            Y_calc_interp = Y_calc_clean[:min_len]
+    
+    # Вычисляем RMSE до подгонки (линейная подгонка: Y_fit = Y_calc)
+    rmse_before = np.sqrt(np.mean((Y_data_clean - Y_calc_interp) ** 2))
+    
+    # Подгонка X: если fit_only_y, то a = 1.0, иначе используем OLS
     if fit_only_y:
-        # Если подгоняем только Y, коэффициент a всегда равен 1.0
-        a_range = [1.0]
+        a = 1.0
     else:
-        if a_range is None:
-            a_range = np.linspace(-3, 3, n_points)
+        # OLS для X: X_fit = a * X_calc
+        # Интерполируем X_calc на сетку X_data_clean для подгонки
+        if X_calc_unique is not None:
+            X_calc_for_fit = np.interp(X_data_clean, X_calc_unique, X_calc_unique)
+        else:
+            X_calc_for_fit = X_calc_clean[:len(X_data_clean)] if len(X_calc_clean) > len(X_data_clean) else X_calc_clean
+        
+        if len(X_calc_for_fit) > 0 and len(X_calc_for_fit) == len(X_data_clean) and np.any(X_calc_for_fit != 0):
+            # Используем метод наименьших квадратов: a = (X_data^T * X_calc) / (X_calc^T * X_calc)
+            a = np.dot(X_data_clean, X_calc_for_fit) / np.dot(X_calc_for_fit, X_calc_for_fit)
+            if not np.isfinite(a):
+                a = 1.0
+        else:
+            a = 1.0
     
-    if b_range is None:
-        b_range = np.linspace(-3, 3, n_points)
+    # Подгонка Y с квадратичным членом: Y_fit = a_y * Y + b + c * (Y**2)
+    # Нормализация Y для числовой устойчивости
+    Y_median = np.median(Y_calc_interp)
+    if Y_median == 0 or not np.isfinite(Y_median):
+        Y_median = 1.0
     
-    best_rmse = np.inf
-    best_a, best_b = 1.0, 1.0
+    Y_norm = Y_calc_interp / Y_median
     
-    # Перебор коэффициентов
-    for a in a_range:
-        for b in b_range:
-            # Масштабируем расчётные кривые
-            X_fit = X_calc_clean * a
-            Y_fit = Y_calc_clean * b
-            
-            # Интерполяция для выравнивания по X (чтобы длины совпадали)
-            try:
-                # Сортируем по X для интерполяции
-                sort_idx = np.argsort(X_fit)
-                X_fit_sorted = X_fit[sort_idx]
-                Y_fit_sorted = Y_fit[sort_idx]
-                
-                # Интерполируем Y_fit на сетку X_data_clean
-                Y_interp = np.interp(X_data_clean, X_fit_sorted, Y_fit_sorted)
-                
-                # Вычисляем RMSE
-                rmse = np.sqrt(mean_squared_error(Y_data_clean, Y_interp))
-                
-                if rmse < best_rmse:
-                    best_rmse = rmse
-                    best_a, best_b = a, b
-            except Exception:
-                continue
+    # Строим матрицу A для OLS: A = [Y_norm, 1, Y_norm^2]
+    A = np.column_stack([Y_norm, np.ones_like(Y_norm), Y_norm ** 2])
     
-    # Вычисляем финальные подогнанные значения
-    X_fitted = X_calc * best_a
-    Y_fitted = Y_calc * best_b
+    # Решаем least squares: A * θ = Y_data, где θ = (a_n, b, c_n)
+    try:
+        theta, residuals, rank, s = np.linalg.lstsq(A, Y_data_clean, rcond=None)
+        a_n, b, c_n = theta[0], theta[1], theta[2]
+    except Exception:
+        # Fallback на линейную регрессию
+        A_linear = np.column_stack([Y_norm, np.ones_like(Y_norm)])
+        theta_linear, _, _, _ = np.linalg.lstsq(A_linear, Y_data_clean, rcond=None)
+        a_n, b = theta_linear[0], theta_linear[1]
+        c_n = 0.0
+    
+    # Преобразуем коэффициенты обратно в исходный масштаб
+    a_y = a_n / Y_median
+    c = c_n / (Y_median ** 2)
+    
+    # Ограничиваем c в пределах [-0.2, 0.2]
+    c_clipped = False
+    if c < -0.2:
+        c = -0.2
+        c_clipped = True
+    elif c > 0.2:
+        c = 0.2
+        c_clipped = True
+    
+    # Вычисляем Y_fit с квадратичным членом
+    Y_fit = a_y * Y_calc_interp + b + c * (Y_calc_interp ** 2)
+    
+    # Вычисляем RMSE после подгонки
+    rmse_after = np.sqrt(np.mean((Y_data_clean - Y_fit) ** 2))
+    
+    # Fallback: если RMSE ухудшился, используем c=0
+    fallback_used = False
+    if rmse_after >= rmse_before:
+        c = 0.0
+        Y_fit = a_y * Y_calc_interp + b
+        rmse_after = np.sqrt(np.mean((Y_data_clean - Y_fit) ** 2))
+        fallback_used = True
+    
+    # Вычисляем финальные подогнанные значения для всех точек
+    # Применяем коэффициенты к исходным массивам
+    if fit_only_y:
+        X_fitted = X_calc.copy()
+    else:
+        X_fitted = X_calc * a
+    
+    Y_fitted = a_y * Y_calc + b + c * (Y_calc ** 2)
     
     # Вычисляем метрики
-    # Грубая оценка R²
     y_mean = np.nanmean(Y_data_clean)
     ss_tot = np.sum((Y_data_clean - y_mean) ** 2)
     if ss_tot > 0:
-        r2 = 1 - (best_rmse ** 2 * len(Y_data_clean)) / ss_tot
+        r2 = 1 - (rmse_after ** 2 * len(Y_data_clean)) / ss_tot
     else:
         r2 = 0.0
     
     # Точность в процентах (нормализованная)
     y_range = np.nanmax(Y_data_clean) - np.nanmin(Y_data_clean)
     if y_range > 0:
-        accuracy = max(0, (1 - best_rmse / y_range) * 100)
+        accuracy = max(0, (1 - rmse_after / y_range) * 100)
     else:
         accuracy = 0.0
     
     return {
-        'a': best_a,
-        'b': best_b,
-        'rmse': best_rmse,
+        'a': a,  # Коэффициент для X
+        'a_y': a_y,  # Коэффициент для Y (линейный член)
+        'b': b,  # Свободный член для Y
+        'c': c,  # Квадратичный коэффициент для Y
+        'rmse': rmse_after,
+        'rmse_before': rmse_before,
         'accuracy': accuracy,
         'r2': r2,
         'X_fitted': X_fitted,
-        'Y_fitted': Y_fitted
+        'Y_fitted': Y_fitted,
+        'c_clipped': c_clipped,
+        'fallback_used': fallback_used
     }
 
 

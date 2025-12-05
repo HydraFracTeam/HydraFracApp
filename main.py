@@ -72,7 +72,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.last_extrapolated_XY = None  # Пара экстраполированных X,Y для отображения
         self.last_extrapolation_result = None  # Результат экстраполяции с метриками качества
         self.last_fitted_XY = None  # Подогнанные X,Y с коэффициентами поправки
-        self.last_fit_coefficients = None  # Коэффициенты подгонки (a, b)
+        self.last_fit_coefficients = None  # Коэффициенты подгонки (a для X, a_y, b, c для Y)
         self.original_calc_XY = None  # Оригинальные расчётные X,Y (до подгонки)
         
         # Создаем  интерфейс с вкладками
@@ -1028,7 +1028,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             result = extrapolator.run(
                 df=df,
                 well_params=params,
-                n_future=20,
+                n_future=n_points//2,
                 method="adaptive",
                 check_rmse=True  # Проверяем RMSE для оценки качества
             )
@@ -1106,14 +1106,19 @@ class MyApp(QMainWindow, Ui_mainWindow):
             # Выполняем подгонку
             fit_result = fit_xy_curve_coefficients(X_data, Y_data, X_calc, Y_calc, fit_only_y=fit_only_y)
             
-            # Сохраняем результаты
+            # Сохраняем результаты (коэффициенты будут применяться автоматически при построении графиков)
             self.last_fitted_XY = (fit_result['X_fitted'], fit_result['Y_fitted'])
             self.last_fit_coefficients = {
-                'a': fit_result['a'],
-                'b': fit_result['b'],
+                'a': fit_result['a'],  # Коэффициент для X
+                'a_y': fit_result.get('a_y', 1.0),  # Коэффициент для Y (линейный член)
+                'b': fit_result['b'],  # Свободный член для Y
+                'c': fit_result.get('c', 0.0),  # Квадратичный коэффициент для Y
                 'rmse': fit_result['rmse'],
+                'rmse_before': fit_result.get('rmse_before', fit_result['rmse']),
                 'accuracy': fit_result['accuracy'],
-                'r2': fit_result['r2']
+                'r2': fit_result['r2'],
+                'c_clipped': fit_result.get('c_clipped', False),
+                'fallback_used': fit_result.get('fallback_used', False)
             }
             
             # Формируем отчёт
@@ -1126,7 +1131,14 @@ class MyApp(QMainWindow, Ui_mainWindow):
             else:
                 report += f"   a (по X) = {fit_result['a']:.4g}\n"
             report += f"   b (по Y) = {fit_result['b']:.4g}\n"
-            report += f"   RMSE = {fit_result['rmse']:.4e}\n"
+            c_val = fit_result.get('c', 0.0)
+            report += f"   c (квадратичный) = {c_val:.4g}\n"
+            if fit_result.get('c_clipped', False):
+                report += f"   ⚠️ c был ограничен до [-0.2, 0.2]\n"
+            if fit_result.get('fallback_used', False):
+                report += f"   ⚠️ Использован fallback (c=0) из-за ухудшения RMSE\n"
+            report += f"   RMSE до подгонки = {fit_result.get('rmse_before', fit_result['rmse']):.4e}\n"
+            report += f"   RMSE после подгонки = {fit_result['rmse']:.4e}\n"
             report += f"   Точность = {fit_result['accuracy']:.2f}%\n"
             report += f"   R² = {fit_result['r2']:.4f}\n\n"
             report += "📘 Итоговая аппроксимирующая формула:\n"
@@ -1134,7 +1146,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 report += f"   X_fit = 0.00864 * k * h * ΔP / (μ * B * Q) (без изменений)\n"
             else:
                 report += f"   X_fit = {fit_result['a']:.3g} * (0.00864 * k * h * ΔP / (μ * B * Q))\n"
-            report += f"   Y_fit = {fit_result['b']:.3g} * (Q * B * t / (24 * φ * ct * h * L² * ΔP))\n"
+            if abs(c_val) < 1e-10:
+                report += f"   Y_fit = {fit_result['b']:.3g} * (Q * B * t / (24 * φ * ct * h * L² * ΔP))\n"
+            else:
+                report += f"   Y_fit = {fit_result['b']:.3g} * Y + {c_val:.3g} * Y²\n"
+            report += "=" * 60 + "\n"
+            report += "ℹ️ Коэффициенты сохранены и будут применяться к расчётной кривой\n"
+            report += "   при каждом построении графика до ручной очистки.\n"
             report += "=" * 60 + "\n"
             
             # Выводим отчёт
@@ -1144,9 +1162,11 @@ class MyApp(QMainWindow, Ui_mainWindow):
             # Перестраиваем график с подогнанными данными
             self.on_plot_dimensionless_selected()
             
+            c_val = fit_result.get('c', 0.0)
             self.show_info("Подгонка выполнена", 
-                         f"Коэффициенты: a={fit_result['a']:.3g}, b={fit_result['b']:.3g}\n"
-                         f"Точность: {fit_result['accuracy']:.2f}%")
+                         f"Коэффициенты: a={fit_result['a']:.3g}, b={fit_result['b']:.3g}, c={c_val:.3g}\n"
+                         f"Точность: {fit_result['accuracy']:.2f}%\n"
+                         f"Коэффициенты сохранены и будут применяться автоматически.")
             
         except Exception as e:
             import traceback
@@ -1282,17 +1302,46 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             show_calc_XY = hasattr(self, 'cb_calc_XY') and self.cb_calc_XY.isChecked()
             
-            # Если была выполнена подгонка и чекбокс включен, заменяем расчётные X и Y на подогнанные
-            # Если чекбокс выключен, восстанавливаем оригинальные расчётные значения
-            if self.last_fitted_XY is not None:
-                if show_calc_XY:
-                    # Используем подогнанные значения
-                    dim_data.X = self.last_fitted_XY[0]
-                    dim_data.Y = self.last_fitted_XY[1]
-                elif self.original_calc_XY is not None:
-                    # Восстанавливаем оригинальные расчётные значения
-                    dim_data.X = self.original_calc_XY[0]
-                    dim_data.Y = self.original_calc_XY[1]
+            # Если были сохранены коэффициенты подгонки, применяем их к расчётной кривой
+            # Коэффициенты применяются автоматически при каждом построении графика
+            if self.last_fit_coefficients is not None and self.original_calc_XY is not None:
+                # Восстанавливаем оригинальные расчётные значения
+                dim_data.X = self.original_calc_XY[0].copy()
+                dim_data.Y = self.original_calc_XY[1].copy()
+                
+                # Применяем сохранённые коэффициенты
+                a = self.last_fit_coefficients['a']  # Коэффициент для X
+                a_y = self.last_fit_coefficients.get('a_y', 1.0)  # Коэффициент для Y (линейный член)
+                b = self.last_fit_coefficients['b']  # Свободный член для Y
+                c = self.last_fit_coefficients.get('c', 0.0)  # Квадратичный коэффициент для Y
+                
+                # Применяем преобразования: X_fit = a * X, Y_fit = a_y * Y + b + c * Y^2
+                # (но только если fit_only_y не было, иначе a = 1.0 уже установлен)
+                if not (hasattr(self, 'cb_fit_only_y') and self.cb_fit_only_y.isChecked()):
+                    dim_data.X = dim_data.X * a
+                
+                # Применяем квадратичное преобразование к Y: Y_fit = a_y * Y + b + c * Y^2
+                dim_data.Y = a_y * dim_data.Y + b + c * (dim_data.Y ** 2)
+                
+                # Обновляем last_fitted_XY для совместимости
+                self.last_fitted_XY = (dim_data.X.copy(), dim_data.Y.copy())
+            
+            # Применяем коэффициенты подгонки к экстраполированным X и Y, если они есть
+            if self.last_extrapolated_XY is not None and self.last_fit_coefficients is not None:
+                X_ext, Y_ext = self.last_extrapolated_XY
+                a = self.last_fit_coefficients['a']  # Коэффициент для X
+                a_y = self.last_fit_coefficients.get('a_y', 1.0)  # Коэффициент для Y (линейный член)
+                b = self.last_fit_coefficients['b']  # Свободный член для Y
+                c = self.last_fit_coefficients.get('c', 0.0)  # Квадратичный коэффициент для Y
+                
+                # Применяем те же коэффициенты к экстраполированным значениям
+                if not (hasattr(self, 'cb_fit_only_y') and self.cb_fit_only_y.isChecked()):
+                    X_ext = X_ext * a
+                
+                Y_ext = a_y * Y_ext + b + c * (Y_ext ** 2)
+                
+                # Обновляем экстраполированные значения с применёнными коэффициентами
+                self.last_extrapolated_XY = (X_ext.copy(), Y_ext.copy())
 
             # Если X и Y отсутствуют в данных, просто не будем их использовать для графика "X-Y (из данных)"
             # Расчётные X и Y можно отображать независимо через чекбокс "Отобразить расчётные X и Y"
@@ -1363,7 +1412,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 n_points = meta.get('n_future_points', 0)
                 
                 self.text_report.append(
-                    f"📈 Экстраполяция: метод={method_used}, точек={n_points}"
+                    f"Экстраполяция: метод={method_used}, точек={n_points}"
                 )
                 
                 if rmse:
@@ -1381,7 +1430,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                         )
             
         except Exception as e:
-            self.text_report.setText(f"❌ Ошибка построения графика: {str(e)}")
+            self.text_report.setText(f"Ошибка построения графика: {str(e)}")
             import traceback
             print(traceback.format_exc())      
 
@@ -1524,15 +1573,15 @@ class MyApp(QMainWindow, Ui_mainWindow):
         info = self.last_filter_info
         quality = self._get_quality_label(info['rmse'])
         
-        report = f"📊 Результаты фильтрации\n"
+        report = f"Результаты фильтрации\n"
         report += f"{'=' * 50}\n\n"
         report += f"Метод фильтрации: {info['method_name']} (автоматический выбор)\n"
         report += f"Количество точек: {info['n_points']}\n\n"
-        report += f"📈 Метрики качества:\n"
+        report += f"Метрики качества:\n"
         report += f"  • SNR до фильтрации: {info['snr_before']:.2f} дБ\n"
         report += f"  • SNR после фильтрации: {info['snr_after']:.2f} дБ\n"
         report += f"  • Улучшение SNR: {info['snr_improvement']:+.2f} дБ\n\n"
-        report += f"📉 Точность фильтрации:\n"
+        report += f"Точность фильтрации:\n"
         report += f"  • RMSE: {info['rmse']:.6e} ({quality})\n"
         report += f"  • MAE: {info['mae']:.6e}\n"
         report += f"  • Относительная ошибка: {info['relative_error']:.2f}%\n"

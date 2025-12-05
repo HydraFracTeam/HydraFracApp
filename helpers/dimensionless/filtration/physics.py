@@ -4,6 +4,7 @@
 """
 
 import numpy as np
+import pandas as pd
 from typing import Optional, Tuple
 import warnings
 
@@ -128,44 +129,56 @@ class PhysicsConstraints:
         threshold: float = 0.1
     ) -> np.ndarray:
         """
-        Удаляет осцилляции из кривой.
-        Основано на анализе изменений знака второй производной.
-        
-        Args:
-            curve: Входная кривая
-            x: Координаты
-            window_size: Размер окна для сглаживания
-            threshold: Порог для обнаружения осцилляций
-        
-        Returns:
-            Кривая без осцилляций
+        Удаляет осцилляции из кривой на основе изменений знака второй производной.
         """
         curve = np.asarray(curve)
         valid_mask = np.isfinite(curve)
         
         if not np.any(valid_mask) or np.sum(valid_mask) < 3:
-            return curve
+            return curve.copy()
         
         curve_clean = curve[valid_mask]
+        n = len(curve_clean)
         
+        if n < 3:
+            result = curve.copy()
+            return result
+        
+        # Вычисляем вторую производную
         if x is not None:
             x_clean = np.asarray(x)[valid_mask]
-            if len(x_clean) < 3:
-                return curve
-            second_deriv = np.gradient(np.gradient(curve_clean, x_clean), x_clean)
+            if len(x_clean) != n:
+                return curve.copy()
+            dydx = np.gradient(curve_clean, x_clean)
+            d2ydx2 = np.gradient(dydx, x_clean)
         else:
-            second_deriv = np.gradient(np.gradient(curve_clean))
+            d2ydx2 = np.gradient(np.gradient(curve_clean))
         
-        # Обнаруживаем осцилляции по изменениям знака
-        sign_changes = np.diff(np.sign(second_deriv)) != 0
-        oscillation_mask = np.concatenate(([False], sign_changes, [False]))
+        # Определяем изменения знака второй производной
+        sign_d2 = np.sign(d2ydx2)
+        # Заменяем 0 на предыдущий ненулевой знак (чтобы не ловить шум)
+        sign_d2 = np.where(sign_d2 == 0, np.nan, sign_d2)
+        sign_d2 = pd.Series(sign_d2).fillna(method='ffill').fillna(0).values
         
-        # Применяем сглаживание в областях с осцилляциями
+        # Где знак меняется? (с учётом сдвига)
+        sign_change = np.diff(sign_d2) != 0  # длина: n - 1
+        
+        # Расширяем обратно до длины n: добавляем False в начало или конец
+        oscillation_mask = np.zeros(n, dtype=bool)
+        oscillation_mask[1:] = sign_change  # изменения происходят между точками → относятся к следующей
+        # Или можно: oscillation_mask[:-1] |= sign_change
+        
+        # Дополнительно: если рядом с изменением — большой градиент, считаем это осцилляцией
+        gradient_mag = np.abs(np.gradient(curve_clean))
+        # Можно усилить условие, но пока просто используем sign_change
+        
+        # Сглаживаем только в зонах осцилляций
         if np.any(oscillation_mask):
             from scipy.ndimage import uniform_filter1d
             smoothed = uniform_filter1d(curve_clean, size=window_size, mode='nearest')
             curve_clean[oscillation_mask] = smoothed[oscillation_mask]
         
+        # Восстанавливаем результат
         result = curve.copy()
         result[valid_mask] = curve_clean
         
