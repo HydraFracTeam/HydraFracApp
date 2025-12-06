@@ -15,8 +15,7 @@ from scipy.interpolate import interp1d
 from ui import Ui_mainWindow
 
 from helpers.parse_well_data import parse_well_data
-from helpers.ml_methods import (apply_ml_interpolation, apply_ml_filter, 
-                               detect_outliers)
+from helpers.ml_methods import (detect_outliers)
 from helpers.dimensionless_analysis import convert_to_dimensionless_curves, get_dimensionless_series, fit_xy_curve_coefficients
 from helpers.dimensionless.filtration import SignalFilters, PhysicsConstraints, compute_snr
 from helpers.dimensionless_plotting import plot_dimensionless_grouped
@@ -1611,42 +1610,6 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.on_plot_dimensionless_selected()
         except Exception as e:
             self.show_warning("Ошибка", f"Ошибка обнаружения выбросов: {str(e)}")
-    
-    def plot_outliers_with_highlight(self, outliers: pd.Series, plot_type: str) -> None:
-        """Построение графика с выделенными выбросами"""
-        self.plot_widget.clear()
-        
-        if plot_type == "Давление vs Время":
-            # Обычные точки
-            normal_mask = ~outliers
-            self.plot_widget.plot(self.current_data.pressure[normal_mask],
-                                self.current_data.time[normal_mask],
-                                pen='b', symbol='o', symbolSize=5)
-            
-            # Выбросы
-            if outliers.any():
-                self.plot_widget.plot(self.current_data.pressure[outliers],
-                                    self.current_data.time[outliers],
-                                    pen=None, symbol='x', symbolSize=10, symbolBrush='r')
-            
-            self.plot_widget.setLabel('bottom', 'Давление, атм')
-            self.plot_widget.setLabel('left', 'Время, ч')
-            self.plot_widget.setTitle('Давление vs Время (красные X - выбросы)')
-            
-        else:  # Дебит vs Время
-            normal_mask = ~outliers
-            self.plot_widget.plot(self.current_data.flow_rate[normal_mask],
-                                self.current_data.time[normal_mask],
-                                pen='g', symbol='s', symbolSize=5)
-            
-            if outliers.any():
-                self.plot_widget.plot(self.current_data.flow_rate[outliers],
-                                    self.current_data.time[outliers],
-                                    pen=None, symbol='x', symbolSize=10, symbolBrush='r')
-            
-            self.plot_widget.setLabel('bottom', 'Дебит, м³/сут')
-            self.plot_widget.setLabel('left', 'Время, ч')
-            self.plot_widget.setTitle('Дебит vs Время (красные X - выбросы)')
     
     def on_export_data(self) -> None:
         """Экспорт данных"""
