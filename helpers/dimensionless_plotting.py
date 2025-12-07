@@ -358,6 +358,8 @@ def plot_dimensionless_grouped(plot_widget: PlotWidget,
             # Расчётные X и Y можно отобразить независимо через чекбокс "Отобразить расчётные X и Y"
 
             # Экстраполированные X-Y, если переданы
+            
+        if checked_groups.get('cb_calc_XY', False):
             if extrapolated_XY is not None:
                 try:
                     X_ext, Y_ext = extrapolated_XY
