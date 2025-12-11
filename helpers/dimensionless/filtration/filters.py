@@ -1,6 +1,6 @@
 """
 Модуль фильтрации сигналов для безразмерных кривых.
-Реализует различные методы фильтрации согласно статье и контракту.
+Реализует различные методы фильтрации согласно статье.
 """
 
 import numpy as np
@@ -198,10 +198,10 @@ class SignalFilters:
         if not np.any(valid_mask):
             return curve
         
-        # Автоматический выбор sigma согласно контракту
+        # Автоматический выбор sigma
         if sigma is None:
             n = len(curve) if np.all(valid_mask) else np.sum(valid_mask)
-            # Согласно контракту: sigma = min(max(0.25, n / 200.0), 1.0)
+            # sigma = min(max(0.25, n / 200.0), 1.0)
             if n < 8:
                 sigma = 0.3
             else:
@@ -220,7 +220,7 @@ class SignalFilters:
             if len(curve) < 3:
                 return curve
             try:
-                # Согласно контракту: использовать mode='reflect' или 'mirror'
+                # Используем mode='reflect' или 'mirror' для стабильной работы на краях
                 filter_mode = 'reflect' if mode == 'nearest' else mode
                 return gaussian_filter1d(curve, sigma=sigma, mode=filter_mode)
             except Exception:
@@ -232,7 +232,7 @@ class SignalFilters:
             return curve
         
         try:
-            # Согласно контракту: использовать mode='reflect' или 'mirror'
+            # Используем mode='reflect' или 'mirror' для стабильной работы на краях
             filter_mode = 'reflect' if mode == 'nearest' else mode
             filtered = gaussian_filter1d(curve_clean, sigma=sigma, mode=filter_mode)
             result = curve.copy()
@@ -249,7 +249,7 @@ class SignalFilters:
     ) -> np.ndarray:
         """
         Простой одномерный фильтр Калмана для нестационарного шума.
-        Согласно контракту: простая 1D реализация БЕЗ тренда/скорости.
+        Простая 1D реализация БЕЗ тренда/скорости.
         
         Модель состояния: x_k = x_{k-1} + w_k (w_k ~ N(0, Q))
         Наблюдение: z_k = x_k + v_k (v_k ~ N(0, R))
@@ -274,9 +274,9 @@ class SignalFilters:
         if n < 2:
             return curve
         
-        # Автоматическая оценка параметров шума согласно контракту
+        # Автоматическая оценка параметров шума
         if process_noise is None or measurement_noise is None:
-            # Согласно контракту: R ~ var(diffs), Q ~ R*0.01
+            # R ~ var(diffs), Q ~ R*0.01
             diffs = np.diff(curve_clean)
             if len(diffs) > 0:
                 noise_estimate = np.std(diffs)
@@ -287,14 +287,14 @@ class SignalFilters:
                 noise_estimate = np.std(curve_clean) if len(curve_clean) > 1 else 1.0
             
             if measurement_noise is None:
-                # R ~ var(diffs) согласно контракту
+                # R ~ var(diffs)
                 measurement_noise = max(0.01, noise_estimate ** 2)
             
             if process_noise is None:
-                # Q ~ R*0.01 согласно контракту
+                # Q ~ R*0.01
                 process_noise = max(0.01, measurement_noise * 0.01)
         
-        # Инициализация согласно контракту
+        # Инициализация
         x = curve_clean[0]  # x0 = curve_clean[0]
         P = np.var(curve_clean) if len(curve_clean) > 1 else 1.0  # P0 = var(signal) or 1.0
         
@@ -327,7 +327,7 @@ class SignalFilters:
     ) -> np.ndarray:
         """
         Фильтрация в логарифмическом масштабе.
-        Согласно контракту: применять только если detect_log_scale → True (3 порядка).
+        Применять только если detect_log_scale → True (3 порядка).
         В лог-масштабе НЕ применять полиномиальную фильтрацию с высоким order (polyorder ≤ 2).
         
         Args:
@@ -346,7 +346,7 @@ class SignalFilters:
         
         curve_clean = curve[valid_mask]
         
-        # Согласно контракту: проверка положительности и обработка ≤0
+        # Проверка положительности и обработка ≤0
         if np.any(curve_clean <= 0):
             # Если есть ≤0, делаем shift: signal_pos = signal_clean - min(signal_clean) + eps
             eps = 1e-10
@@ -359,7 +359,7 @@ class SignalFilters:
         # Переходим в логарифмический масштаб
         log_curve = np.log10(curve_clean)
         
-        # Согласно контракту: в лог-масштабе НЕ применять polyorder > 2
+        # В лог-масштабе НЕ применять polyorder > 2
         if base_filter == 'savgol':
             # Ограничиваем polyorder до 2
             if 'polyorder' in filter_kwargs and filter_kwargs['polyorder'] > 2:
@@ -393,7 +393,7 @@ class SignalFilters:
         x: Optional[np.ndarray] = None
     ) -> np.ndarray:
         """
-        Гибридный фильтр согласно контракту: fill_missing → savgol → gaussian.
+        Гибридный фильтр: fill_missing → savgol → gaussian.
         НЕ использует log_domain по умолчанию.
         
         Args:
@@ -409,17 +409,17 @@ class SignalFilters:
         if not np.any(valid_mask):
             return curve
         
-        # Согласно контракту: 1. fill_missing_values
+        # 1. fill_missing_values
         from .utils import fill_missing_values
         curve_filled = fill_missing_values(curve, x=x, method='linear')
         
-        # Согласно контракту: 2. savgol(signal, window_length=None, polyorder=2)
+        # 2. savgol(signal, window_length=None, polyorder=2)
         filtered = SignalFilters.savgol(curve_filled, window_length=None, polyorder=2, mode='nearest')
         
-        # Согласно контракту: 3. gaussian(signal, sigma=0.5)
+        # 3. gaussian(signal, sigma=0.5)
         filtered = SignalFilters.gaussian(filtered, sigma=0.5, mode='reflect')
         
-        # Согласно контракту: возвращать полноразмерный массив (вставлять назад NaN, если были)
+        # Возвращаем полноразмерный массив (вставляем назад NaN, если были)
         # Если были NaN, они уже заполнены fill_missing_values, но нужно восстановить исходные NaN
         if not np.all(valid_mask):
             result = curve.copy()

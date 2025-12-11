@@ -16,7 +16,7 @@ from datetime import datetime
 import warnings
 
 warnings.filterwarnings('ignore')
-np.random.seed(42)  # Детерминированность согласно контракту
+np.random.seed(42)  # Детерминированность для воспроизводимости
 
 
 class MLInterpolator:

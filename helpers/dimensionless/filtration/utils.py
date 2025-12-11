@@ -11,7 +11,7 @@ from typing import Tuple, Dict, Optional
 def compute_snr(signal: np.ndarray, noise_estimate: Optional[np.ndarray] = None) -> float:
     """
     Вычисляет отношение сигнал/шум (SNR) в децибелах.
-    Согласно контракту: использовать std(diff(signal)) или MAD для оценки шума.
+    Использует std(diff(signal)) или MAD для оценки шума.
     
     Args:
         signal: Входной сигнал
@@ -37,7 +37,7 @@ def compute_snr(signal: np.ndarray, noise_estimate: Optional[np.ndarray] = None)
         noise_clean = noise_estimate[valid_mask] if len(noise_estimate) == len(signal) else noise_estimate
         noise_power = np.mean(noise_clean ** 2) if isinstance(noise_clean, np.ndarray) else noise_clean ** 2
     else:
-        # Согласно контракту: noise_estimate = std(diff(signal)) or MAD
+        # noise_estimate = std(diff(signal)) or MAD
         diffs = np.diff(signal_clean)
         if len(diffs) > 0:
             noise_estimate_value = np.std(diffs)
@@ -127,7 +127,7 @@ def compute_oscillation_score(signal: np.ndarray, x: Optional[np.ndarray] = None
 def detect_log_scale(signal: np.ndarray, threshold: float = 3.0) -> bool:
     """
     Определяет, нужно ли применять фильтрацию в логарифмическом масштабе.
-    Согласно контракту: threshold = 3.0 (3 порядка), не 10.0.
+    threshold = 3.0 (3 порядка) по умолчанию.
     
     Args:
         signal: Входной сигнал
@@ -149,7 +149,7 @@ def detect_log_scale(signal: np.ndarray, threshold: float = 3.0) -> bool:
     if signal_min <= 0:
         return False
     
-    # Согласно контракту: return (np.log10(signal_max / signal_min) > threshold)
+    # return (np.log10(signal_max / signal_min) > threshold)
     # где threshold = 3.0 по умолчанию (3 порядка)
     ratio = signal_max / signal_min
     log_ratio = np.log10(ratio)
@@ -196,17 +196,17 @@ def select_filter_method(
     signal: np.ndarray,
     x: Optional[np.ndarray] = None,
     snr_threshold: float = 20.0,
-    oscillation_threshold: float = 0.6  # Согласно контракту: 0.6 для Kalman
+    oscillation_threshold: float = 0.6  # Порог осцилляций для Kalman
 ) -> str:
     """
     Автоматически выбирает метод фильтрации на основе характеристик сигнала.
-    Согласно контракту: Kalman только если oscillation_score > 0.6 and snr < 10.
+    Kalman выбирается только если oscillation_score > 0.6 and snr < 10.
     
     Args:
         signal: Входной сигнал
         x: Координаты
         snr_threshold: Порог SNR для выбора метода
-        oscillation_threshold: Порог осцилляций для Kalman (0.6 согласно контракту)
+        oscillation_threshold: Порог осцилляций для Kalman (0.6 по умолчанию)
     
     Returns:
         Название метода фильтрации ('savgol', 'gaussian', 'kalman', 'log_domain', 'hybrid')
@@ -222,13 +222,13 @@ def select_filter_method(
     # Вычисляем характеристики
     snr = compute_snr(signal_clean)
     oscillation_score = compute_oscillation_score(signal_clean, x[valid_mask] if x is not None else None)
-    use_log = detect_log_scale(signal_clean, threshold=3.0)  # Согласно контракту: 3 порядка
+    use_log = detect_log_scale(signal_clean, threshold=3.0)  # 3 порядка
     
-    # Логика выбора согласно контракту
+    # Логика выбора метода
     if use_log:
         return 'log_domain'
     
-    # Согласно контракту: Kalman только если oscillation_score > 0.6 and snr < 10
+    # Kalman только если oscillation_score > 0.6 and snr < 10
     if oscillation_score > oscillation_threshold and snr < 10.0:
         return 'kalman'
     

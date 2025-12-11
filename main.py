@@ -1531,7 +1531,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             snr_after = compute_snr(filtered_pressure)
             snr_improvement = snr_after - snr_before
             
-            # Вычисляем RMSE и другие метрики
+            # Вычисляем RMSE и другие метрики относительно исходных данных
             rmse = np.sqrt(np.mean((pressure_clean - filtered_pressure) ** 2))
             mae = np.mean(np.abs(pressure_clean - filtered_pressure))
             
@@ -1539,6 +1539,81 @@ class MyApp(QMainWindow, Ui_mainWindow):
             pressure_range = np.max(pressure_clean) - np.min(pressure_clean)
             relative_error = (rmse / pressure_range * 100) if pressure_range > 0 else 0.0
             accuracy = max(0, 100 - relative_error)
+            
+            # Если есть эталонные данные, рассчитываем метрики относительно эталона
+            reference_metrics = None
+            if hasattr(self, 'validation_data') and self.validation_data and len(self.validation_data) > 0:
+                try:
+                    ref_item = self.validation_data[0]
+                    # Проверяем, что это действительно эталонные данные
+                    if (ref_item is not None and 
+                        hasattr(ref_item, 'time') and hasattr(ref_item, 'pressure') and
+                        (ref_item is not self.current_data or 
+                         len(ref_item.pressure) != len(self.current_data.pressure) or
+                         not np.allclose(ref_item.pressure.values, self.current_data.pressure.values, 
+                                       rtol=1e-3, equal_nan=True))):
+                        
+                        # Получаем эталонные данные
+                        ref_time = ref_item.time.values
+                        ref_pressure = ref_item.pressure.values
+                        ref_flow_rate = ref_item.flow_rate.values
+                        ref_depression = ref_item.depression.values
+                        
+                        # Удаляем NaN из эталона
+                        ref_valid_mask = (np.isfinite(ref_time) & np.isfinite(ref_pressure) & 
+                                         np.isfinite(ref_flow_rate) & np.isfinite(ref_depression))
+                        
+                        if np.any(ref_valid_mask):
+                            ref_time_clean = ref_time[ref_valid_mask]
+                            ref_pressure_clean = ref_pressure[ref_valid_mask]
+                            
+                            # Интерполируем отфильтрованные данные на временные точки эталона
+                            from scipy.interpolate import interp1d
+                            
+                            # Сортируем для интерполяции
+                            time_sorted_idx = np.argsort(time_clean)
+                            ref_time_sorted_idx = np.argsort(ref_time_clean)
+                            
+                            # Интерполируем отфильтрованное давление на эталонные временные точки
+                            interp_func = interp1d(
+                                time_clean[time_sorted_idx], 
+                                filtered_pressure[time_sorted_idx],
+                                kind='linear',
+                                bounds_error=False,
+                                fill_value='extrapolate'
+                            )
+                            filtered_pressure_on_ref = interp_func(ref_time_clean[ref_time_sorted_idx])
+                            
+                            # Вычисляем метрики относительно эталона
+                            ref_pressure_sorted = ref_pressure_clean[ref_time_sorted_idx]
+                            
+                            # RMSE относительно эталона
+                            ref_rmse = np.sqrt(np.mean((ref_pressure_sorted - filtered_pressure_on_ref) ** 2))
+                            
+                            # MAE относительно эталона
+                            ref_mae = np.mean(np.abs(ref_pressure_sorted - filtered_pressure_on_ref))
+                            
+                            # R² относительно эталона
+                            ss_res = np.sum((ref_pressure_sorted - filtered_pressure_on_ref) ** 2)
+                            ss_tot = np.sum((ref_pressure_sorted - np.mean(ref_pressure_sorted)) ** 2)
+                            ref_r2 = 1 - (ss_res / (ss_tot + 1e-12)) if ss_tot > 1e-12 else 0.0
+                            
+                            # Относительная ошибка относительно эталона
+                            ref_range = np.max(ref_pressure_sorted) - np.min(ref_pressure_sorted)
+                            ref_relative_error = (ref_rmse / ref_range * 100) if ref_range > 0 else 0.0
+                            ref_accuracy = max(0, 100 - ref_relative_error)
+                            
+                            reference_metrics = {
+                                'rmse': ref_rmse,
+                                'mae': ref_mae,
+                                'r2': ref_r2,
+                                'relative_error': ref_relative_error,
+                                'accuracy': ref_accuracy,
+                                'n_points': len(ref_pressure_sorted)
+                            }
+                except Exception as e:
+                    # Если не удалось рассчитать метрики, просто пропускаем
+                    print(f"Не удалось рассчитать метрики фильтрации относительно эталона: {e}")
             
             # Сохраняем информацию о фильтрации для вывода в отчёте
             method_names = {
@@ -1560,7 +1635,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 'mae': mae,
                 'relative_error': relative_error,
                 'accuracy': accuracy,
-                'n_points': len(pressure_clean)
+                'n_points': len(pressure_clean),
+                'reference_metrics': reference_metrics  # Метрики относительно эталона
             }
             
             # Формируем отчёт
@@ -1605,6 +1681,17 @@ class MyApp(QMainWindow, Ui_mainWindow):
         report += f"  • MAE: {info['mae']:.6e}\n"
         report += f"  • Относительная ошибка: {info['relative_error']:.2f}%\n"
         report += f"  • Точность: {info['accuracy']:.2f}%\n\n"
+        
+        # Если есть метрики относительно эталона, добавляем их
+        if 'reference_metrics' in info and info['reference_metrics'] is not None:
+            ref_metrics = info['reference_metrics']
+            report += f"МЕТРИКИ ОТНОСИТЕЛЬНО ЭТАЛОНА:\n"
+            report += f"  • RMSE (эталон): {ref_metrics.get('rmse', 0):.6e}\n"
+            report += f"  • MAE (эталон): {ref_metrics.get('mae', 0):.6e}\n"
+            report += f"  • R² (эталон): {ref_metrics.get('r2', 0):.4f}\n"
+            report += f"  • Относительная ошибка (эталон): {ref_metrics.get('relative_error', 0):.2f}%\n"
+            report += f"  • Точность (эталон): {ref_metrics.get('accuracy', 0):.2f}%\n"
+            report += f"  • Количество точек сравнения: {ref_metrics.get('n_points', 0)}\n\n"
         
         if info['accuracy'] >= 95:
             report += f"✅ Отличная точность фильтрации!\n"

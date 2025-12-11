@@ -60,7 +60,7 @@ class PhysicsConstraints:
             result[valid_mask] = curve_sorted
             return result
         
-        # Согласно контракту: использовать np.maximum.accumulate для non_increasing
+        # Используем np.maximum.accumulate для non_increasing
         # Для не возрастающей функции (справа налево): maximum.accumulate(curve_sorted[::-1])[::-1]
         if direction == 'non_increasing':
             # Применяем maximum.accumulate справа налево, затем разворачиваем
