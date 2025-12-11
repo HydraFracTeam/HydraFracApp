@@ -1438,91 +1438,111 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.on_plot_dimensionless_selected() 
 
     def on_ml_filter(self) -> None:
-        """ML-фильтрация данных"""
+        """ML-фильтрация данных - применяется к исходным P, Q, dP"""
         if self.current_data is None:
             return
         
         try:
-            # Получаем параметры скважины
-            params = self._get_params(self.current_data)
-            
-            # Конвертируем в безразмерные параметры
-            dim_data = convert_to_dimensionless_curves(
-                self.current_data.time,
-                self.current_data.pressure,
-                self.current_data.flow_rate,
-                self.current_data.depression,
-                params,
-                x_mode='alt'
-            )
-            
-            # Получаем безразмерные кривые
-            series = get_dimensionless_series(dim_data)
-            Y = series['Y']
-            pD_original = series['pD']
+            # СТРОГОЕ УСЛОВИЕ: Фильтрация применяется к исходным данным (P, Q, dP), а не к безразмерным кривым
+            time = self.current_data.time.values
+            pressure = self.current_data.pressure.values
+            flow_rate = self.current_data.flow_rate.values
+            depression = self.current_data.depression.values
             
             # Удаляем NaN значения для фильтрации
-            valid_mask = np.isfinite(Y) & np.isfinite(pD_original)
+            valid_mask = (np.isfinite(time) & np.isfinite(pressure) & 
+                         np.isfinite(flow_rate) & np.isfinite(depression))
+            
             if not np.any(valid_mask):
                 self.show_warning("Ошибка", "Нет валидных данных для фильтрации")
                 return
             
-            Y_clean = Y[valid_mask]
-            pD_clean = pD_original[valid_mask]
+            time_clean = time[valid_mask]
+            pressure_clean = pressure[valid_mask]
+            flow_rate_clean = flow_rate[valid_mask]
+            depression_clean = depression[valid_mask]
             
-            # Вычисляем исходные метрики
-            snr_before = compute_snr(pD_clean)
+            # Сортируем по времени для правильной фильтрации
+            sort_idx = np.argsort(time_clean)
+            time_sorted = time_clean[sort_idx]
+            pressure_sorted = pressure_clean[sort_idx]
+            flow_rate_sorted = flow_rate_clean[sort_idx]
+            depression_sorted = depression_clean[sort_idx]
             
-            # Автоматический выбор и применение фильтра
-            filtered_pD = SignalFilters.denoise(pD_clean, method=None, x=Y_clean)
+            # Вычисляем исходные метрики для давления
+            snr_before = compute_snr(pressure_sorted)
+            
+            # Автоматический выбор и применение фильтра к исходным данным
+            # Используем время как координату x
+            filtered_pressure_sorted = SignalFilters.denoise(pressure_sorted, method=None, x=time_sorted)
+            filtered_flow_rate_sorted = SignalFilters.denoise(flow_rate_sorted, method=None, x=time_sorted)
+            filtered_depression_sorted = SignalFilters.denoise(depression_sorted, method=None, x=time_sorted)
             
             # Определяем, какой метод был выбран автоматически
-            selected_method = select_filter_method(pD_clean, Y_clean)
+            selected_method = select_filter_method(pressure_sorted, time_sorted)
             
-            # Применяем физические ограничения
-            filtered_pD = PhysicsConstraints.enforce_all(
-                filtered_pD,
-                x=Y_clean,
-                monotonic=True,
+            # Применяем физические ограничения к отфильтрованным данным
+            # Для давления: монотонность не критична, но ограничиваем кривизну
+            filtered_pressure_sorted = PhysicsConstraints.enforce_all(
+                filtered_pressure_sorted,
+                x=time_sorted,
+                monotonic=False,  # Давление может колебаться
                 limit_curvature=True,
                 remove_oscillations=True,
                 asymptotic_fix=True
             )
             
+            # Для депрессии: должна быть неотрицательной и не возрастающей
+            filtered_depression_sorted = PhysicsConstraints.enforce_all(
+                filtered_depression_sorted,
+                x=time_sorted,
+                monotonic=True,  # Депрессия должна быть не возрастающей
+                limit_curvature=True,
+                remove_oscillations=True,
+                asymptotic_fix=True
+            )
+            
+            # Восстанавливаем исходный порядок
+            filtered_pressure = np.zeros_like(pressure_clean)
+            filtered_flow_rate = np.zeros_like(flow_rate_clean)
+            filtered_depression = np.zeros_like(depression_clean)
+            
+            filtered_pressure[sort_idx] = filtered_pressure_sorted
+            filtered_flow_rate[sort_idx] = filtered_flow_rate_sorted
+            filtered_depression[sort_idx] = filtered_depression_sorted
+            
+            # Восстанавливаем полные массивы с исходными индексами
+            filtered_pressure_full = self.current_data.pressure.copy()
+            filtered_flow_rate_full = self.current_data.flow_rate.copy()
+            filtered_depression_full = self.current_data.depression.copy()
+            
+            # Создаем массив для восстановления исходного порядка
+            valid_indices = np.where(valid_mask)[0]
+            filtered_pressure_full.iloc[valid_indices] = filtered_pressure
+            filtered_flow_rate_full.iloc[valid_indices] = filtered_flow_rate
+            filtered_depression_full.iloc[valid_indices] = filtered_depression
+            
+            # Обновляем исходные данные
+            self.current_data.pressure = filtered_pressure_full
+            self.current_data.flow_rate = filtered_flow_rate_full
+            self.current_data.depression = filtered_depression_full
+            
             # Вычисляем метрики после фильтрации
-            snr_after = compute_snr(filtered_pD)
+            snr_after = compute_snr(filtered_pressure)
             snr_improvement = snr_after - snr_before
             
             # Вычисляем RMSE и другие метрики
-            rmse = np.sqrt(np.mean((pD_clean - filtered_pD) ** 2))
-            mae = np.mean(np.abs(pD_clean - filtered_pD))
+            rmse = np.sqrt(np.mean((pressure_clean - filtered_pressure) ** 2))
+            mae = np.mean(np.abs(pressure_clean - filtered_pressure))
             
             # Вычисляем относительную ошибку и точность
-            pD_range = np.max(pD_clean) - np.min(pD_clean)
-            relative_error = (rmse / pD_range * 100) if pD_range > 0 else 0.0
+            pressure_range = np.max(pressure_clean) - np.min(pressure_clean)
+            relative_error = (rmse / pressure_range * 100) if pressure_range > 0 else 0.0
             accuracy = max(0, 100 - relative_error)
-            
-            # Восстанавливаем давление из отфильтрованного pD
-            delta_p_i = dim_data.delta_p_i
-            if delta_p_i > 0:
-                try:
-                    interp_func = interp1d(Y_clean, filtered_pD, kind='linear', 
-                                         bounds_error=False, fill_value='extrapolate')
-                    pD_filtered_interp = interp_func(Y)
-                    
-                    pressure_initial = self.current_data.pressure.iloc[0] if len(self.current_data.pressure) > 0 else 0
-                    delta_p_filtered = pD_filtered_interp * delta_p_i
-                    pressure_filtered = pressure_initial - delta_p_filtered
-                    
-                    self.current_data.pressure = pd.Series(
-                        pressure_filtered, 
-                        index=self.current_data.pressure.index
-                    )
-                except Exception as interp_error:
-                    print(f"Предупреждение: не удалось восстановить давление: {interp_error}")
             
             # Сохраняем информацию о фильтрации для вывода в отчёте
             method_names = {
+                'lowess': 'LOWESS (RLOESS)',
                 'savgol': 'Savitzky-Golay',
                 'gaussian': 'Gaussian',
                 'kalman': 'Kalman',
@@ -1540,7 +1560,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 'mae': mae,
                 'relative_error': relative_error,
                 'accuracy': accuracy,
-                'n_points': len(Y_clean)
+                'n_points': len(pressure_clean)
             }
             
             # Формируем отчёт

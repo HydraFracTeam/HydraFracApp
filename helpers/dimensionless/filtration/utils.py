@@ -11,10 +11,11 @@ from typing import Tuple, Dict, Optional
 def compute_snr(signal: np.ndarray, noise_estimate: Optional[np.ndarray] = None) -> float:
     """
     Вычисляет отношение сигнал/шум (SNR) в децибелах.
+    Согласно контракту: использовать std(diff(signal)) или MAD для оценки шума.
     
     Args:
         signal: Входной сигнал
-        noise_estimate: Оценка шума (если None, используется стандартное отклонение)
+        noise_estimate: Оценка шума (если None, вычисляется через std(diff(signal)))
     
     Returns:
         SNR в децибелах
@@ -26,20 +27,37 @@ def compute_snr(signal: np.ndarray, noise_estimate: Optional[np.ndarray] = None)
         return 0.0
     
     signal_clean = signal[valid_mask]
+    
+    if len(signal_clean) < 2:
+        return 0.0
+    
     signal_power = np.mean(signal_clean ** 2)
     
     if noise_estimate is not None:
-        noise_clean = noise_estimate[valid_mask]
-        noise_power = np.mean(noise_clean ** 2)
+        noise_clean = noise_estimate[valid_mask] if len(noise_estimate) == len(signal) else noise_estimate
+        noise_power = np.mean(noise_clean ** 2) if isinstance(noise_clean, np.ndarray) else noise_clean ** 2
     else:
-        # Используем стандартное отклонение как оценку шума
-        noise_power = np.var(signal_clean)
+        # Согласно контракту: noise_estimate = std(diff(signal)) or MAD
+        diffs = np.diff(signal_clean)
+        if len(diffs) > 0:
+            noise_estimate_value = np.std(diffs)
+        else:
+            # Fallback: используем MAD
+            median = np.median(signal_clean)
+            mad = np.median(np.abs(signal_clean - median))
+            noise_estimate_value = 1.4826 * mad if mad > 0 else np.std(signal_clean)
+        
+        noise_power = noise_estimate_value ** 2
     
     if noise_power == 0:
-        return np.inf if signal_power > 0 else 0.0
+        return 100.0 if signal_power > 0 else 0.0
     
-    snr_linear = signal_power / noise_power
-    snr_db = 10 * np.log10(snr_linear)
+    snr_linear = signal_power / (noise_power + 1e-12)  # Добавляем eps для стабильности
+    
+    if snr_linear > 1e10:
+        snr_db = 100.0
+    else:
+        snr_db = 10 * np.log10(snr_linear)
     
     return float(snr_db)
 
@@ -47,7 +65,8 @@ def compute_snr(signal: np.ndarray, noise_estimate: Optional[np.ndarray] = None)
 def compute_oscillation_score(signal: np.ndarray, x: Optional[np.ndarray] = None) -> float:
     """
     Вычисляет оценку осцилляций в сигнале.
-    Основана на подсчёте изменений знака второй производной.
+    Улучшенная версия: учитывает не только количество изменений знака,
+    но и их амплитуду относительно масштаба сигнала.
     
     Args:
         signal: Входной сигнал
@@ -59,40 +78,60 @@ def compute_oscillation_score(signal: np.ndarray, x: Optional[np.ndarray] = None
     signal = np.asarray(signal)
     valid_mask = np.isfinite(signal)
     
-    if not np.any(valid_mask) or np.sum(valid_mask) < 3:
+    if not np.any(valid_mask) or np.sum(valid_mask) < 5:
         return 0.0
     
     signal_clean = signal[valid_mask]
     
     if x is not None:
         x_clean = np.asarray(x)[valid_mask]
-        if len(x_clean) < 3:
+        if len(x_clean) < 5:
             return 0.0
-        second_deriv = np.gradient(np.gradient(signal_clean, x_clean), x_clean)
+        # Вычисляем первую и вторую производные
+        first_deriv = np.gradient(signal_clean, x_clean)
+        second_deriv = np.gradient(first_deriv, x_clean)
     else:
-        second_deriv = np.gradient(np.gradient(signal_clean))
+        first_deriv = np.gradient(signal_clean)
+        second_deriv = np.gradient(first_deriv)
     
     second_deriv = second_deriv[np.isfinite(second_deriv)]
     
-    if len(second_deriv) < 2:
+    if len(second_deriv) < 3:
         return 0.0
+    
+    # Нормализуем вторую производную относительно масштаба сигнала
+    signal_range = np.max(signal_clean) - np.min(signal_clean)
+    if signal_range < 1e-10:
+        return 0.0
+    
+    # Относительная вторая производная
+    normalized_second_deriv = np.abs(second_deriv) / signal_range
     
     # Подсчитываем изменения знака второй производной
     sign_changes = np.sum(np.diff(np.sign(second_deriv)) != 0)
     
-    # Нормализуем по длине сигнала
-    oscillation_score = sign_changes / len(second_deriv)
+    # Учитываем амплитуду осцилляций: средняя амплитуда нормализованной второй производной
+    mean_amplitude = np.mean(normalized_second_deriv)
+    
+    # Комбинированная оценка: учитываем и частоту, и амплитуду осцилляций
+    # Для данных ГРП нормальные изменения кривизны не должны считаться осцилляциями
+    frequency_score = sign_changes / len(second_deriv)
+    amplitude_score = mean_amplitude * 10.0  # Масштабируем для сопоставимости
+    
+    # Осцилляции значимы только если и частота, и амплитуда высоки
+    oscillation_score = frequency_score * (1.0 + amplitude_score)
     
     return float(oscillation_score)
 
 
-def detect_log_scale(signal: np.ndarray, threshold: float = 10.0) -> bool:
+def detect_log_scale(signal: np.ndarray, threshold: float = 3.0) -> bool:
     """
     Определяет, нужно ли применять фильтрацию в логарифмическом масштабе.
+    Согласно контракту: threshold = 3.0 (3 порядка), не 10.0.
     
     Args:
         signal: Входной сигнал
-        threshold: Порог для определения (если диапазон > threshold порядков, то нужен log)
+        threshold: Порог для определения в порядках (по умолчанию 3.0 = 3 порядка)
     
     Returns:
         True, если нужна фильтрация в log-масштабе
@@ -110,9 +149,12 @@ def detect_log_scale(signal: np.ndarray, threshold: float = 10.0) -> bool:
     if signal_min <= 0:
         return False
     
+    # Согласно контракту: return (np.log10(signal_max / signal_min) > threshold)
+    # где threshold = 3.0 по умолчанию (3 порядка)
     ratio = signal_max / signal_min
+    log_ratio = np.log10(ratio)
     
-    return ratio > (10.0 ** threshold)
+    return log_ratio > threshold
 
 
 def estimate_noise_level(signal: np.ndarray, method: str = 'median') -> float:
@@ -154,16 +196,17 @@ def select_filter_method(
     signal: np.ndarray,
     x: Optional[np.ndarray] = None,
     snr_threshold: float = 20.0,
-    oscillation_threshold: float = 0.3
+    oscillation_threshold: float = 0.6  # Согласно контракту: 0.6 для Kalman
 ) -> str:
     """
     Автоматически выбирает метод фильтрации на основе характеристик сигнала.
+    Согласно контракту: Kalman только если oscillation_score > 0.6 and snr < 10.
     
     Args:
         signal: Входной сигнал
         x: Координаты
         snr_threshold: Порог SNR для выбора метода
-        oscillation_threshold: Порог осцилляций
+        oscillation_threshold: Порог осцилляций для Kalman (0.6 согласно контракту)
     
     Returns:
         Название метода фильтрации ('savgol', 'gaussian', 'kalman', 'log_domain', 'hybrid')
@@ -179,21 +222,31 @@ def select_filter_method(
     # Вычисляем характеристики
     snr = compute_snr(signal_clean)
     oscillation_score = compute_oscillation_score(signal_clean, x[valid_mask] if x is not None else None)
-    use_log = detect_log_scale(signal_clean)
+    use_log = detect_log_scale(signal_clean, threshold=3.0)  # Согласно контракту: 3 порядка
     
-    # Логика выбора
+    # Логика выбора согласно контракту
     if use_log:
         return 'log_domain'
     
-    if oscillation_score > oscillation_threshold:
-        return 'kalman'  # Калман лучше для нестационарного шума
+    # Согласно контракту: Kalman только если oscillation_score > 0.6 and snr < 10
+    if oscillation_score > oscillation_threshold and snr < 10.0:
+        return 'kalman'
+    
+    # Для PTA рекомендуется LOWESS вместо SavGol
+    # Проверяем доступность LOWESS
+    try:
+        from statsmodels.nonparametric.smoothers_lowess import lowess
+        lowess_available = True
+    except ImportError:
+        lowess_available = False
     
     if snr > snr_threshold:
-        return 'savgol'  # SavGol для слабого шума
+        # Предпочитаем LOWESS для PTA, fallback на SavGol
+        return 'lowess' if lowess_available else 'savgol'
     elif snr > 10.0:
-        return 'gaussian'  # Gaussian для умеренного шума
+        return 'gaussian'
     else:
-        return 'hybrid'  # Hybrid по умолчанию
+        return 'hybrid'
 
 
 def fill_missing_values(

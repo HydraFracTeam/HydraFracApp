@@ -24,8 +24,9 @@ class PhysicsConstraints:
         direction: str = 'non_increasing'
     ) -> np.ndarray:
         """
-        Восстанавливает монотонность кривой.
+        Восстанавливает монотонность кривой мягким способом.
         Для pD кривых типично не возрастающее поведение.
+        Использует сглаживание вместо жёсткого maximum.accumulate.
         
         Args:
             curve: Входная кривая
@@ -53,14 +54,37 @@ class PhysicsConstraints:
             x_sorted = np.arange(len(curve_clean))
             curve_sorted = curve_clean.copy()
         
+        n = len(curve_sorted)
+        if n < 2:
+            result = curve.copy()
+            result[valid_mask] = curve_sorted
+            return result
+        
+        # Согласно контракту: использовать np.maximum.accumulate для non_increasing
+        # Для не возрастающей функции (справа налево): maximum.accumulate(curve_sorted[::-1])[::-1]
         if direction == 'non_increasing':
-            # Применяем монотонное не возрастание (идём справа налево)
+            # Применяем maximum.accumulate справа налево, затем разворачиваем
             curve_monotonic = np.maximum.accumulate(curve_sorted[::-1])[::-1]
         elif direction == 'non_decreasing':
-            # Применяем монотонное не убывание
+            # Для не убывающей функции
             curve_monotonic = np.maximum.accumulate(curve_sorted)
         else:
             raise ValueError(f"Неизвестное направление: {direction}")
+        
+        # Мягкое сглаживание для устранения ступенчатости от maximum.accumulate
+        # Используем очень легкое сглаживание, чтобы не нарушить монотонность и не создать артефакты
+        # Смешиваем исходную монотонную кривую с очень легким сглаживанием
+        from scipy.ndimage import uniform_filter1d
+        curve_smoothed = uniform_filter1d(curve_monotonic, size=3, mode='nearest')
+        
+        # Смешиваем: 95% монотонной, 5% сглаженной - очень мягко
+        curve_monotonic = 0.95 * curve_monotonic + 0.05 * curve_smoothed
+        
+        # Восстанавливаем монотонность после смешивания (на случай нарушения)
+        if direction == 'non_increasing':
+            curve_monotonic = np.maximum.accumulate(curve_monotonic[::-1])[::-1]
+        else:
+            curve_monotonic = np.maximum.accumulate(curve_monotonic)
         
         # Восстанавливаем исходный порядок
         if x is not None:
@@ -96,25 +120,48 @@ class PhysicsConstraints:
             return curve
         
         curve_clean = curve[valid_mask]
+        n = len(curve_clean)
         
         if x is not None:
             x_clean = np.asarray(x)[valid_mask]
-            if len(x_clean) < 3:
+            if len(x_clean) < 3 or len(x_clean) != n:
                 return curve
-            second_deriv = np.gradient(np.gradient(curve_clean, x_clean), x_clean)
+            # Вычисляем вторую производную правильно
+            first_deriv = np.gradient(curve_clean, x_clean)
+            second_deriv = np.gradient(first_deriv, x_clean)
         else:
-            second_deriv = np.gradient(np.gradient(curve_clean))
+            # Вычисляем вторую производную правильно
+            first_deriv = np.gradient(curve_clean)
+            second_deriv = np.gradient(first_deriv)
         
-        # Ограничиваем вторую производную
-        second_deriv_clipped = np.clip(second_deriv, -max_curvature, max_curvature)
+        # Нормализуем кривизну относительно масштаба данных
+        curve_range = np.max(curve_clean) - np.min(curve_clean)
+        if curve_range < 1e-10:
+            return curve
         
-        # Восстанавливаем кривую интегрированием
-        # Интегрируем дважды (с учётом граничных условий)
-        first_deriv = np.cumsum(second_deriv_clipped) * (x_clean[1] - x_clean[0] if x is not None else 1.0)
-        first_deriv = first_deriv - first_deriv[0]  # Нормализация
+        # Относительная кривизна (нормализованная)
+        normalized_curvature = np.abs(second_deriv) / curve_range
         
-        curve_restored = np.cumsum(first_deriv) * (x_clean[1] - x_clean[0] if x is not None else 1.0)
-        curve_restored = curve_restored - curve_restored[0] + curve_clean[0]  # Сохраняем начальное значение
+        # Находим точки с чрезмерной кривизной (только очень явные нарушения)
+        # Увеличиваем порог, чтобы не трогать нормальную кривизну
+        high_curvature_mask = normalized_curvature > (max_curvature * 2.0)
+        
+        if not np.any(high_curvature_mask):
+            # Кривизна в норме, возвращаем исходную кривую
+            return curve
+        
+        # Очень мягкое сглаживание только в проблемных областях
+        from scipy.ndimage import uniform_filter1d
+        smoothed = uniform_filter1d(curve_clean, size=3, mode='nearest')  # Маленькое окно
+        
+        # Применяем сглаживание только в проблемных областях, смешивая с исходным
+        # Очень мягко, чтобы не создать артефакты
+        curve_restored = curve_clean.copy()
+        # Смешиваем исходное и сглаженное (95% исходного, 5% сглаженного) - очень мягко
+        curve_restored[high_curvature_mask] = (
+            0.95 * curve_clean[high_curvature_mask] + 
+            0.05 * smoothed[high_curvature_mask]
+        )
         
         result = curve.copy()
         result[valid_mask] = curve_restored
@@ -172,11 +219,15 @@ class PhysicsConstraints:
         gradient_mag = np.abs(np.gradient(curve_clean))
         # Можно усилить условие, но пока просто используем sign_change
         
-        # Сглаживаем только в зонах осцилляций
+        # Сглаживаем только в зонах осцилляций - очень мягко, чтобы не создать артефакты
         if np.any(oscillation_mask):
             from scipy.ndimage import uniform_filter1d
             smoothed = uniform_filter1d(curve_clean, size=window_size, mode='nearest')
-            curve_clean[oscillation_mask] = smoothed[oscillation_mask]
+            # Смешиваем: 90% исходного, 10% сглаженного - очень мягко
+            curve_clean[oscillation_mask] = (
+                0.9 * curve_clean[oscillation_mask] + 
+                0.1 * smoothed[oscillation_mask]
+            )
         
         # Восстанавливаем результат
         result = curve.copy()
@@ -218,21 +269,22 @@ class PhysicsConstraints:
         
         result_clean = curve_clean.copy()
         
-        # Ранний режим: сглаживание первых точек
+        # Ранний режим: очень мягкое сглаживание первых точек
+        # НЕ заменяем на среднее, а только слегка сглаживаем, чтобы не создать "рост из (0,0)"
         if early_window > 0 and n >= early_window:
-            early_mean = np.mean(curve_clean[:early_window])
-            # Плавный переход к среднему значению
-            for i in range(min(early_window, n)):
-                alpha = i / early_window
-                result_clean[i] = alpha * curve_clean[i] + (1 - alpha) * early_mean
+            from scipy.ndimage import uniform_filter1d
+            # Очень легкое сглаживание только первых точек
+            smoothed_early = uniform_filter1d(curve_clean[:early_window], size=3, mode='nearest')
+            # Смешиваем: 95% исходного, 5% сглаженного - очень мягко
+            result_clean[:early_window] = 0.95 * curve_clean[:early_window] + 0.05 * smoothed_early
         
-        # Поздний режим: сглаживание последних точек
+        # Поздний режим: очень мягкое сглаживание последних точек
         if late_window > 0 and n >= late_window:
-            late_mean = np.mean(curve_clean[-late_window:])
-            # Плавный переход к среднему значению
-            for i in range(max(0, n - late_window), n):
-                alpha = (i - (n - late_window)) / late_window
-                result_clean[i] = alpha * curve_clean[i] + (1 - alpha) * late_mean
+            from scipy.ndimage import uniform_filter1d
+            # Очень легкое сглаживание только последних точек
+            smoothed_late = uniform_filter1d(curve_clean[-late_window:], size=3, mode='nearest')
+            # Смешиваем: 95% исходного, 5% сглаженного - очень мягко
+            result_clean[-late_window:] = 0.95 * curve_clean[-late_window:] + 0.05 * smoothed_late
         
         result = curve.copy()
         result[valid_mask] = result_clean
