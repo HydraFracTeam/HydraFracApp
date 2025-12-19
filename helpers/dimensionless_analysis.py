@@ -95,7 +95,27 @@ class DimensionlessConverter:
         t = time.values
         p = pressure.values
         q = flow_rate.values
-        dP = depression.values
+        
+        # Обработка depression: если None, вычисляем из давления
+        if depression is None:
+            # Вычисляем приращение давления из самого давления
+            dP = np.diff(p, prepend=p[0]) if len(p) > 0 else np.array([])
+            # Логируем предупреждение
+            try:
+                from helpers.math_error_logger import log_math_error
+                log_math_error(
+                    subsystem="dimensionless_conversion",
+                    method="convert_to_dimensionless",
+                    error_type="missing_depression",
+                    error_value=0.0,
+                    error_message="depression is None, computed from pressure",
+                    data_volume=len(p),
+                    data_quality=1.0 - (np.sum(np.isnan(p)) / len(p)) if len(p) > 0 else 0.0
+                )
+            except Exception:
+                pass  # Не прерываем выполнение при ошибке логирования
+        else:
+            dP = depression.values
         
         # Средний дебит (используется только для режима 'constant')
         Q = flow_rate.mean() if not flow_rate.empty else 1.0

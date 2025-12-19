@@ -24,6 +24,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtTest import QTest
 
 from schemas.well_data import WellTimeSeries
+from helpers.math_error_logger import log_computation_error, get_logger
 
 
 @pytest.fixture(scope="module")
@@ -107,6 +108,14 @@ class TestGUILoadPlotButton:
             except Exception as e:
                 exception_count += 1
                 print(f"Итерация {i}: исключение {e}")
+                # Логируем ошибку
+                log_computation_error(
+                    subsystem="gui",
+                    method="plot_dimensionless_selected",
+                    exception=e,
+                    data_volume=len(app.current_data.time) if app.current_data else None,
+                    context={"iteration": i, "test": "test_1000_clicks_plot_button_stability"}
+                )
                 if exception_count > 10:
                     pytest.fail(f"Слишком много исключений после {i} итераций")
         
@@ -216,6 +225,14 @@ class TestGUILoadInterpolation:
             except Exception as e:
                 exception_count += 1
                 print(f"Итерация {i}: исключение {e}")
+                # Логируем ошибку
+                log_computation_error(
+                    subsystem="gui",
+                    method="interpolate_data",
+                    exception=e,
+                    data_volume=len(app.current_data.time) if app.current_data else None,
+                    context={"iteration": i, "test": "test_100_clicks_interpolation_no_hang"}
+                )
                 if exception_count > 5:
                     pytest.fail(f"Слишком много исключений после {i} итераций")
         

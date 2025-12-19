@@ -6,6 +6,8 @@ from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from scipy.interpolate import RBFInterpolator
 from sklearn.metrics import mean_squared_error
 
+from helpers.math_error_logger import log_math_error, log_metric_error, log_computation_error
+
 
 class DimensionlessCurveInterpolator:
     """
@@ -177,6 +179,14 @@ class DimensionlessCurveInterpolator:
                             preds = model(param_grid_full_2d)
                         except (np.linalg.LinAlgError, ValueError) as e:
                             # Singular matrix или другая ошибка - fallback на линейную регрессию
+                            log_computation_error(
+                                subsystem="interpolation",
+                                method="rbf",
+                                exception=e,
+                                data_volume=len(param_grid_valid),
+                                data_quality=1.0 - (np.sum(np.isnan(y_values_valid)) / len(y_values_valid)) if len(y_values_valid) > 0 else 0.0,
+                                context={"point_idx": i, "n_samples": len(param_grid_valid)}
+                            )
                             model = LinearRegression().fit(param_grid_valid if param_grid_valid.ndim > 1 else param_grid_valid.reshape(-1, 1), y_values_valid)
                             preds = model.predict(self.param_grid if self.param_grid.ndim > 1 else self.param_grid.reshape(-1, 1))
                 elif method == "gp":
@@ -276,15 +286,36 @@ class DimensionlessCurveInterpolator:
                 best_models = models
 
         # Сохраняем лучший результат
-        # Если ни один метод не прошел проверку стабильности, используем fallback
+            # Если ни один метод не прошел проверку стабильности, используем fallback
         if best_models is None:
             if fallback_models is not None:
                 self.best_method = fallback_method
                 self.models = fallback_models
                 print(f"Предупреждение: ни один метод не прошел проверку стабильности. "
                       f"Используется fallback метод '{fallback_method}' с RMSE={fallback_rmse:.4f}")
+                
+                # Логируем предупреждение о fallback
+                log_math_error(
+                    subsystem="interpolation",
+                    method=fallback_method,
+                    error_type="stability_warning",
+                    error_value=fallback_rmse,
+                    error_message="Использован fallback метод из-за нестабильности",
+                    data_volume=n_samples,
+                    data_quality=1.0 - (np.sum(np.isnan(P_curves_proc)) / P_curves_proc.size) if P_curves_proc.size > 0 else 0.0,
+                    metadata={"fallback_rmse": fallback_rmse, "n_points": n_points}
+                )
             else:
-                raise RuntimeError("Не удалось обучить ни один метод интерполяции")
+                error_msg = "Не удалось обучить ни один метод интерполяции"
+                log_computation_error(
+                    subsystem="interpolation",
+                    method="all",
+                    exception=RuntimeError(error_msg),
+                    data_volume=n_samples,
+                    data_quality=1.0 - (np.sum(np.isnan(P_curves_proc)) / P_curves_proc.size) if P_curves_proc.size > 0 else 0.0,
+                    context={"n_points": n_points, "n_samples": n_samples}
+                )
+                raise RuntimeError(error_msg)
         else:
             self.best_method = best_method
             self.models = best_models
@@ -320,11 +351,52 @@ class DimensionlessCurveInterpolator:
             "message": f"Выбран метод '{self.best_method}' с RMSE={self.rmse_scores.get(self.best_method, 0):.4f}"
         }
 
-    def predict(self, skin: float, N: float, a_L: float) -> pd.Series:
-        """Получение интерполированной безразмерной кривой для заданных параметров."""
+    def fit_xy(self, param_grid: np.ndarray, Y_grid: np.ndarray, X_curves: np.ndarray, Y_curves: np.ndarray):
+        """Обучение интерполяции на X-Y кривых."""
+        # Обучаем отдельные модели для X и Y
+        self.param_grid = np.asarray(param_grid)
+        self.Y_grid = np.asarray(Y_grid)
+        X_curves = np.asarray(X_curves)
+        Y_curves = np.asarray(Y_curves)
+        
+        # Обучаем модель для X
+        self.X_interpolator = DimensionlessCurveInterpolator(methods=self.methods, constraints=self.constraints)
+        self.X_interpolator.fit(param_grid, Y_grid, X_curves)
+        
+        # Обучаем модель для Y (Y обычно совпадает с Y_grid, но для консистентности обучаем отдельно)
+        self.Y_interpolator = DimensionlessCurveInterpolator(methods=self.methods, constraints=self.constraints)
+        self.Y_interpolator.fit(param_grid, Y_grid, Y_curves)
+        
+        self.is_fitted = True
+        self.best_method = self.X_interpolator.best_method  # Используем метод из X интерполятора
+        self.rmse_scores = self.X_interpolator.rmse_scores  # Используем метрики из X интерполятора
+        
+    def predict(self, skin: float, N: float, a_L: float) -> pd.DataFrame:
+        """Получение интерполированной X-Y кривой для заданных параметров."""
         if not self.is_fitted:
-            raise RuntimeError("Сначала вызови fit()")
+            raise RuntimeError("Сначала вызови fit() или fit_xy()")
+        
+        # Если обучены X-Y модели, используем их
+        if hasattr(self, 'X_interpolator') and hasattr(self, 'Y_interpolator'):
+            X_pred_series = self.X_interpolator.predict(skin, N, a_L)
+            Y_pred_series = self.Y_interpolator.predict(skin, N, a_L)
+            # X_pred и Y_pred - это Series, извлекаем значения
+            if isinstance(X_pred_series, pd.Series):
+                X_pred_values = X_pred_series.values
+                Y_pred_values = Y_pred_series.values
+                index = X_pred_series.index
+            else:
+                # Если это не Series, пытаемся преобразовать
+                X_pred_values = np.asarray(X_pred_series)
+                Y_pred_values = np.asarray(Y_pred_series)
+                index = self.Y_grid
+            return pd.DataFrame({'X': X_pred_values, 'Y': Y_pred_values}, index=index)
+        
+        # Иначе используем старый метод (для обратной совместимости)
+        if not hasattr(self, 'models') or len(self.models) == 0:
+            raise RuntimeError("Модель не обучена. Вызовите fit() или fit_xy()")
 
+        # Старый метод для обратной совместимости (pD интерполяция)
         X_pred = np.array([[skin, N, a_L]])
         
         # Проверяем, есть ли точное совпадение в обучающей выборке
@@ -457,8 +529,15 @@ class DimensionlessCurveInterpolator:
             raise ValueError("Skin вне реалистичного диапазона (-10..50)")
         if param_grid.shape[1] >= 2 and (np.any(param_grid[:, 1] < 1) or np.any(param_grid[:, 1] > 100)):
             raise ValueError("N вне диапазона 1..100")
-        if param_grid.shape[1] >= 3 and (np.any(param_grid[:, 2] < 0) or np.any(param_grid[:, 2] > 1)):
-            raise ValueError("a/L вне диапазона 0..1")
+        if param_grid.shape[1] >= 3:
+            # Для a/L: обрезаем значения до допустимого диапазона вместо выброса ошибки
+            invalid_a_l = (param_grid[:, 2] < 0) | (param_grid[:, 2] > 1)
+            if np.any(invalid_a_l):
+                n_invalid = np.sum(invalid_a_l)
+                print(f"Предупреждение: {n_invalid} кривых с a/L вне диапазона [0, 1]. "
+                      f"Значения будут обрезаны до допустимого диапазона.")
+                # Обрезаем значения до [0, 1]
+                param_grid[:, 2] = np.clip(param_grid[:, 2], 0.0, 1.0)
         if np.any(P_curves < 0):
             # Обрезаем отрицательные значения
             P_curves[P_curves < 0] = 0.0
@@ -698,7 +777,7 @@ class DimensionlessCurveInterpolator:
         # Mean Squared Error (MSE)
         mse = float(np.nanmean(diff ** 2))
 
-        return {
+        metrics = {
             "rmse": rmse, 
             "mae": mae, 
             "mape": mape,
@@ -708,3 +787,23 @@ class DimensionlessCurveInterpolator:
             "mean_error": mean_error,
             "mse": mse
         }
+        
+        # Логируем метрики ошибок
+        try:
+            data_volume = len(Y_eval) if len(Y_eval) > 0 else len(Y_pred)
+            # Оцениваем качество данных (чем меньше NaN/Inf, тем выше качество)
+            quality = np.sum(np.isfinite(P_pred_eval)) / len(P_pred_eval) if len(P_pred_eval) > 0 else 0.0
+            
+            log_metric_error(
+                subsystem="interpolation",
+                method=self.best_method or "unknown",
+                metrics=metrics,
+                data_volume=data_volume,
+                data_quality=quality,
+                metadata={"n_points": len(Y_eval), "method": self.best_method}
+            )
+        except Exception as e:
+            # Не прерываем выполнение при ошибке логирования
+            pass
+        
+        return metrics

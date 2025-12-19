@@ -5,34 +5,40 @@ import numpy as np
 from schemas.well_data import WellData, WellTimeSeries
 
 
-def parse_well_data(file_path: str) -> Tuple[Optional[List[WellTimeSeries]], Optional[str]]:
+def parse_well_data(file_path) -> Tuple[Optional[List[WellTimeSeries]], Optional[str]]:
     """
     Парсит файл с данными разведки месторождений (CSV или Parquet) и создает список WellTimeSeries.
     Ожидает формат: Skin, h, N, W, L, a/L, ElemIdx, X, Y, t, P, dP, Q
     Поддерживает несколько групп данных с разными параметрами скважин.
+    
+    :param file_path: путь к файлу (str) или DataFrame (pd.DataFrame)
     """
-    if not file_path:
-        return None, "Файл не выбран"
-
-    try:
-        print(f"Загрузка файла: {file_path}")
-        
-        # Определяем тип файла по расширению
-        if file_path.lower().endswith('.parquet'):
-            df = pd.read_parquet(file_path)
-        else:
-            # Для CSV файлов указываем кодировку и разделитель
-            try:
-                df = pd.read_csv(file_path, encoding='utf-8', sep=',', low_memory=False)
-            except UnicodeDecodeError:
-                # Пробуем другие кодировки
-                df = pd.read_csv(file_path, encoding='cp1251', sep=',', low_memory=False)
-        
-        print(f"Файл загружен: {len(df)} строк, {len(df.columns)} колонок")
-        
-    except Exception as exc:
-        return None, f"Ошибка чтения файла: {exc}"
-
+    # Проверяем, является ли file_path строкой или DataFrame
+    if isinstance(file_path, pd.DataFrame):
+        df = file_path.copy()
+        print(f"Использован переданный DataFrame: {len(df)} строк, {len(df.columns)} колонок")
+    elif isinstance(file_path, str):
+        if not file_path.strip():
+            return None, "Файл не выбран"
+        try:
+            print(f"Загрузка файла: {file_path}")
+            
+            # Определяем тип файла по расширению
+            if file_path.lower().endswith('.parquet'):
+                df = pd.read_parquet(file_path)
+            else:
+                # Для CSV файлов указываем кодировку и разделитель
+                try:
+                    df = pd.read_csv(file_path, encoding='utf-8', sep=',', low_memory=False)
+                except UnicodeDecodeError:
+                    # Пробуем другие кодировки
+                    df = pd.read_csv(file_path, encoding='cp1251', sep=',', low_memory=False)
+            
+            print(f"Файл загружен: {len(df)} строк, {len(df.columns)} колонок")
+        except Exception as exc:
+            return None, f"Ошибка чтения файла: {exc}"
+    else:
+        return None, "Неверный тип параметра file_path (ожидается str или pd.DataFrame)"
     if df.shape[0] < 1:
         return None, "Недостаточно строк в файле"
 

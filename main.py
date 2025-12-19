@@ -10,6 +10,8 @@ import pandas as pd
 import numpy as np
 from typing import Optional, Dict, List, Tuple, Any
 from scipy.interpolate import interp1d
+import pickle
+import os
 
 
 from ui import Ui_mainWindow
@@ -73,6 +75,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.last_fitted_XY = None  # Подогнанные X,Y с коэффициентами поправки
         self.last_fit_coefficients = None  # Коэффициенты подгонки (a для X, a_y, b, c для Y)
         self.original_calc_XY = None  # Оригинальные расчётные X,Y (до подгонки)
+        self.trained_interpolator = None  # Обученный интерполятор (может быть загружен из файла)
+        self.trained_interpolator_path = None  # Путь к загруженной модели
         
         # Создаем  интерфейс с вкладками
         setup_interface(self)
@@ -178,102 +182,774 @@ class MyApp(QMainWindow, Ui_mainWindow):
         report += separator + "\n"
         return report
     
+    def _detect_gaps_by_distance(self, time: np.ndarray, X: Optional[np.ndarray] = None, 
+                                   Y: Optional[np.ndarray] = None, threshold_factor: float = 1) -> np.ndarray:
+        """
+        Определяет пропуски по расстоянию между точками в пространстве времени и/или X-Y.
+        Если расстояние между двумя точками больше, чем threshold_factor * среднее расстояние
+        между этими точками и их соседями, то между ними пропуск.
+        
+        Логика: для каждой пары соседних точек (i, i+1) в отсортированном порядке:
+        - Вычисляем расстояние по времени: dt_i = time[i+1] - time[i]
+        - Вычисляем расстояние в X-Y пространстве: dXY_i = sqrt((X[i+1]-X[i])² + (Y[i+1]-Y[i])²)
+        - Вычисляем расстояния до соседей
+        - Если dt_i > threshold_factor * среднее(dt_prev, dt_next) ИЛИ 
+          dXY_i > threshold_factor * среднее(dXY_prev, dXY_next), то между i и i+1 пропуск
+        
+        Args:
+            time: Временные метки
+            X: Безразмерные X-координаты (опционально)
+            Y: Безразмерные Y-координаты (опционально)
+            threshold_factor: Множитель для определения пропусков (по умолчанию 1)
+        
+        Returns:
+            Маска пропусков (True где есть пропуск - точки между двумя точками с большим расстоянием)
+        """
+        if len(time) < 3:
+            return np.zeros(len(time), dtype=bool)
+        
+        # Сортируем по времени для анализа расстояний
+        time_argsorted = np.argsort(time)
+        time_sorted = time[time_argsorted]
+        
+        # Вычисляем расстояния между соседними точками в отсортированном порядке
+        dt = np.diff(time_sorted)
+        
+        if len(dt) == 0 or np.all(dt <= 0):
+            return np.zeros(len(time), dtype=bool)
+        
+        # Вычисляем расстояния в X-Y пространстве, если координаты предоставлены
+        dXY = None
+        if X is not None and Y is not None and len(X) == len(time) and len(Y) == len(time):
+            X_sorted = X[time_argsorted]
+            Y_sorted = Y[time_argsorted]
+            # Евклидово расстояние в X-Y пространстве
+            dX = np.diff(X_sorted)
+            dY = np.diff(Y_sorted)
+            dXY = np.sqrt(dX**2 + dY**2)
+        
+        # Определяем пропуски: если расстояние между двумя точками больше,
+        # чем расстояние между этими точками и их соседями
+        gap_mask = np.zeros(len(time), dtype=bool)
+        
+        for i in range(len(time_sorted) - 1):
+            dt_i = time_sorted[i + 1] - time_sorted[i]  # Расстояние по времени между текущей парой
+            
+            # Вычисляем расстояния до соседей по времени
+            dt_prev = dt[i - 1] if i > 0 else dt_i
+            dt_next = dt[i + 1] if i + 1 < len(dt) else dt_i
+            
+            # Среднее расстояние до соседей по времени
+            if i > 0 and i + 1 < len(dt):
+                neighbor_avg_dt = (dt_prev + dt_next) / 2.0
+            else:
+                neighbor_avg_dt = max(dt_prev, dt_next) if max(dt_prev, dt_next) > 0 else dt_i
+            
+            # Проверяем расстояние по времени
+            is_gap_by_time = dt_i > threshold_factor * neighbor_avg_dt and neighbor_avg_dt > 0
+            
+            # Проверяем расстояние в X-Y пространстве, если координаты предоставлены
+            is_gap_by_xy = False
+            if dXY is not None and len(dXY) > i:
+                dXY_i = dXY[i]  # Расстояние в X-Y пространстве между текущей парой
+                
+                # Вычисляем расстояния до соседей в X-Y пространстве
+                dXY_prev = dXY[i - 1] if i > 0 else dXY_i
+                dXY_next = dXY[i + 1] if i + 1 < len(dXY) else dXY_i
+                
+                # Среднее расстояние до соседей в X-Y пространстве
+                if i > 0 and i + 1 < len(dXY):
+                    neighbor_avg_dXY = (dXY_prev + dXY_next) / 2.0
+                else:
+                    neighbor_avg_dXY = max(dXY_prev, dXY_next) if max(dXY_prev, dXY_next) > 0 else dXY_i
+                
+                is_gap_by_xy = dXY_i > threshold_factor * neighbor_avg_dXY and neighbor_avg_dXY > 0
+            
+            # Если расстояние по времени ИЛИ по X-Y превышает порог, то это пропуск
+            if is_gap_by_time or is_gap_by_xy:
+                # Это пропуск - помечаем все точки между time_argsorted[i] и time_argsorted[i+1]
+                # в исходном порядке как пропуски
+                start_orig_idx = time_argsorted[i]
+                end_orig_idx = time_argsorted[i + 1]
+                
+                # Находим все индексы между start и end в исходном порядке
+                if start_orig_idx < end_orig_idx:
+                    # Помечаем все точки между start и end как пропуски
+                    gap_mask[start_orig_idx + 1:end_orig_idx] = True
+                else:
+                    # Если индексы перепутаны (не должно быть при сортировке, но на всякий случай)
+                    gap_mask[end_orig_idx + 1:start_orig_idx] = True
+        
+        return gap_mask
+    
+    def _get_Y_at_time(self, dim_data, time_array: np.ndarray, t_query: float) -> float:
+        """
+        Получает Y-координату для заданного времени t_query.
+        
+        Args:
+            dim_data: Объект с атрибутами Y и t (или time)
+            time_array: Массив временных меток
+            t_query: Запрос времени
+        
+        Returns:
+            Y-координата для времени t_query
+        """
+        # Проверяем, есть ли прямое соответствие t->Y
+        if hasattr(dim_data, 't') and len(dim_data.t) == len(dim_data.Y):
+            from scipy.interpolate import interp1d
+            f = interp1d(dim_data.t, dim_data.Y, kind='linear', bounds_error=False, fill_value=np.nan)
+            return float(f(t_query))
+        elif len(time_array) == len(dim_data.Y):
+            # Используем time_array как маппинг
+            from scipy.interpolate import interp1d
+            # Удаляем NaN для интерполяции
+            valid_mask = np.isfinite(time_array) & np.isfinite(dim_data.Y)
+            if np.sum(valid_mask) < 2:
+                # Fallback: используем ближайшее значение
+                idx = np.argmin(np.abs(time_array - t_query))
+                return float(dim_data.Y[idx]) if idx < len(dim_data.Y) else np.nan
+            
+            f = interp1d(time_array[valid_mask], dim_data.Y[valid_mask], 
+                       kind='linear', bounds_error=False, fill_value=np.nan)
+            result = f(t_query)
+            return float(result) if np.isfinite(result) else np.nan
+        else:
+            # Fallback: используем ближайшее значение по времени
+            idx = np.argmin(np.abs(time_array - t_query))
+            return float(dim_data.Y[idx]) if idx < len(dim_data.Y) else np.nan
+    
+    def _detect_neighbor_copy(self, pred_values: np.ndarray, original_values: np.ndarray, 
+                             gaps_indices: np.ndarray, eps: float = 1e-8) -> float:
+        """
+        Определяет, копирует ли предсказание значения соседей.
+        
+        Returns:
+            Доля предсказаний, которые равны соседям (должна быть < 0.1)
+        """
+        if len(pred_values) == 0 or len(gaps_indices) == 0:
+            return 0.0
+        
+        neighbor_copy_count = 0
+        for i, idx in enumerate(gaps_indices):
+            if i >= len(pred_values):
+                continue
+            
+            pred_val = pred_values[i]
+            if not np.isfinite(pred_val):
+                continue
+            
+            # Проверяем левого соседа
+            if idx > 0 and np.isfinite(original_values[idx - 1]):
+                if np.abs(pred_val - original_values[idx - 1]) <= eps:
+                    neighbor_copy_count += 1
+                    continue
+            
+            # Проверяем правого соседа
+            if idx < len(original_values) - 1 and np.isfinite(original_values[idx + 1]):
+                if np.abs(pred_val - original_values[idx + 1]) <= eps:
+                    neighbor_copy_count += 1
+                    continue
+        
+        return neighbor_copy_count / len(pred_values) if len(pred_values) > 0 else 0.0
+    
+    def _local_interpolation_Y_space(self, Y_grid: np.ndarray, P_values: np.ndarray, 
+                                     Y_target: np.ndarray) -> np.ndarray:
+        """
+        Локальная интерполяция в Y-пространстве с использованием PCHIP (сохраняет монотонность).
+        
+        Args:
+            Y_grid: Сетка Y-координат (должна быть монотонной)
+            P_values: Значения давления на Y_grid
+            Y_target: Целевые Y-координаты для интерполяции
+        
+        Returns:
+            Интерполированные значения давления
+        """
+        from scipy.interpolate import PchipInterpolator, interp1d
+        
+        # Проверяем упорядоченность
+        if not np.all(np.diff(Y_grid) >= 0) and not np.all(np.diff(Y_grid) <= 0):
+            # Если не монотонна, сортируем
+            sort_idx = np.argsort(Y_grid)
+            Y_grid = Y_grid[sort_idx]
+            P_values = P_values[sort_idx]
+        
+        # Удаляем NaN
+        valid_mask = np.isfinite(Y_grid) & np.isfinite(P_values)
+        if np.sum(valid_mask) < 2:
+            # Fallback на линейную интерполяцию
+            return np.interp(Y_target, Y_grid[valid_mask], P_values[valid_mask])
+        
+        Y_valid = Y_grid[valid_mask]
+        P_valid = P_values[valid_mask]
+        
+        # Используем PCHIP для сохранения монотонности
+        try:
+            pchip = PchipInterpolator(Y_valid, P_valid, extrapolate=False)
+            result = pchip(Y_target)
+            # Для точек вне диапазона используем clamp
+            y_min, y_max = Y_valid.min(), Y_valid.max()
+            result[Y_target < y_min] = P_valid[Y_valid == y_min][0] if len(P_valid[Y_valid == y_min]) > 0 else np.nan
+            result[Y_target > y_max] = P_valid[Y_valid == y_max][-1] if len(P_valid[Y_valid == y_max]) > 0 else np.nan
+            return result
+        except Exception:
+            # Fallback на линейную интерполяцию
+            return np.interp(Y_target, Y_valid, P_valid)
+    
+    def _find_complete_curves(self) -> List[Tuple[int, WellTimeSeries]]:
+        """
+        Находит кривые без пропусков в загруженных данных.
+        
+        Returns:
+            Список кортежей (индекс, WellTimeSeries) для кривых без пропусков
+        """
+        complete_curves = []
+        for idx, well_data in enumerate(self.loaded_data):
+            # Проверяем наличие пропусков
+            has_nan = (well_data.pressure.isna().any() or 
+                      well_data.flow_rate.isna().any())
+            
+            # Проверяем большие расстояния (без X-Y для простоты)
+            time_gaps = self._detect_gaps_by_distance(
+                well_data.time.values,
+                threshold_factor=3.0
+            )
+            
+            if not has_nan and not np.any(time_gaps):
+                complete_curves.append((idx, well_data))
+        
+        return complete_curves
+    
+    def on_train_interpolator(self) -> None:
+        """Обучает интерполятор на загруженных данных без пропусков"""
+        if not self.loaded_data:
+            self.show_info("Ошибка", "Нет загруженных данных для обучения")
+            return
+        
+        try:
+            # Находим кривые без пропусков
+            complete_curves = self._find_complete_curves()
+            
+            if len(complete_curves) < 2:
+                self.show_info("Ошибка", 
+                    f"Недостаточно кривых без пропусков для обучения. Найдено: {len(complete_curves)}. Требуется минимум 2.")
+                return
+            
+            # Подготавливаем данные для обучения на X-Y кривых
+            param_grid_list = []
+            X_curves_list = []
+            Y_curves_list = []
+            Y_grid_common = None
+            
+            for idx, well_data in complete_curves:
+                # Не пропускаем кривые с невалидным a/L - валидация в _validate_input_ranges обрежет значения
+                try:
+                    params = self._get_params(well_data)
+                    
+                    # Конвертируем в безразмерные параметры
+                    dim_data = convert_to_dimensionless_curves(
+                        well_data.time, well_data.pressure, well_data.flow_rate,
+                        well_data.depression, params, x_mode='alt'
+                    )
+                    
+                    # Инициализируем X и Y значения
+                    x_values = None
+                    y_values = None
+                    
+                    # Используем первый Y_grid как общий (должны быть одинаковыми)
+                    if Y_grid_common is None:
+                        Y_grid_common = dim_data.Y.copy()
+                        # Для первой кривой просто используем её значения
+                        x_values = dim_data.X.copy()
+                        y_values = dim_data.Y.copy()
+                    elif len(dim_data.Y) != len(Y_grid_common):
+                        # Если длины не совпадают, интерполируем на общую сетку
+                        from scipy.interpolate import interp1d
+                        interp_X = interp1d(dim_data.Y, dim_data.X,
+                                           kind='linear', bounds_error=False, fill_value='extrapolate')
+                        interp_Y = interp1d(dim_data.Y, dim_data.Y,
+                                           kind='linear', bounds_error=False, fill_value='extrapolate')
+                        x_values = interp_X(Y_grid_common)
+                        y_values = Y_grid_common  # Y уже на общей сетке
+                    else:
+                        x_values = dim_data.X.copy()
+                        y_values = dim_data.Y.copy()
+                    
+                    # Проверяем, что X и Y успешно вычислены
+                    if x_values is None or len(x_values) == 0 or y_values is None or len(y_values) == 0:
+                        print(f"Пропущена кривая {idx}: не удалось вычислить X-Y значения")
+                        continue
+                    
+                    # Параметры скважины
+                    # Обрезаем a/L до диапазона [0, 1] если он вне диапазона (валидация в fit_xy тоже это сделает)
+                    a_l_clipped = np.clip(well_data.a_l_ratio, 0.0, 1.0)
+                    if a_l_clipped != well_data.a_l_ratio:
+                        print(f"Кривая {idx}: a/L={well_data.a_l_ratio:.6f} обрезан до {a_l_clipped:.6f}")
+                    param_grid_list.append([well_data.skin, well_data.fractures_count, a_l_clipped])
+                    X_curves_list.append(x_values)
+                    Y_curves_list.append(y_values)
+                except Exception as e:
+                    print(f"Пропущена кривая {idx} из-за ошибки конвертации: {e}")
+                    continue
+            
+            # Проверяем, что после фильтрации остались кривые
+            if len(param_grid_list) < 2:
+                self.show_info("Ошибка", 
+                    f"После фильтрации осталось недостаточно кривых для обучения. "
+                    f"Найдено: {len(param_grid_list)}. Требуется минимум 2.")
+                return
+            
+            if Y_grid_common is None:
+                self.show_info("Ошибка", "Не удалось определить общую сетку Y для обучения")
+                return
+            
+            # Обучаем интерполятор на X-Y кривых
+            param_grid = np.array(param_grid_list)
+            X_curves = np.array(X_curves_list)
+            Y_curves = np.array(Y_curves_list)
+            
+            interp = DimensionlessCurveInterpolator(methods=INTERPOLATION_METHODS)
+            # Обучаем на X-Y кривых: передаем X и Y как отдельные кривые
+            # Интерполятор будет обучаться на X и Y одновременно
+            interp.fit_xy(param_grid, Y_grid_common, X_curves, Y_curves)
+            
+            self.trained_interpolator = interp
+            self.trained_interpolator_path = None  # Сбрасываем путь, так как модель переобучена
+            
+            # Обновляем статус
+            if hasattr(self, 'model_status_label'):
+                self.model_status_label.setText(f"Обучена на {len(param_grid_list)} кривых")
+            
+            self.show_info("Успех", 
+                f"Модель обучена на {len(param_grid_list)} кривых без пропусков.\n"
+                f"Лучший метод: {interp.best_method}\n"
+                f"RMSE: {interp.rmse_scores.get(interp.best_method, 0):.6e}")
+            
+        except Exception as e:
+            self.show_info("Ошибка", f"Не удалось обучить модель: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+    
+    def on_save_interpolator(self) -> None:
+        """Сохраняет обученный интерполятор в файл"""
+        if self.trained_interpolator is None:
+            self.show_info("Ошибка", "Нет обученной модели для сохранения")
+            return
+        
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Сохранить модель интерполяции", "",
+                "Pickle Files (*.pkl);;All Files (*)"
+            )
+            
+            if not file_path:
+                return
+            
+            # Добавляем расширение, если его нет
+            if not file_path.endswith('.pkl'):
+                file_path += '.pkl'
+            
+            # Сохраняем модель
+            with open(file_path, 'wb') as f:
+                pickle.dump(self.trained_interpolator, f)
+            
+            self.trained_interpolator_path = file_path
+            
+            # Обновляем статус
+            if hasattr(self, 'model_status_label'):
+                filename = os.path.basename(file_path)
+                self.model_status_label.setText(f"Сохранена: {filename}")
+            
+            self.show_info("Успех", f"Модель сохранена в файл:\n{file_path}")
+            
+        except Exception as e:
+            self.show_info("Ошибка", f"Не удалось сохранить модель: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+    
+    def on_load_interpolator(self) -> None:
+        """Загружает интерполятор из файла"""
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "Загрузить модель интерполяции", "",
+                "Pickle Files (*.pkl);;All Files (*)"
+            )
+            
+            if not file_path:
+                return
+            
+            # Загружаем модель
+            with open(file_path, 'rb') as f:
+                interp = pickle.load(f)
+            
+            # Проверяем, что это правильный тип
+            if not isinstance(interp, DimensionlessCurveInterpolator):
+                self.show_info("Ошибка", "Загруженный файл не является моделью интерполяции")
+                return
+            
+            if not interp.is_fitted:
+                self.show_info("Ошибка", "Загруженная модель не обучена")
+                return
+            
+            self.trained_interpolator = interp
+            self.trained_interpolator_path = file_path
+            
+            # Обновляем статус
+            if hasattr(self, 'model_status_label'):
+                filename = os.path.basename(file_path)
+                self.model_status_label.setText(f"Загружена: {filename}")
+            
+            self.show_info("Успех", 
+                f"Модель загружена из файла:\n{file_path}\n"
+                f"Метод: {interp.best_method}\n"
+                f"Обучающих примеров: {interp.param_grid.shape[0] if hasattr(interp, 'param_grid') else 0}")
+            
+        except Exception as e:
+            self.show_info("Ошибка", f"Не удалось загрузить модель: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+    
     def _perform_interpolation(self) -> Tuple[Dict[str, Any], Any]:
-        """Выполняет интерполяцию безразмерных кривых"""
+        """
+        Выполняет интерполяцию безразмерных кривых с правильным маппингом Y->t.
+        Использует два режима: локальный (PCHIP) и параметрический (RBF/GP).
+        """
         params = self._get_params(self.current_data)
+        time_array = self.current_data.time.values
         
         # Конвертируем в безразмерные параметры
         dim_data = convert_to_dimensionless_curves(
-            self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, self.current_data.depression, params, x_mode='alt'
+            self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, 
+            self.current_data.depression, params, x_mode='alt'
         )
         
-        # Для интерполяции используем текущие параметры
-        param_grid = np.array([[self.current_data.skin, self.current_data.fractures_count, self.current_data.a_l_ratio]])
-        Y_grid = dim_data.Y
-        P_curves = np.asarray([dim_data.pressure / (dim_data.delta_p_i if dim_data.delta_p_i != 0 else 1.0)])
+        # 1. ПРОВЕРКИ ВХОДОВ
+        # Убеждаемся, что dim_data.Y и time_array имеют одинаковую длину и порядок
+        if len(dim_data.Y) != len(time_array):
+            raise ValueError(f"Несоответствие длин: dim_data.Y={len(dim_data.Y)}, time_array={len(time_array)}")
         
-        # Используем интерполятор безразмерных кривых для восстановления пропусков
-        interp = DimensionlessCurveInterpolator(methods=INTERPOLATION_METHODS)
-        interp.fit(param_grid, Y_grid, P_curves)
+        # 2. ОПРЕДЕЛЕНИЕ ПРОПУСКОВ
+        pressure_is_nan = self.current_data.pressure.isna()
+        time_gaps = self._detect_gaps_by_distance(
+            time_array, X=dim_data.X, Y=dim_data.Y, threshold_factor=3.0
+        )
         
-        # Предсказываем для тех же параметров (восстанавливаем пропуски)
-        pred_series = interp.predict(
+        # Объединяем маски
+        gaps_mask = pressure_is_nan.values if hasattr(pressure_is_nan, 'values') else pressure_is_nan
+        gaps_mask = gaps_mask | time_gaps
+        
+        # Sanity check: если >30% точек помечены как пропуски, используем более мягкий порог
+        gap_fraction = np.sum(gaps_mask) / len(gaps_mask) if len(gaps_mask) > 0 else 0
+        if gap_fraction > 0.3:
+            # Пересчитываем с более мягким порогом
+            time_gaps = self._detect_gaps_by_distance(
+                time_array, X=dim_data.X, Y=dim_data.Y, threshold_factor=5.0
+            )
+            gaps_mask = pressure_is_nan.values | time_gaps
+            gap_fraction = np.sum(gaps_mask) / len(gaps_mask)
+        
+        if not np.any(gaps_mask):
+            self.last_interpolated_pressure = self.current_data.pressure.copy()
+            return {'method': 'none', 'n_points': 0, 'message': 'Нет пропусков для интерполяции'}, None
+        
+        gaps_indices = np.where(gaps_mask)[0]
+        
+        # 3. ОПРЕДЕЛЕНИЕ РЕЖИМА ИНТЕРПОЛЯЦИИ
+        # Проверяем, есть ли обученная модель
+        use_trained_model = self.trained_interpolator is not None and self.trained_interpolator.is_fitted
+        use_local_mode = not use_trained_model  # Локальный режим, если нет обученной модели
+        
+        # 4. ИНТЕРПОЛЯЦИЯ X-Y КРИВОЙ (расчётной)
+        pressure_restored = self.current_data.pressure.copy()
+        
+        # Получаем X и Y координаты для пропусков
+        X_targets = dim_data.X[gaps_indices].copy()
+        Y_targets = dim_data.Y[gaps_indices].copy()
+        valid_XY_mask = np.isfinite(X_targets) & np.isfinite(Y_targets)
+        
+        # Интерполируем X и Y отдельно
+        X_values_gaps = None
+        Y_values_gaps = None
+        
+        if use_trained_model:
+            # Используем обученную модель для предсказания X-Y кривой
+            try:
+                if np.sum(valid_XY_mask) > 0:
+                    # Предсказываем X-Y кривую для всех точек Y_grid модели
+                    XY_pred = self.trained_interpolator.predict(
             skin=self.current_data.skin,
             N=self.current_data.fractures_count,
             a_L=self.current_data.a_l_ratio
         )
         
-        # Восстанавливаем физические величины из безразмерных
-        # pred_series имеет индекс Y_grid, нужно интерполировать обратно на time
-        pressure_values = pred_series.values if hasattr(pred_series, 'values') else np.asarray(pred_series)
+                    # XY_pred должен быть DataFrame с колонками 'X' и 'Y' или Series с MultiIndex
+                    if isinstance(XY_pred, pd.DataFrame) and 'X' in XY_pred.columns and 'Y' in XY_pred.columns:
+                        Y_grid_model = XY_pred.index.values
+                        X_pred_model = XY_pred['X'].values
+                        Y_pred_model = XY_pred['Y'].values
+                    elif hasattr(XY_pred, 'index'):
+                        # Если это Series с X и Y как значениями, нужно извлечь их
+                        Y_grid_model = XY_pred.index.values
+                        # Предполагаем, что XY_pred содержит X значения, а Y - это индекс
+                        X_pred_model = XY_pred.values
+                        Y_pred_model = Y_grid_model
+                    else:
+                        # Fallback на локальную интерполяцию
+                        use_local_mode = True
+                        X_values_gaps = None
+                        Y_values_gaps = None
+                    
+                    if not use_local_mode:
+                        from scipy.interpolate import interp1d
+                        # Интерполируем X и Y для пропусков
+                        interp_X = interp1d(Y_grid_model, X_pred_model, kind='linear',
+                                           bounds_error=False, fill_value=np.nan)
+                        interp_Y = interp1d(Y_grid_model, Y_pred_model, kind='linear',
+                                           bounds_error=False, fill_value=np.nan)
+                        
+                        Y_targets_valid = Y_targets[valid_XY_mask]
+                        X_values_gaps = interp_X(Y_targets_valid)
+                        Y_values_gaps = interp_Y(Y_targets_valid)
+                else:
+                    use_local_mode = True
+                    X_values_gaps = None
+                    Y_values_gaps = None
+            except Exception as e:
+                # Если ошибка при использовании обученной модели, переключаемся на локальный режим
+                print(f"Ошибка при использовании обученной модели: {e}")
+                use_local_mode = True
+                X_values_gaps = None
+                Y_values_gaps = None
         
-        # Определяем маску пропусков в исходных данных (до интерполяции)
-        pressure_is_nan = self.current_data.pressure.isna()
-        
-        # Проверяем, что pred_series содержит достаточно точек
-        if len(pressure_values) != len(self.current_data.time):
-            # Если количество точек не совпадает, интерполируем на временную сетку
-            Y_grid_values = pred_series.index.values
-            # Интерполируем pD обратно на Y из dim_data, затем на time
-            if len(pressure_values) > 1 and len(dim_data.Y) > 1:
-                # Создаем интерполятор для маппинга Y_grid -> Y из данных
-                interp_pd = interp1d(Y_grid_values, pressure_values, kind='linear', 
-                                     bounds_error=False, fill_value='extrapolate')
-                # Интерполируем на Y из данных
-                pD_interp = interp_pd(dim_data.Y)
-                pressure_values = pD_interp
-            elif len(pressure_values) == 1:
-                # Если только одна точка, дублируем её для всех временных точек
-                pressure_values = np.full(len(self.current_data.time), pressure_values[0])
-        
-        # Убеждаемся, что pressure_values имеет правильную длину
-        if len(pressure_values) != len(self.current_data.time):
-            # Если все еще не совпадает, используем линейную интерполяцию по времени
-            # Используем доступные точки для интерполяции
-            valid_indices = np.arange(len(pressure_values))
-            interp_temp = interp1d(valid_indices, pressure_values, kind='linear', 
-                                  bounds_error=False, fill_value='extrapolate')
-            target_indices = np.linspace(0, len(pressure_values) - 1, len(self.current_data.time))
-            pressure_values = interp_temp(target_indices)
-        
-        # Восстанавливаем давление: заполняем только пропуски точно в точках времени t
-        pressure_restored = self.current_data.pressure.copy()
-        if pressure_is_nan.any():
-            # Преобразуем pressure_values в массив
-            pressure_values_array = np.asarray(pressure_values)
+        if use_local_mode or X_values_gaps is None or Y_values_gaps is None:
+            # Локальная интерполяция X-Y кривой в Y-пространстве
+            # ВАЖНО: Используем только ВАЛИДНЫЕ (не пропущенные) точки для обучения интерполятора
+            valid_mask = ~gaps_mask  # Инвертируем маску пропусков
+            valid_indices = np.where(valid_mask)[0]
             
-            # Убеждаемся, что длина совпадает
-            if len(pressure_values_array) != len(self.current_data.time):
-                # Если не совпадает, интерполируем точно на временную сетку
-                # Используем Y_grid для интерполяции обратно на time
-                if len(pressure_values_array) > 1 and len(dim_data.Y) > 1:
-                    # Интерполируем pD по Y, затем маппим на time через Y
-                    Y_grid_for_interp = pred_series.index.values if hasattr(pred_series, 'index') else np.arange(len(pressure_values_array))
-                    interp_pd_final = interp1d(Y_grid_for_interp, pressure_values_array, kind='linear',
-                                              bounds_error=False, fill_value='extrapolate')
-                    # Интерполируем на Y из dim_data (который соответствует time)
-                    pressure_values_array = interp_pd_final(dim_data.Y)
+            if len(valid_indices) < 2:
+                # Недостаточно точек для интерполяции
+                self.last_interpolated_pressure = pressure_restored
+                return {
+                    'method': 'none', 
+                    'n_points': 0, 
+                    'message': f'Недостаточно валидных точек для интерполяции: {len(valid_indices)}'
+                }, None
             
-            # Создаем массив восстановленных значений давления
-            pressure_interpolated = pressure_values_array * dim_data.delta_p_i
+            # X, Y для валидных точек (в исходном порядке времени)
+            X_valid = dim_data.X[valid_indices]
+            Y_valid = dim_data.Y[valid_indices]
             
-            # Заполняем только пропуски интерполированными значениями точно в точках времени t
-            # Используем .values для маски, чтобы получить numpy array
-            nan_mask = pressure_is_nan.values if hasattr(pressure_is_nan, 'values') else pressure_is_nan
-            # Убеждаемся, что индексы совпадают
-            if len(pressure_interpolated) == len(nan_mask):
-                pressure_restored.loc[pressure_is_nan] = pressure_interpolated[nan_mask]
+            if np.sum(valid_XY_mask) > 0:
+                # Сортируем валидные точки по Y для интерполяции
+                sort_idx_valid = np.argsort(Y_valid)
+                Y_valid_sorted = Y_valid[sort_idx_valid]
+                X_valid_sorted = X_valid[sort_idx_valid]
+                
+                Y_targets_valid = Y_targets[valid_XY_mask]
+                
+                # Интерполируем X и Y отдельно
+                X_values_gaps = self._local_interpolation_Y_space(
+                    Y_valid_sorted, X_valid_sorted, Y_targets_valid
+                )
+                Y_values_gaps = Y_targets_valid  # Y уже известен для пропусков
             else:
-                # Если длины не совпадают, используем прямое индексирование
-                pressure_restored.iloc[pressure_is_nan.values] = pressure_interpolated[pressure_is_nan.values]
+                X_values_gaps = np.full(np.sum(valid_XY_mask), np.nan)
+                Y_values_gaps = np.full(np.sum(valid_XY_mask), np.nan)
         
-        # ВАЖНО: НЕ изменяем исходные данные! Интерполированные значения используются только для отображения
-        # Сохраняем интерполированные значения отдельно для использования в графиках
-        # self.current_data.pressure остается неизменным - это исходные данные
-        self.last_interpolated_pressure = pressure_restored  # Сохраняем для отображения, но не изменяем исходные данные
+        # Восстанавливаем давление из интерполированных X-Y
+        if X_values_gaps is None or Y_values_gaps is None:
+            # Если не удалось получить предсказания, возвращаем исходные данные
+            self.last_interpolated_pressure = pressure_restored
+            return {
+                'method': 'none',
+                'n_points': 0,
+                'message': 'Не удалось получить предсказания X-Y для пропусков'
+            }, None
         
-        # Получаем информацию о результатах интерполяции
-        interp_info = interp.get_interpolation_info()
+        # Восстанавливаем давление из X-Y используя обратные формулы
+        # X = (0.00864 * k * h * Δp) / (μ * B * Q) => Δp = (X * μ * B * Q) / (0.00864 * k * h)
+        # Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i) => Δp_i = (Q * B * t) / (24 * φ * c_t * h * L² * Y)
+        # Для восстановления давления используем формулу: P = P_i - Δp_i (где P_i - начальное давление)
+        
+        params = self._get_params(self.current_data)
+        k = params.get('k', 1.0)
+        h = params.get('h', 10.0)
+        mu = params.get('mu', 1.0)
+        B = params.get('B', 1.0)
+        phi = params.get('phi', 0.1)
+        c_t = params.get('c_t', 1e-4)
+        L = params.get('L', 100.0)
+        
+        # Получаем время и дебит для пропусков
+        time_gaps = time_array[gaps_indices[valid_XY_mask]]
+        flow_rate_gaps = self.current_data.flow_rate.iloc[gaps_indices[valid_XY_mask]].values
+        
+        # Используем средний дебит, если есть пропуски в дебите
+        if np.any(~np.isfinite(flow_rate_gaps)) or np.any(flow_rate_gaps == 0):
+            flow_rate_mean = self.current_data.flow_rate[np.isfinite(self.current_data.flow_rate) & (self.current_data.flow_rate > 0)].mean()
+            if not np.isfinite(flow_rate_mean) or flow_rate_mean == 0:
+                flow_rate_mean = 1.0
+            flow_rate_gaps = np.where((np.isfinite(flow_rate_gaps) & (flow_rate_gaps > 0)), 
+                                      flow_rate_gaps, flow_rate_mean)
+        
+        # Восстанавливаем Δp_i из Y: Δp_i = (Q * B * t) / (24 * φ * c_t * h * L² * Y)
+        delta_p_i_gaps = (flow_rate_gaps * B * time_gaps) / (24 * phi * c_t * h * L**2 * Y_values_gaps)
+        delta_p_i_gaps = np.where(np.isfinite(delta_p_i_gaps) & (delta_p_i_gaps > 0), 
+                                 delta_p_i_gaps, dim_data.delta_p_i)
+        
+        # Восстанавливаем Δp из X: Δp = (X * μ * B * Q) / (0.00864 * k * h)
+        delta_p_gaps = (X_values_gaps * mu * B * flow_rate_gaps) / (0.00864 * k * h)
+        delta_p_gaps = np.where(np.isfinite(delta_p_gaps) & (delta_p_gaps > 0), 
+                               delta_p_gaps, np.nan)
+        
+        # Восстанавливаем давление: P = P_initial - Δp_i (используем начальное давление из данных)
+        P_initial = self.current_data.pressure.iloc[0] if len(self.current_data.pressure) > 0 else 0.0
+        if not np.isfinite(P_initial):
+            # Если начальное давление неизвестно, используем первое валидное
+            valid_pressure = self.current_data.pressure[np.isfinite(self.current_data.pressure)]
+            P_initial = valid_pressure.iloc[0] if len(valid_pressure) > 0 else 0.0
+        
+        pressure_values_gaps_physical = P_initial - delta_p_i_gaps
+        
+        # 5. БЕЗОПАСНАЯ ВСТАВКА ПРЕДСКАЗАНИЙ
+        # ВАЖНО: Маппим предсказания обратно на правильные индексы пропусков
+        filled_count = 0
+        valid_gap_idx = 0  # Индекс в массиве предсказаний для валидных X-Y
+        
+        for i, idx_time in enumerate(gaps_indices):
+            # Проверяем, есть ли валидное предсказание для этого пропуска
+            if valid_XY_mask[i] and valid_gap_idx < len(pressure_values_gaps_physical):
+                pred_value = pressure_values_gaps_physical[valid_gap_idx]
+                if np.isfinite(pred_value) and pred_value > 0:
+                    # ВСТАВЛЯЕМ ТОЧНО В ПОЗИЦИЮ ПРОПУСКА
+                    pressure_restored.iloc[idx_time] = pred_value
+                    filled_count += 1
+                valid_gap_idx += 1
+        
+        # 6. ЗАЩИТА ОТ КОПИРОВАНИЯ СОСЕДЕЙ
+        # Собираем заполненные значения для проверки
+        filled_values = []
+        filled_indices = []
+        for i, idx_time in enumerate(gaps_indices):
+            if idx_time < len(pressure_restored) and np.isfinite(pressure_restored.iloc[idx_time]):
+                # Проверяем, что это действительно заполненное значение (не исходное)
+                if gaps_mask[idx_time]:  # Это был пропуск
+                    filled_values.append(pressure_restored.iloc[idx_time])
+                    filled_indices.append(idx_time)
+        
+        if len(filled_values) > 0:
+            neighbor_copy_frac = self._detect_neighbor_copy(
+                np.array(filled_values),
+                self.current_data.pressure.values,
+                np.array(filled_indices)
+            )
+        else:
+            neighbor_copy_frac = 0.0
+        
+        # Если >95% предсказаний равны соседям, переключаемся на альтернативный метод
+        if neighbor_copy_frac > 0.95 and len(filled_values) > 0:
+            # Используем более сглаживающий метод для X-Y интерполяции
+            from scipy.interpolate import UnivariateSpline
+            valid_mask = ~gaps_mask
+            valid_indices = np.where(valid_mask)[0]
+            if len(valid_indices) >= 3:
+                try:
+                    X_valid = dim_data.X[valid_indices]
+                    Y_valid = dim_data.Y[valid_indices]
+                    sort_idx = np.argsort(Y_valid)
+                    Y_valid_sorted = Y_valid[sort_idx]
+                    X_valid_sorted = X_valid[sort_idx]
+                    
+                    # Интерполируем X с помощью сплайна
+                    spline_X = UnivariateSpline(Y_valid_sorted, X_valid_sorted, s=len(Y_valid_sorted))
+                    X_values_gaps_smooth = spline_X(Y_targets[valid_XY_mask])
+                    
+                    # Восстанавливаем давление из сглаженных X-Y
+                    time_gaps_smooth = time_array[gaps_indices[valid_XY_mask]]
+                    flow_rate_gaps_smooth = self.current_data.flow_rate.iloc[gaps_indices[valid_XY_mask]].values
+                    if np.any(~np.isfinite(flow_rate_gaps_smooth)) or np.any(flow_rate_gaps_smooth == 0):
+                        flow_rate_mean = self.current_data.flow_rate[np.isfinite(self.current_data.flow_rate) & (self.current_data.flow_rate > 0)].mean()
+                        if not np.isfinite(flow_rate_mean) or flow_rate_mean == 0:
+                            flow_rate_mean = 1.0
+                        flow_rate_gaps_smooth = np.where((np.isfinite(flow_rate_gaps_smooth) & (flow_rate_gaps_smooth > 0)), 
+                                                          flow_rate_gaps_smooth, flow_rate_mean)
+                    
+                    delta_p_i_gaps_smooth = (flow_rate_gaps_smooth * B * time_gaps_smooth) / (24 * phi * c_t * h * L**2 * Y_values_gaps)
+                    delta_p_i_gaps_smooth = np.where(np.isfinite(delta_p_i_gaps_smooth) & (delta_p_i_gaps_smooth > 0), 
+                                                     delta_p_i_gaps_smooth, dim_data.delta_p_i)
+                    
+                    P_initial = self.current_data.pressure.iloc[0] if len(self.current_data.pressure) > 0 else 0.0
+                    if not np.isfinite(P_initial):
+                        valid_pressure = self.current_data.pressure[np.isfinite(self.current_data.pressure)]
+                        P_initial = valid_pressure.iloc[0] if len(valid_pressure) > 0 else 0.0
+                    
+                    pressure_values_gaps_smooth = P_initial - delta_p_i_gaps_smooth
+                    
+                    # Перезаписываем только если новые значения отличаются от соседей
+                    valid_gap_idx = 0
+                    for i, idx_time in enumerate(gaps_indices):
+                        if valid_XY_mask[i] and valid_gap_idx < len(pressure_values_gaps_smooth):
+                            if np.isfinite(pressure_values_gaps_smooth[valid_gap_idx]) and pressure_values_gaps_smooth[valid_gap_idx] > 0:
+                                pressure_restored.iloc[idx_time] = pressure_values_gaps_smooth[valid_gap_idx]
+                            valid_gap_idx += 1
+                except Exception as e:
+                    print(f"Ошибка при сглаживании X-Y интерполяции: {e}")
+                    pass  # Оставляем предыдущие значения
+        
+        # 7. ФИЗИЧЕСКИЕ ОГРАНИЧЕНИЯ И ПОСТ-ОБРАБОТКА
+        # Clip: P >= 0
+        pressure_restored = pressure_restored.clip(lower=0.0)
+        
+        # Пересчитываем dP если нужно
+        if hasattr(self.current_data, 'depression'):
+            depression_restored = self.current_data.depression.copy()
+            # dP[i] = P[i] - P[i-1] для измененных точек
+            for idx_time in gaps_indices:
+                if idx_time > 0 and np.isfinite(pressure_restored.iloc[idx_time]) and np.isfinite(pressure_restored.iloc[idx_time - 1]):
+                    depression_restored.iloc[idx_time] = pressure_restored.iloc[idx_time] - pressure_restored.iloc[idx_time - 1]
+        
+        # Легкое сглаживание на локальном окне для избежания шагов
+        if filled_count > 0:
+            from scipy.signal import savgol_filter
+            try:
+                window = min(5, len(pressure_restored) // 10)
+                if window >= 3 and window % 2 == 1:
+                    smoothed = savgol_filter(pressure_restored.values, window, 2)
+                    # Применяем только к заполненным точкам
+                    for idx_time in gaps_indices:
+                        if idx_time < len(smoothed):
+                            # Смешиваем 80% сглаженного + 20% исходного для мягкости
+                            pressure_restored.iloc[idx_time] = 0.8 * smoothed[idx_time] + 0.2 * pressure_restored.iloc[idx_time]
+            except Exception:
+                pass
+        
+        # 8. СОХРАНЕНИЕ РЕЗУЛЬТАТОВ
+        self.last_interpolated_pressure = pressure_restored
+        
+        # Формируем информацию о результатах
+        if use_trained_model and not use_local_mode:
+            method_used = 'trained_model'
+            best_method = self.trained_interpolator.best_method
+            rmse_scores = self.trained_interpolator.rmse_scores
+            n_samples = self.trained_interpolator.param_grid.shape[0] if hasattr(self.trained_interpolator, 'param_grid') else 0
+        else:
+            method_used = 'local_pchip'
+            best_method = 'local_pchip'
+            rmse_scores = {'local_pchip': 0.0}
+            n_samples = 1
+        
+        interp_info = {
+            'method': method_used,
+            'best_method': best_method,
+            'n_samples': n_samples,
+            'n_points': filled_count,  # Количество заполненных точек
+            'n_gaps_detected': len(gaps_indices),
+            'gap_fraction': gap_fraction,
+            'neighbor_copy_fraction': neighbor_copy_frac,
+            'message': f'Заполнено {filled_count} из {len(gaps_indices)} пропусков',
+            'rmse_scores': rmse_scores
+        }
         
         # Если есть эталонные данные, рассчитываем метрики относительно эталона
         if hasattr(self, 'validation_data') and self.validation_data and len(self.validation_data) > 0:
@@ -293,23 +969,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
                         ref_item.time, ref_item.pressure, ref_item.flow_rate, ref_item.depression, ref_params, x_mode='alt'
                     )
                     
-                    # Получаем предсказанные значения в безразмерных координатах
-                    Y_pred = dim_data.Y
-                    P_pred = dim_data.pressure / (dim_data.delta_p_i if dim_data.delta_p_i != 0 else 1.0)
-                    
-                    # Эталонные значения
-                    Y_ref = ref_dim.Y
-                    P_ref = ref_dim.pressure / (ref_dim.delta_p_i if ref_dim.delta_p_i != 0 else 1.0)
-                    
-                    # Рассчитываем метрики с использованием случайных точек эталона
-                    reference_metrics = interp.compare_with_reference(
-                        Y_pred=Y_pred, P_pred=P_pred,
-                        Y_ref=Y_ref, P_ref=P_ref,
-                        n_random_points=100
-                    )
-                    
-                    # Добавляем метрики в interp_info
-                    interp_info['reference_metrics'] = reference_metrics
+                    # Рассчитываем RMSE для заполненных точек
+                    if filled_count > 0:
+                        # Сравниваем только заполненные точки
+                        pred_pressure = pressure_restored.values[gaps_indices[:filled_count]]
+                        ref_pressure = ref_item.pressure.values[gaps_indices[:filled_count]]
+                        
+                        valid_mask = np.isfinite(pred_pressure) & np.isfinite(ref_pressure)
+                        if np.sum(valid_mask) > 0:
+                            rmse = np.sqrt(np.mean((pred_pressure[valid_mask] - ref_pressure[valid_mask])**2))
+                            interp_info['reference_metrics'] = {'rmse': rmse}
             except Exception as e:
                 # Если не удалось рассчитать метрики, просто пропускаем
                 print(f"Не удалось рассчитать метрики относительно эталона: {e}")
@@ -365,11 +1034,21 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         # Параметры интерполяции
         report += "Параметры метода:\n"
-        report += f"  Обучающих примеров: {interp_info['n_samples']}\n"
-        report += f"  Точек на безразмерной кривой: {interp_info['n_points']}\n\n"
+        if 'n_samples' in interp_info:
+            report += f"  Обучающих примеров: {interp_info['n_samples']}\n"
+        if 'n_points' in interp_info:
+            report += f"  Заполнено точек: {interp_info['n_points']}\n"
+        if 'n_gaps_detected' in interp_info:
+            report += f"  Обнаружено пропусков: {interp_info['n_gaps_detected']}\n"
+        if 'gap_fraction' in interp_info:
+            report += f"  Доля пропусков: {interp_info['gap_fraction']*100:.1f}%\n"
+        if 'neighbor_copy_fraction' in interp_info:
+            report += f"  Доля копирования соседей: {interp_info['neighbor_copy_fraction']*100:.1f}%\n"
+        report += "\n"
         
-        # Сравнение методов
-        report += "СРАВНЕНИЕ МЕТОДОВ ИНТЕРПОЛЯЦИИ\n"
+        # Сравнение методов (только если есть несколько методов)
+        if 'rmse_scores' in interp_info and len(interp_info['rmse_scores']) > 1:
+            report += "СРАВНЕНИЕ МЕТОДОВ ИНТЕРПОЛЯЦИИ\n"
         report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
         report += f"{'Метод':<42} {'RMSE':<12} {'Статус'}\n"
         report += "-" * REPORT_SEPARATOR_LENGTH + "\n"
@@ -379,18 +1058,22 @@ class MyApp(QMainWindow, Ui_mainWindow):
         
         for i, (method, rmse) in enumerate(sorted_methods, 1):
             method_display = method_names.get(method, method)
-            marker = "✓ ВЫБРАН" if method == interp_info['best_method'] else f"#{i}"
+            marker = "✓ ВЫБРАН" if method == interp_info.get('best_method') else f"#{i}"
             report += f"{method_display:<42} {rmse:<12.3f} {marker}\n"
         
         report += "-" * REPORT_SEPARATOR_LENGTH + "\n\n"
         
         # Итоговая информация
-        best_rmse = interp_info['rmse_scores'].get(interp_info['best_method'], 0)
+        best_method = interp_info.get('best_method', interp_info.get('method', 'unknown'))
+        best_rmse = interp_info.get('rmse_scores', {}).get(best_method, 0) if 'rmse_scores' in interp_info else 0
         report += "ИТОГОВЫЙ РЕЗУЛЬТАТ:\n"
-        report += f"  Метод: {method_names.get(interp_info['best_method'], interp_info['best_method'])}\n"
-        report += f"  RMSE: {best_rmse:.6e}\n"
+        report += f"  Метод: {method_names.get(best_method, best_method)}\n"
+        if best_rmse > 0:
+            report += f"  RMSE: {best_rmse:.6e}\n"
         quality = self._get_quality_label(best_rmse)
         report += f"  Качество: {quality}\n"
+        if 'message' in interp_info:
+            report += f"  {interp_info['message']}\n"
         
         # Если есть метрики относительно эталона, добавляем их
         if 'reference_metrics' in interp_info:
@@ -612,6 +1295,11 @@ class MyApp(QMainWindow, Ui_mainWindow):
         self.load_validation_button.clicked.connect(self.load_validation_file)
         self.extrapolate_btn.clicked.connect(self.on_extrapolate_xy)
         self.fit_xy_btn.clicked.connect(self.on_fit_xy_curve)
+        
+        # Управление моделью интерполяции
+        self.train_model_btn.clicked.connect(self.on_train_interpolator)
+        self.save_model_btn.clicked.connect(self.on_save_interpolator)
+        self.load_model_btn.clicked.connect(self.on_load_interpolator)
         
         # Кнопка сброса графиков
         self.reset_plots_btn.clicked.connect(self.on_reset_plots)
@@ -899,14 +1587,34 @@ class MyApp(QMainWindow, Ui_mainWindow):
             return
         
         try:
-            # Подсчитываем количество пропусков
-            pressure_is_nan_mask = self.current_data.pressure.isna().values if hasattr(self.current_data.pressure, 'isna') else None
-            n_nan_pressure = int(np.nansum(pressure_is_nan_mask)) if pressure_is_nan_mask is not None else self.current_data.pressure.isna().sum()
-            n_nan_flow = self.current_data.flow_rate.isna().sum()
+            # Определяем пропуски: NaN и большие расстояния между точками
+            pressure_is_nan = self.current_data.pressure.isna()
+            flow_rate_is_nan = self.current_data.flow_rate.isna()
+            
+            # Определяем пропуски по расстоянию между точками (по времени И по X-Y координатам)
+            # Сначала получаем безразмерные координаты для определения пропусков
+            params_temp = self._get_params(self.current_data)
+            dim_data_temp = convert_to_dimensionless_curves(
+                self.current_data.time, self.current_data.pressure, self.current_data.flow_rate, 
+                self.current_data.depression, params_temp, x_mode='alt'
+            )
+            time_gaps = self._detect_gaps_by_distance(
+                self.current_data.time.values,
+                X=dim_data_temp.X,
+                Y=dim_data_temp.Y,
+                threshold_factor=1.0
+            )
+            
+            # Объединяем маски: пропуски = NaN ИЛИ большие расстояния
+            pressure_gaps_mask = (pressure_is_nan.values if hasattr(pressure_is_nan, 'values') else pressure_is_nan) | time_gaps
+            flow_gaps_mask = (flow_rate_is_nan.values if hasattr(flow_rate_is_nan, 'values') else flow_rate_is_nan) | time_gaps
+            
+            n_nan_pressure = int(np.sum(pressure_gaps_mask))
+            n_nan_flow = int(np.sum(flow_gaps_mask))
             
             # Сохраняем маску пропусков для подсветки на X-Y графике
             try:
-                self.last_interpolated_mask_XY = pressure_is_nan_mask.copy() if pressure_is_nan_mask is not None else None
+                self.last_interpolated_mask_XY = pressure_gaps_mask.copy()
             except Exception:
                 self.last_interpolated_mask_XY = None
 
@@ -1193,9 +1901,27 @@ class MyApp(QMainWindow, Ui_mainWindow):
             params = self._get_params(current_item)
             
             # 1️⃣ Конвертация в безразмерные параметры
-            dim_data = convert_to_dimensionless_curves(
-                current_item.time, current_item.pressure, current_item.flow_rate, current_item.depression, params, x_mode='alt'
-            )
+            # Обрабатываем случай, когда depression может быть None
+            depression = getattr(current_item, 'depression', None)
+            try:
+                dim_data = convert_to_dimensionless_curves(
+                    current_item.time, current_item.pressure, current_item.flow_rate, depression, params, x_mode='alt'
+                )
+            except Exception as e:
+                # Логируем ошибку
+                try:
+                    from helpers.math_error_logger import log_computation_error
+                    log_computation_error(
+                        subsystem="gui",
+                        method="on_plot_dimensionless_selected",
+                        exception=e,
+                        data_volume=len(current_item.time) if current_item.time is not None else None,
+                        data_quality=1.0 - (np.sum(np.isnan(current_item.pressure)) / len(current_item.pressure)) if current_item.pressure is not None and len(current_item.pressure) > 0 else None,
+                        context={"has_depression": depression is not None}
+                    )
+                except Exception:
+                    pass
+                raise
 
             # 2️⃣ Определяем, какие группы графиков выбраны
             checked_groups = {
