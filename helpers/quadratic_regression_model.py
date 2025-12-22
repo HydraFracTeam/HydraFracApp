@@ -34,6 +34,7 @@ class QuadraticRegressionModel:
         self.rmse_y = None
         self.r2_x = None
         self.r2_y = None
+        self.Y_shift = 0.0  # Дополнительный сдвиг по Y для компенсации вертикального смещения
         
     def fit(self, X_calc: np.ndarray, Y_calc: np.ndarray, 
             X_data: np.ndarray, Y_data: np.ndarray) -> 'QuadraticRegressionModel':
@@ -87,24 +88,35 @@ class QuadraticRegressionModel:
             self.rmse_x = 0.0
             self.r2_x = 1.0
         
-        # Обучение модели для Y с квадратичным членом и bias
-        # Y_fit = b + a_y * Y_calc + c * Y_calc^2
+        # Обучение модели для Y с квадратичным членом и явным сдвигом
+        # Y_fit = shift + b + a_y * Y_calc + c * Y_calc^2
+        # где shift - явный сдвиг всей кривой вверх-вниз (не зависит от Y_calc)
         # Используем PolynomialFeatures для квадратичного члена
         # ВАЖНО: include_bias=True добавляет константный член [1, Y, Y^2]
         poly_features = PolynomialFeatures(degree=2, include_bias=True)
         Y_features = poly_features.fit_transform(Y_calc_clean.reshape(-1, 1))
         
         # Ridge регрессия с регуляризацией
-        # fit_intercept=False, так как bias уже включен в PolynomialFeatures
-        self.Y_model = Ridge(alpha=self.alpha, fit_intercept=False)
+        # fit_intercept=True добавляет отдельный intercept (сдвиг), который обеспечивает
+        # гибкость корректировки всей кривой вверх-вниз без изменения формы
+        # Этот intercept обучается отдельно и не так сильно ограничен регуляризацией
+        self.Y_model = Ridge(alpha=self.alpha, fit_intercept=True)
         self.Y_model.fit(Y_features, Y_data_clean)
         
         # Метрики для Y
         Y_pred = self.Y_model.predict(Y_features)
-        self.rmse_y = np.sqrt(np.mean((Y_data_clean - Y_pred) ** 2))
+        
+        # Y_shift теперь хранится в self.Y_model.intercept_
+        # Это явный сдвиг всей кривой, который добавляется ко всем значениям
+        self.Y_shift = float(self.Y_model.intercept_) if hasattr(self.Y_model, 'intercept_') else 0.0
+        
+        # Применяем предсказания (intercept уже включен в predict)
+        Y_pred_shifted = Y_pred
+        
+        self.rmse_y = np.sqrt(np.mean((Y_data_clean - Y_pred_shifted) ** 2))
         ss_tot_y = np.sum((Y_data_clean - np.mean(Y_data_clean)) ** 2)
         if ss_tot_y > 0:
-            self.r2_y = 1 - np.sum((Y_data_clean - Y_pred) ** 2) / ss_tot_y
+            self.r2_y = 1 - np.sum((Y_data_clean - Y_pred_shifted) ** 2) / ss_tot_y
         else:
             self.r2_y = 0.0
         
@@ -158,6 +170,7 @@ class QuadraticRegressionModel:
         if self.Y_model is not None:
             poly_features = PolynomialFeatures(degree=2, include_bias=True)
             Y_features = poly_features.fit_transform(Y_calc.reshape(-1, 1))
+            # predict() автоматически добавляет intercept (сдвиг), если fit_intercept=True
             Y_fitted = self.Y_model.predict(Y_features)
         else:
             Y_fitted = Y_calc.copy()
@@ -183,26 +196,33 @@ class QuadraticRegressionModel:
         else:
             coef_dict['a'] = 1.0
         
-        # Коэффициенты для Y: [bias, a_y, c]
+        # Коэффициенты для Y: [bias из PolynomialFeatures, a_y, c] + intercept (сдвиг)
         if self.Y_model is not None:
             # coef_ в Ridge имеет форму (n_features,), а не (1, n_features)
             coef = np.asarray(self.Y_model.coef_).flatten()
+            # intercept_ - это явный сдвиг всей кривой (отдельный параметр)
+            intercept = float(self.Y_model.intercept_) if hasattr(self.Y_model, 'intercept_') else 0.0
+            
             if len(coef) >= 3:
-                coef_dict['b'] = float(coef[0])  # bias (свободный член)
+                coef_dict['b'] = float(coef[0])  # bias из PolynomialFeatures
                 coef_dict['a_y'] = float(coef[1])  # линейный коэффициент
                 coef_dict['c'] = float(coef[2])  # квадратичный коэффициент
+                coef_dict['shift'] = intercept  # явный сдвиг всей кривой вверх-вниз
             elif len(coef) >= 2:
                 coef_dict['b'] = float(coef[0])
                 coef_dict['a_y'] = float(coef[1])
                 coef_dict['c'] = 0.0
+                coef_dict['shift'] = intercept
             else:
                 coef_dict['b'] = 0.0
                 coef_dict['a_y'] = 1.0
                 coef_dict['c'] = 0.0
+                coef_dict['shift'] = intercept
         else:
             coef_dict['b'] = 0.0
             coef_dict['a_y'] = 1.0
             coef_dict['c'] = 0.0
+            coef_dict['shift'] = 0.0
         
         return coef_dict
     
@@ -242,7 +262,8 @@ class QuadraticRegressionModel:
             info += f"  X: a = {coef['a']:.6f}\n"
         else:
             info += f"  X: не изменяется (fit_only_y=True)\n"
-        info += f"  Y: a_y = {coef['a_y']:.6f}, b = {coef['b']:.6f}, c = {coef['c']:.6f}\n\n"
+        shift_val = coef.get('shift', 0.0)
+        info += f"  Y: a_y = {coef['a_y']:.6f}, b = {coef['b']:.6f}, c = {coef['c']:.6f}, shift = {shift_val:.6f}\n\n"
         info += f"Метрики:\n"
         if not self.fit_only_y:
             info += f"  X: RMSE = {metrics['rmse_x']:.6e}, R² = {metrics['r2_x']:.4f}\n"

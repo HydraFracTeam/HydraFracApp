@@ -35,6 +35,123 @@ class CurveClassifier:
         self.median_steepness = None
         self.is_fitted = False
         
+    def compute_curve_classification_metric(self, X_calc: np.ndarray, Y_calc: np.ndarray,
+                                           X_data: np.ndarray, Y_data: np.ndarray) -> float:
+        """
+        Вычисляет метрику для классификации кривой на основе формы.
+        
+        Проверяет:
+        - Крутая кривая: расчётная постоянно больше эталона (или с 5-10 точки) и растёт быстрее
+        - Полая кривая: расчётная постоянно меньше эталона и растёт медленнее
+        
+        Положительное значение = расчётная круче (класс 0 - нужно ужимать)
+        Отрицательное значение = расчётная положе (класс 1 - нужно растягивать)
+        
+        :param X_calc: Расчётные значения X
+        :param Y_calc: Расчётные значения Y
+        :param X_data: Эталонные значения X
+        :param Y_data: Эталонные значения Y
+        :return: Метрика классификации
+        """
+        X_calc = np.asarray(X_calc).flatten()
+        Y_calc = np.asarray(Y_calc).flatten()
+        X_data = np.asarray(X_data).flatten()
+        Y_data = np.asarray(Y_data).flatten()
+        
+        # Убираем NaN и Inf
+        valid_mask = (np.isfinite(X_calc) & np.isfinite(Y_calc) & 
+                     np.isfinite(X_data) & np.isfinite(Y_data) &
+                     (X_calc > 0) & (Y_calc > 0) & (X_data > 0) & (Y_data > 0))
+        
+        if np.sum(valid_mask) < 10:  # Нужно минимум 10 точек для анализа
+            return 0.0
+        
+        X_calc_valid = X_calc[valid_mask]
+        Y_calc_valid = Y_calc[valid_mask]
+        X_data_valid = X_data[valid_mask]
+        Y_data_valid = Y_data[valid_mask]
+        
+        # Интерполируем обе кривые на общую сетку
+        log_X_calc = np.log10(X_calc_valid)
+        log_Y_calc = np.log10(Y_calc_valid)
+        log_X_data = np.log10(X_data_valid)
+        log_Y_data = np.log10(Y_data_valid)
+        
+        # Сортируем по X
+        sort_idx_calc = np.argsort(log_X_calc)
+        sort_idx_data = np.argsort(log_X_data)
+        
+        log_X_calc_sorted = log_X_calc[sort_idx_calc]
+        log_Y_calc_sorted = log_Y_calc[sort_idx_calc]
+        log_X_data_sorted = log_X_data[sort_idx_data]
+        log_Y_data_sorted = log_Y_data[sort_idx_data]
+        
+        # Находим общий диапазон X
+        X_min = max(np.min(log_X_calc_sorted), np.min(log_X_data_sorted))
+        X_max = min(np.max(log_X_calc_sorted), np.max(log_X_data_sorted))
+        
+        if X_max <= X_min:
+            return 0.0
+        
+        # Создаём общую сетку
+        n_points = min(100, len(X_calc_valid), len(X_data_valid))
+        X_common = np.linspace(X_min, X_max, n_points)
+        
+        # Интерполируем Y на общую сетку
+        from scipy.interpolate import interp1d
+        try:
+            interp_calc = interp1d(log_X_calc_sorted, log_Y_calc_sorted, 
+                                  kind='linear', bounds_error=False, fill_value='extrapolate')
+            interp_data = interp1d(log_X_data_sorted, log_Y_data_sorted,
+                                  kind='linear', bounds_error=False, fill_value='extrapolate')
+            
+            Y_calc_interp = interp_calc(X_common)
+            Y_data_interp = interp_data(X_common)
+            
+            # Преобразуем обратно из логарифмического масштаба для сравнения
+            Y_calc_abs = 10 ** Y_calc_interp
+            Y_data_abs = 10 ** Y_data_interp
+            
+            # Проверяем форму кривой
+            # 1. Проверяем, постоянно ли расчётная больше/меньше эталонной (начиная с 5-10 точки)
+            start_idx = min(10, n_points // 10)  # Начинаем с 5-10% точек
+            Y_ratio = Y_calc_abs[start_idx:] / (Y_data_abs[start_idx:] + 1e-10)
+            
+            # Если расчётная постоянно больше (ratio > 1), это крутая кривая
+            # Если расчётная постоянно меньше (ratio < 1), это пологая кривая
+            mean_ratio = np.mean(Y_ratio)
+            ratio_above_one = np.sum(Y_ratio > 1.0) / len(Y_ratio)  # Доля точек, где расчётная больше
+            
+            # 2. Проверяем скорость роста (наклон)
+            dY_calc = np.diff(Y_calc_interp)
+            dY_data = np.diff(Y_data_interp)
+            dX = np.diff(X_common)
+            
+            valid_deriv_mask = np.abs(dX) > 1e-10
+            if np.any(valid_deriv_mask):
+                slopes_calc = dY_calc[valid_deriv_mask] / dX[valid_deriv_mask]
+                slopes_data = dY_data[valid_deriv_mask] / dX[valid_deriv_mask]
+                
+                mean_slope_diff = np.mean(slopes_calc) - np.mean(slopes_data)
+            else:
+                mean_slope_diff = 0.0
+            
+            # Комбинированная метрика:
+            # - Если расчётная постоянно больше и растёт быстрее → положительное значение (крутая)
+            # - Если расчётная постоянно меньше и растёт медленнее → отрицательное значение (пологая)
+            # Вес для ratio больше, так как это более надёжный признак
+            metric = 0.7 * (mean_ratio - 1.0) + 0.3 * mean_slope_diff
+            
+            # Дополнительный бонус, если расчётная постоянно больше/меньше
+            if ratio_above_one > 0.7:  # Более 70% точек выше эталона
+                metric += 0.2
+            elif ratio_above_one < 0.3:  # Менее 30% точек выше эталона
+                metric -= 0.2
+            
+            return float(metric)
+        except Exception:
+            return 0.0
+    
     def compute_steepness_ratio(self, X_calc: np.ndarray, Y_calc: np.ndarray,
                                 X_data: np.ndarray, Y_data: np.ndarray) -> float:
         """
@@ -279,23 +396,25 @@ class CurveClassifier:
         for X_calc, Y_calc, X_data, Y_data in zip(X_calc_curves, Y_calc_curves, X_data_curves, Y_data_curves):
             features = self.compute_curve_features(X_calc, Y_calc, X_data, Y_data)
             features_list.append(features)
-            steepness_ratio_values.append(self.compute_steepness_ratio(X_calc, Y_calc, X_data, Y_data))
+            # Используем новую метрику классификации на основе формы кривой
+            steepness_ratio_values.append(self.compute_curve_classification_metric(X_calc, Y_calc, X_data, Y_data))
         
         X_features = np.array(features_list)
         steepness_ratio_array = np.array(steepness_ratio_values)
         
-        # Если метки не предоставлены, вычисляем их на основе медианы отношения крутости
+        # Если метки не предоставлены, вычисляем их на основе среднего арифметического
         # Положительное значение = расчётная круче (класс 0 - нужно ужимать)
         # Отрицательное значение = расчётная положе (класс 1 - нужно растягивать)
         if labels is None:
-            self.median_steepness = np.median(steepness_ratio_array)
-            # Если отношение > медианы, значит расчётная круче → класс 0 (ужимать)
-            # Если отношение < медианы, значит расчётная положе → класс 1 (растягивать)
+            # Используем среднее арифметическое вместо медианы
+            self.median_steepness = np.mean(steepness_ratio_array)
+            # Если метрика > среднего, значит расчётная круче → класс 0 (ужимать)
+            # Если метрика < среднего, значит расчётная положе → класс 1 (растягивать)
             labels = (steepness_ratio_array > self.median_steepness).astype(int)
         else:
             labels = np.asarray(labels).flatten()
-            # Вычисляем медиану для информации
-            self.median_steepness = np.median(steepness_ratio_array)
+            # Вычисляем среднее для информации
+            self.median_steepness = np.mean(steepness_ratio_array)
         
         if len(labels) != len(X_calc_curves):
             raise ValueError(f"Количество меток ({len(labels)}) не совпадает с количеством кривых ({len(X_calc_curves)})")
@@ -385,5 +504,5 @@ class CurveClassifier:
             "classifier_type": self.classifier_type,
             "median_steepness": float(self.median_steepness) if self.median_steepness is not None else None,
             "use_scaling": self.use_scaling,
-            "message": f"Классификатор обучен (тип: {self.classifier_type}, медиана отношения крутости: {self.median_steepness:.4f})"
+            "message": f"Классификатор обучен (тип: {self.classifier_type}, среднее отношение крутости: {self.median_steepness:.4f})"
         }

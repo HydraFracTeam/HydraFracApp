@@ -572,13 +572,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
             # Обновляем статус
             if hasattr(self, 'model_status_label'):
                 total_samples = metrics.get('n_samples_flat', 0) + metrics.get('n_samples_steep', 0)
-                self.model_status_label.setText(f"Обучена на {total_samples} точках ({len(X_curves)} кривых)")
+                self.model_status_label.setText(f"Обучена на {total_samples} точках ({len(X_calc_curves_list)} кривых)")
             
             # Формируем сообщение
-            msg = f"Бинарная модель обучена на {len(X_curves)} кривых.\n\n"
+            msg = f"Бинарная модель обучена на {len(X_calc_curves_list)} кривых.\n\n"
             msg += f"Классификатор:\n"
             msg += f"  Тип: {classifier_info['classifier_type']}\n"
-            msg += f"  Медиана пологости: {classifier_info['median_steepness']:.4f}\n\n"
+            msg += f"  Среднее отношение крутости: {classifier_info['median_steepness']:.4f}\n\n"
             
             msg += f"Модель для класса 0 (ужимать - расчётная круче эталонной):\n"
             if 'flat' in metrics:
@@ -587,7 +587,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 msg += f"  Обучена на {flat_metrics['n_samples']} точках\n"
                 msg += f"  Коэффициенты: a = {flat_coef.get('a', 1.0):.6f}, "
                 msg += f"a_y = {flat_coef.get('a_y', 1.0):.6f}, b = {flat_coef.get('b', 0.0):.6f}, "
-                msg += f"c = {flat_coef.get('c', 0.0):.6f}\n"
+                msg += f"c = {flat_coef.get('c', 0.0):.6f}, shift = {flat_coef.get('shift', 0.0):.6f}\n"
                 msg += f"  RMSE Y: {flat_metrics['rmse_y']:.6e}, R² Y: {flat_metrics['r2_y']:.4f}\n\n"
             else:
                 msg += f"  Не обучена (недостаточно данных)\n\n"
@@ -599,7 +599,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 msg += f"  Обучена на {steep_metrics['n_samples']} точках\n"
                 msg += f"  Коэффициенты: a = {steep_coef.get('a', 1.0):.6f}, "
                 msg += f"a_y = {steep_coef.get('a_y', 1.0):.6f}, b = {steep_coef.get('b', 0.0):.6f}, "
-                msg += f"c = {steep_coef.get('c', 0.0):.6f}\n"
+                msg += f"c = {steep_coef.get('c', 0.0):.6f}, shift = {steep_coef.get('shift', 0.0):.6f}\n"
                 msg += f"  RMSE Y: {steep_metrics['rmse_y']:.6e}, R² Y: {steep_metrics['r2_y']:.4f}"
             else:
                 msg += f"  Не обучена (недостаточно данных)"
