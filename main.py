@@ -23,6 +23,7 @@ from helpers.dimensionless.filtration import SignalFilters, PhysicsConstraints, 
 from helpers.dimensionless_plotting import plot_dimensionless_grouped
 from helpers.dimensionless.filtration.utils import select_filter_method
 from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
+from helpers.quadratic_regression_model import QuadraticRegressionModel
 from helpers.ml_methods import DimensionlessExtrapolator
 from helpers.grp_analysis import analyze_flow_regime, compute_productivity_index, detect_flow_regime_transitions, generate_type_curves, match_type_curves
 
@@ -421,109 +422,112 @@ class MyApp(QMainWindow, Ui_mainWindow):
         return complete_curves
     
     def on_train_interpolator(self) -> None:
-        """Обучает интерполятор на загруженных данных без пропусков"""
+        """Обучает квадратичную регрессию для подгонки расчётных X-Y под эталонные X-Y из данных на массиве всех скважин"""
         if not self.loaded_data:
             self.show_info("Ошибка", "Нет загруженных данных для обучения")
             return
         
         try:
-            # Находим кривые без пропусков
+            # Собираем все расчётные и эталонные X-Y со всех скважин
+            X_calc_all = []
+            Y_calc_all = []
+            X_data_all = []
+            Y_data_all = []
+            
+            # Находим кривые без пропусков и с эталонными X-Y
             complete_curves = self._find_complete_curves()
             
-            if len(complete_curves) < 2:
-                self.show_info("Ошибка", 
-                    f"Недостаточно кривых без пропусков для обучения. Найдено: {len(complete_curves)}. Требуется минимум 2.")
-                return
-            
-            # Подготавливаем данные для обучения на X-Y кривых
-            param_grid_list = []
-            X_curves_list = []
-            Y_curves_list = []
-            Y_grid_common = None
-            
             for idx, well_data in complete_curves:
-                # Не пропускаем кривые с невалидным a/L - валидация в _validate_input_ranges обрежет значения
+                # Проверяем наличие эталонных X-Y в данных
+                if not (hasattr(well_data, 'X') and well_data.X is not None and
+                        hasattr(well_data, 'Y') and well_data.Y is not None):
+                    print(f"Пропущена кривая {idx}: отсутствуют эталонные X-Y в данных")
+                    continue
+                
                 try:
                     params = self._get_params(well_data)
                     
-                    # Конвертируем в безразмерные параметры
+                    # Вычисляем расчётные X-Y по формулам
                     dim_data = convert_to_dimensionless_curves(
                         well_data.time, well_data.pressure, well_data.flow_rate,
                         well_data.depression, params, x_mode='alt'
                     )
                     
-                    # Инициализируем X и Y значения
-                    x_values = None
-                    y_values = None
+                    # Получаем эталонные X-Y из данных
+                    X_data = well_data.X.values if hasattr(well_data.X, 'values') else np.array(well_data.X)
+                    Y_data = well_data.Y.values if hasattr(well_data.Y, 'values') else np.array(well_data.Y)
+                    X_calc = np.asarray(dim_data.X).flatten()
+                    Y_calc = np.asarray(dim_data.Y).flatten()
                     
-                    # Используем первый Y_grid как общий (должны быть одинаковыми)
-                    if Y_grid_common is None:
-                        Y_grid_common = dim_data.Y.copy()
-                        # Для первой кривой просто используем её значения
-                        x_values = dim_data.X.copy()
-                        y_values = dim_data.Y.copy()
-                    elif len(dim_data.Y) != len(Y_grid_common):
-                        # Если длины не совпадают, интерполируем на общую сетку
-                        from scipy.interpolate import interp1d
-                        interp_X = interp1d(dim_data.Y, dim_data.X,
-                                           kind='linear', bounds_error=False, fill_value='extrapolate')
-                        interp_Y = interp1d(dim_data.Y, dim_data.Y,
-                                           kind='linear', bounds_error=False, fill_value='extrapolate')
-                        x_values = interp_X(Y_grid_common)
-                        y_values = Y_grid_common  # Y уже на общей сетке
-                    else:
-                        x_values = dim_data.X.copy()
-                        y_values = dim_data.Y.copy()
+                    # Преобразуем в массивы и убираем скаляры
+                    X_data = np.asarray(X_data).flatten()
+                    Y_data = np.asarray(Y_data).flatten()
                     
-                    # Проверяем, что X и Y успешно вычислены
-                    if x_values is None or len(x_values) == 0 or y_values is None or len(y_values) == 0:
-                        print(f"Пропущена кривая {idx}: не удалось вычислить X-Y значения")
+                    # Проверяем, что это массивы, а не скаляры
+                    if X_data.ndim == 0 or Y_data.ndim == 0 or X_calc.ndim == 0 or Y_calc.ndim == 0:
+                        print(f"Пропущена кривая {idx}: X или Y являются скалярами, а не массивами")
                         continue
                     
-                    # Параметры скважины
-                    # Обрезаем a/L до диапазона [0, 1] если он вне диапазона (валидация в fit_xy тоже это сделает)
-                    a_l_clipped = np.clip(well_data.a_l_ratio, 0.0, 1.0)
-                    if a_l_clipped != well_data.a_l_ratio:
-                        print(f"Кривая {idx}: a/L={well_data.a_l_ratio:.6f} обрезан до {a_l_clipped:.6f}")
-                    param_grid_list.append([well_data.skin, well_data.fractures_count, a_l_clipped])
-                    X_curves_list.append(x_values)
-                    Y_curves_list.append(y_values)
+                    # Проверяем, что длины совпадают
+                    min_len = min(len(X_data), len(Y_data), len(X_calc), len(Y_calc))
+                    if min_len < 2:
+                        print(f"Пропущена кривая {idx}: недостаточно точек ({min_len})")
+                        continue
+                    
+                    # Обрезаем до минимальной длины
+                    X_data = X_data[:min_len]
+                    Y_data = Y_data[:min_len]
+                    X_calc = X_calc[:min_len]
+                    Y_calc = Y_calc[:min_len]
+                    
+                    # Добавляем в общий массив (преобразуем в список для extend)
+                    X_calc_all.extend(X_calc.tolist() if hasattr(X_calc, 'tolist') else list(X_calc))
+                    Y_calc_all.extend(Y_calc.tolist() if hasattr(Y_calc, 'tolist') else list(Y_calc))
+                    X_data_all.extend(X_data.tolist() if hasattr(X_data, 'tolist') else list(X_data))
+                    Y_data_all.extend(Y_data.tolist() if hasattr(Y_data, 'tolist') else list(Y_data))
+                    
                 except Exception as e:
-                    print(f"Пропущена кривая {idx} из-за ошибки конвертации: {e}")
+                    print(f"Пропущена кривая {idx} из-за ошибки: {e}")
                     continue
             
-            # Проверяем, что после фильтрации остались кривые
-            if len(param_grid_list) < 2:
+            # Проверяем минимальное количество точек (30)
+            if len(X_calc_all) < 30:
                 self.show_info("Ошибка", 
-                    f"После фильтрации осталось недостаточно кривых для обучения. "
-                    f"Найдено: {len(param_grid_list)}. Требуется минимум 2.")
+                    f"Недостаточно точек для обучения. Найдено: {len(X_calc_all)}, требуется минимум 30.\n"
+                    f"Убедитесь, что в данных есть эталонные X и Y для скважин без пропусков.")
                 return
             
-            if Y_grid_common is None:
-                self.show_info("Ошибка", "Не удалось определить общую сетку Y для обучения")
-                return
+            # Преобразуем в numpy массивы
+            X_calc_all = np.array(X_calc_all)
+            Y_calc_all = np.array(Y_calc_all)
+            X_data_all = np.array(X_data_all)
+            Y_data_all = np.array(Y_data_all)
             
-            # Обучаем интерполятор на X-Y кривых
-            param_grid = np.array(param_grid_list)
-            X_curves = np.array(X_curves_list)
-            Y_curves = np.array(Y_curves_list)
+            # Обучаем квадратичную регрессию (подгоняем и X, и Y)
+            model = QuadraticRegressionModel(alpha=1.0, fit_only_y=False)
+            model.fit(X_calc_all, Y_calc_all, X_data_all, Y_data_all)
             
-            interp = DimensionlessCurveInterpolator(methods=INTERPOLATION_METHODS)
-            # Обучаем на X-Y кривых: передаем X и Y как отдельные кривые
-            # Интерполятор будет обучаться на X и Y одновременно
-            interp.fit_xy(param_grid, Y_grid_common, X_curves, Y_curves)
-            
-            self.trained_interpolator = interp
+            self.trained_interpolator = model
             self.trained_interpolator_path = None  # Сбрасываем путь, так как модель переобучена
+            
+            # Получаем метрики
+            metrics = model.get_metrics()
+            coef = model.get_coefficients()
             
             # Обновляем статус
             if hasattr(self, 'model_status_label'):
-                self.model_status_label.setText(f"Обучена на {len(param_grid_list)} кривых")
+                self.model_status_label.setText(f"Обучена на {metrics['n_samples']} точках")
             
-            self.show_info("Успех", 
-                f"Модель обучена на {len(param_grid_list)} кривых без пропусков.\n"
-                f"Лучший метод: {interp.best_method}\n"
-                f"RMSE: {interp.rmse_scores.get(interp.best_method, 0):.6e}")
+            # Формируем сообщение
+            msg = f"Модель обучена на {metrics['n_samples']} точках из {len(complete_curves)} скважин.\n\n"
+            msg += f"Коэффициенты:\n"
+            msg += f"  X: a = {coef['a']:.6f}\n"
+            msg += f"  Y: a_y = {coef['a_y']:.6f}, b = {coef['b']:.6f}, c = {coef['c']:.6f}\n\n"
+            msg += f"Метрики:\n"
+            msg += f"  X: RMSE = {metrics['rmse_x']:.6e}, R² = {metrics['r2_x']:.4f}\n"
+            msg += f"  Y: RMSE = {metrics['rmse_y']:.6e}, R² = {metrics['r2_y']:.4f}"
+            
+            self.show_info("Успех", msg)
             
         except Exception as e:
             self.show_info("Ошибка", f"Не удалось обучить модель: {str(e)}")
@@ -583,7 +587,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 interp = pickle.load(f)
             
             # Проверяем, что это правильный тип
-            if not isinstance(interp, DimensionlessCurveInterpolator):
+            if not isinstance(interp, (DimensionlessCurveInterpolator, QuadraticRegressionModel)):
                 self.show_info("Ошибка", "Загруженный файл не является моделью интерполяции")
                 return
             
@@ -599,10 +603,20 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 filename = os.path.basename(file_path)
                 self.model_status_label.setText(f"Загружена: {filename}")
             
+            # Формируем информацию о модели в зависимости от типа
+            if isinstance(interp, QuadraticRegressionModel):
+                metrics = interp.get_metrics()
+                coef = interp.get_coefficients()
+                model_info = f"Модель: Квадратичная регрессия (Ridge)\n"
+                model_info += f"Обучена на {metrics['n_samples']} точках\n"
+                model_info += f"RMSE Y: {metrics['rmse_y']:.6e}, R² Y: {metrics['r2_y']:.4f}"
+            else:
+                # DimensionlessCurveInterpolator
+                model_info = f"Метод: {interp.best_method}\n"
+                model_info += f"Обучающих примеров: {interp.param_grid.shape[0] if hasattr(interp, 'param_grid') else 0}"
+            
             self.show_info("Успех", 
-                f"Модель загружена из файла:\n{file_path}\n"
-                f"Метод: {interp.best_method}\n"
-                f"Обучающих примеров: {interp.param_grid.shape[0] if hasattr(interp, 'param_grid') else 0}")
+                f"Модель загружена из файла:\n{file_path}\n\n{model_info}")
             
         except Exception as e:
             self.show_info("Ошибка", f"Не удалось загрузить модель: {str(e)}")
@@ -930,9 +944,17 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Формируем информацию о результатах
         if use_trained_model and not use_local_mode:
             method_used = 'trained_model'
-            best_method = self.trained_interpolator.best_method
-            rmse_scores = self.trained_interpolator.rmse_scores
-            n_samples = self.trained_interpolator.param_grid.shape[0] if hasattr(self.trained_interpolator, 'param_grid') else 0
+            if isinstance(self.trained_interpolator, QuadraticRegressionModel):
+                # Для QuadraticRegressionModel
+                best_method = 'quadratic_regression'
+                metrics = self.trained_interpolator.get_metrics()
+                rmse_scores = {'quadratic_regression': metrics['rmse_y']}
+                n_samples = metrics['n_samples']
+            else:
+                # Для DimensionlessCurveInterpolator
+                best_method = self.trained_interpolator.best_method
+                rmse_scores = self.trained_interpolator.rmse_scores
+                n_samples = self.trained_interpolator.param_grid.shape[0] if hasattr(self.trained_interpolator, 'param_grid') else 0
         else:
             method_used = 'local_pchip'
             best_method = 'local_pchip'
@@ -1807,11 +1829,51 @@ class MyApp(QMainWindow, Ui_mainWindow):
             X_calc = dim_data.X
             Y_calc = dim_data.Y
             
-            # Проверяем, нужно ли подгонять только Y
-            fit_only_y = hasattr(self, 'cb_fit_only_y') and self.cb_fit_only_y.isChecked()
-            
-            # Выполняем подгонку
-            fit_result = fit_xy_curve_coefficients(X_data, Y_data, X_calc, Y_calc, fit_only_y=fit_only_y)
+            # Используем обученную модель, если она есть
+            if (self.trained_interpolator is not None and 
+                isinstance(self.trained_interpolator, QuadraticRegressionModel) and
+                self.trained_interpolator.is_fitted):
+                # Используем обученную модель для подгонки
+                X_fitted, Y_fitted = self.trained_interpolator.predict(X_calc, Y_calc)
+                
+                # Вычисляем метрики
+                mask = np.isfinite(X_data) & np.isfinite(Y_data) & np.isfinite(X_fitted) & np.isfinite(Y_fitted)
+                if np.any(mask):
+                    rmse_y = np.sqrt(np.mean((Y_data[mask] - Y_fitted[mask]) ** 2))
+                    rmse_x = np.sqrt(np.mean((X_data[mask] - X_fitted[mask]) ** 2))
+                    
+                    y_mean = np.mean(Y_data[mask])
+                    ss_tot = np.sum((Y_data[mask] - y_mean) ** 2)
+                    r2_y = 1 - np.sum((Y_data[mask] - Y_fitted[mask]) ** 2) / ss_tot if ss_tot > 0 else 0.0
+                    
+                    y_range = np.max(Y_data[mask]) - np.min(Y_data[mask])
+                    accuracy = max(0, (1 - rmse_y / y_range) * 100) if y_range > 0 else 0.0
+                else:
+                    rmse_y = np.inf
+                    rmse_x = np.inf
+                    r2_y = 0.0
+                    accuracy = 0.0
+                
+                coef = self.trained_interpolator.get_coefficients()
+                
+                # Формируем результат в формате fit_xy_curve_coefficients
+                fit_result = {
+                    'a': coef['a'],
+                    'a_y': coef['a_y'],
+                    'b': coef['b'],
+                    'c': coef['c'],
+                    'rmse': rmse_y,
+                    'rmse_before': rmse_y,  # Для обученной модели это не применимо
+                    'accuracy': accuracy,
+                    'r2': r2_y,
+                    'X_fitted': X_fitted,
+                    'Y_fitted': Y_fitted,
+                    'c_clipped': False,
+                    'fallback_used': False
+                }
+            else:
+                # Используем старый метод подгонки для одной скважины
+                fit_result = fit_xy_curve_coefficients(X_data, Y_data, X_calc, Y_calc, fit_only_y=False)
             
             # Сохраняем результаты (коэффициенты будут применяться автоматически при построении графиков)
             self.last_fitted_XY = (fit_result['X_fitted'], fit_result['Y_fitted'])
@@ -1832,11 +1894,19 @@ class MyApp(QMainWindow, Ui_mainWindow):
             report = "=" * 60 + "\n"
             report += "ПОДГОНКА РАСЧЁТНОЙ КРИВОЙ X-Y\n"
             report += "=" * 60 + "\n\n"
-            report += f"✅ ЛУЧШИЕ КОЭФФИЦИЕНТЫ:\n"
-            if fit_only_y:
-                report += f"   a (по X) = {fit_result['a']:.4g} (фиксирован)\n"
+            
+            # Указываем, используется ли обученная модель
+            if (self.trained_interpolator is not None and 
+                isinstance(self.trained_interpolator, QuadraticRegressionModel) and
+                self.trained_interpolator.is_fitted):
+                metrics = self.trained_interpolator.get_metrics()
+                report += f"ℹ️ Использована обученная модель (квадратичная регрессия с регуляризацией)\n"
+                report += f"   Обучена на {metrics['n_samples']} точках из всех скважин\n\n"
             else:
-                report += f"   a (по X) = {fit_result['a']:.4g}\n"
+                report += f"ℹ️ Использована локальная подгонка для текущей скважины\n\n"
+            
+            report += f"✅ ЛУЧШИЕ КОЭФФИЦИЕНТЫ:\n"
+            report += f"   a (по X) = {fit_result['a']:.4g}\n"
             report += f"   b (по Y) = {fit_result['b']:.4g}\n"
             c_val = fit_result.get('c', 0.0)
             report += f"   c (квадратичный) = {c_val:.4g}\n"
@@ -1849,10 +1919,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
             report += f"   Точность = {fit_result['accuracy']:.2f}%\n"
             report += f"   R² = {fit_result['r2']:.4f}\n\n"
             report += "📘 Итоговая аппроксимирующая формула:\n"
-            if fit_only_y:
-                report += f"   X_fit = 0.00864 * k * h * ΔP / (μ * B * Q) (без изменений)\n"
-            else:
-                report += f"   X_fit = {fit_result['a']:.3g} * (0.00864 * k * h * ΔP / (μ * B * Q))\n"
+            report += f"   X_fit = {fit_result['a']:.3g} * (0.00864 * k * h * ΔP / (μ * B * Q))\n"
             if abs(c_val) < 1e-10:
                 report += f"   Y_fit = {fit_result['b']:.3g} * (Q * B * t / (24 * φ * ct * h * L² * ΔP))\n"
             else:
@@ -1870,10 +1937,18 @@ class MyApp(QMainWindow, Ui_mainWindow):
             self.on_plot_dimensionless_selected()
             
             c_val = fit_result.get('c', 0.0)
+            model_info = ""
+            if (self.trained_interpolator is not None and 
+                isinstance(self.trained_interpolator, QuadraticRegressionModel) and
+                self.trained_interpolator.is_fitted):
+                model_info = "\n(Использована обученная модель на массиве всех скважин)"
+            else:
+                model_info = "\n(Использована локальная подгонка для текущей скважины)"
+            
             self.show_info("Подгонка выполнена", 
                          f"Коэффициенты: a={fit_result['a']:.3g}, b={fit_result['b']:.3g}, c={c_val:.3g}\n"
                          f"Точность: {fit_result['accuracy']:.2f}%\n"
-                         f"Коэффициенты сохранены и будут применяться автоматически.")
+                         f"Коэффициенты сохранены и будут применяться автоматически.{model_info}")
             
         except Exception as e:
             import traceback
@@ -2041,9 +2116,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 c = self.last_fit_coefficients.get('c', 0.0)  # Квадратичный коэффициент для Y
                 
                 # Применяем преобразования: X_fit = a * X, Y_fit = a_y * Y + b + c * Y^2
-                # (но только если fit_only_y не было, иначе a = 1.0 уже установлен)
-                if not (hasattr(self, 'cb_fit_only_y') and self.cb_fit_only_y.isChecked()):
-                    dim_data.X = dim_data.X * a
+                dim_data.X = dim_data.X * a
                 
                 # Применяем квадратичное преобразование к Y: Y_fit = a_y * Y + b + c * Y^2
                 dim_data.Y = a_y * dim_data.Y + b + c * (dim_data.Y ** 2)
@@ -2060,9 +2133,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 c = self.last_fit_coefficients.get('c', 0.0)  # Квадратичный коэффициент для Y
                 
                 # Применяем те же коэффициенты к экстраполированным значениям
-                if not (hasattr(self, 'cb_fit_only_y') and self.cb_fit_only_y.isChecked()):
-                    X_ext = X_ext * a
-                
+                X_ext = X_ext * a
                 Y_ext = a_y * Y_ext + b + c * (Y_ext ** 2)
                 
                 # Обновляем экстраполированные значения с применёнными коэффициентами

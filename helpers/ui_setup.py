@@ -65,8 +65,8 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     load_layout.addWidget(app.load_validation_button, 0, 0)
     left_layout.addWidget(load_group)
     
-    # --- Управление моделью интерполяции ---
-    model_group = QGroupBox("Модель интерполяции")
+    # --- Управление моделью аппроксимации ---
+    model_group = QGroupBox("Модель аппроксимации")
     model_layout = QGridLayout(model_group)
     app.train_model_btn = QPushButton("Обучить модель")
     app.save_model_btn = QPushButton("Сохранить модель")
@@ -87,8 +87,7 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     app.outlier_btn = QPushButton("Обнаружить выбросы")
     app.export_btn = QPushButton("Экспорт данных")
     app.extrapolate_btn = QPushButton("Экстраполировать X-Y")
-    app.fit_xy_btn = QPushButton("Подогнать расчётную кривую")
-    app.cb_fit_only_y = QCheckBox("Подгонять Y")
+    app.fit_xy_btn = QPushButton("Approx X-Y")
 
     buttons_layout.addWidget(app.plot_btn, 0, 0)
     buttons_layout.addWidget(app.interp_btn, 0, 1)
@@ -97,7 +96,6 @@ def setup_timeseries_tab(app: 'MyApp') -> QWidget:
     buttons_layout.addWidget(app.export_btn, 2, 0)
     buttons_layout.addWidget(app.extrapolate_btn, 2, 1)
     buttons_layout.addWidget(app.fit_xy_btn, 3, 0)
-    buttons_layout.addWidget(app.cb_fit_only_y, 3, 1)
     left_layout.addWidget(buttons_group)
 
     # --- Выбор скважины ---
