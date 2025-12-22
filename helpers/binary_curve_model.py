@@ -63,10 +63,15 @@ class BinaryCurveModel:
             Y_calc_all: np.ndarray,
             X_data_all: np.ndarray,
             Y_data_all: np.ndarray,
+            P_curves: Optional[List[np.ndarray]] = None,
+            Q_curves: Optional[List[np.ndarray]] = None,
             X_calc_curves: Optional[List[np.ndarray]] = None,
             Y_calc_curves: Optional[List[np.ndarray]] = None,
             X_data_curves: Optional[List[np.ndarray]] = None,
-            Y_data_curves: Optional[List[np.ndarray]] = None) -> 'BinaryCurveModel':
+            Y_data_curves: Optional[List[np.ndarray]] = None,
+            h_values: Optional[List[float]] = None,
+            L_values: Optional[List[float]] = None,
+            W_values: Optional[List[float]] = None) -> 'BinaryCurveModel':
         """
         Обучает классификатор и две модели аппроксимации.
         
@@ -74,10 +79,15 @@ class BinaryCurveModel:
         :param Y_calc_all: Расчётные значения Y (массив всех точек)
         :param X_data_all: Эталонные значения X из данных
         :param Y_data_all: Эталонные значения Y из данных
-        :param X_calc_curves: Опционально: список массивов расчётных X для каждой кривой (для классификации)
-        :param Y_calc_curves: Опционально: список массивов расчётных Y для каждой кривой (для классификации)
-        :param X_data_curves: Опционально: список массивов эталонных X для каждой кривой (для классификации)
-        :param Y_data_curves: Опционально: список массивов эталонных Y для каждой кривой (для классификации)
+        :param P_curves: Список массивов давления P для каждой кривой (для классификации)
+        :param Q_curves: Список массивов дебита Q для каждой кривой (для классификации)
+        :param X_calc_curves: Список массивов расчётных X для каждой кривой (для определения меток)
+        :param Y_calc_curves: Список массивов расчётных Y для каждой кривой (для определения меток)
+        :param X_data_curves: Список массивов эталонных X для каждой кривой (для определения меток)
+        :param Y_data_curves: Список массивов эталонных Y для каждой кривой (для определения меток)
+        :param h_values: Список значений h (толщина пласта) для каждой кривой
+        :param L_values: Список значений L (длина трещины) для каждой кривой
+        :param W_values: Список значений W (ширина трещины) для каждой кривой
         """
         # Проверка входных данных
         X_calc_all = np.asarray(X_calc_all).flatten()
@@ -88,27 +98,28 @@ class BinaryCurveModel:
         if len(X_calc_all) != len(Y_calc_all) or len(X_calc_all) != len(X_data_all) or len(X_calc_all) != len(Y_data_all):
             raise ValueError("Все массивы должны иметь одинаковую длину")
         
-        # Если кривые не предоставлены, пытаемся восстановить их из данных
+        # Проверка входных данных для классификатора
+        if P_curves is None or Q_curves is None:
+            raise ValueError("P_curves и Q_curves обязательны для обучения классификатора")
+        
         if X_calc_curves is None or Y_calc_curves is None or X_data_curves is None or Y_data_curves is None:
-            # В этом случае классификатор будет обучен на объединённых данных
-            # Это не идеально, но лучше, чем ничего
-            print("Предупреждение: кривые не предоставлены. Классификация будет выполнена на объединённых данных.")
-            X_calc_curves = [X_calc_all]
-            Y_calc_curves = [Y_calc_all]
-            X_data_curves = [X_data_all]
-            Y_data_curves = [Y_data_all]
+            raise ValueError("X_calc_curves, Y_calc_curves, X_data_curves, Y_data_curves обязательны для определения меток")
         
-        # Обучение классификатора на расчётных и эталонных кривых
-        if len(X_calc_curves) != len(Y_calc_curves) or len(X_calc_curves) != len(X_data_curves) or len(X_calc_curves) != len(Y_data_curves):
-            raise ValueError("Количество расчётных и эталонных кривых должно совпадать")
+        if len(P_curves) != len(Q_curves) or len(P_curves) != len(X_calc_curves):
+            raise ValueError(f"Количество кривых не совпадает: P={len(P_curves)}, Q={len(Q_curves)}, X_calc={len(X_calc_curves)}")
         
-        print(f"Обучение классификатора на {len(X_calc_curves)} кривых...")
-        self.classifier.fit(X_calc_curves, Y_calc_curves, X_data_curves, Y_data_curves)
+        # Обучение классификатора на P-Q признаках с метками из сравнения X-Y кривых
+        print(f"Обучение классификатора на {len(P_curves)} кривых (признаки: P, Q, h, L, W)...")
+        self.classifier.fit(P_curves, Q_curves, X_calc_curves, Y_calc_curves, X_data_curves, Y_data_curves,
+                           h_values=h_values, L_values=L_values, W_values=W_values)
         
-        # Классифицируем каждую кривую (сравниваем расчётную с эталонной)
+        # Классифицируем каждую кривую на основе P, Q и параметров скважины
         curve_classes = []
-        for X_calc_curve, Y_calc_curve, X_data_curve, Y_data_curve in zip(X_calc_curves, Y_calc_curves, X_data_curves, Y_data_curves):
-            curve_class = self.classifier.predict(X_calc_curve, Y_calc_curve, X_data_curve, Y_data_curve)
+        for i, (P_curve, Q_curve) in enumerate(zip(P_curves, Q_curves)):
+            h = h_values[i] if h_values and i < len(h_values) else None
+            L = L_values[i] if L_values and i < len(L_values) else None
+            W = W_values[i] if W_values and i < len(W_values) else None
+            curve_class = self.classifier.predict(P_curve, Q_curve, h=h, L=L, W=W)
             curve_classes.append(curve_class)
         
         curve_classes = np.array(curve_classes)
@@ -205,29 +216,28 @@ class BinaryCurveModel:
         return self
     
     def predict(self, X_calc: np.ndarray, Y_calc: np.ndarray,
-                X_data: Optional[np.ndarray] = None, Y_data: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray, int]:
+                P: np.ndarray, Q: np.ndarray,
+                h: Optional[float] = None, L: Optional[float] = None, 
+                W: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, int]:
         """
         Применяет обученную модель к новым расчётным X-Y.
         
-        Сначала классифицирует кривую (сравнивая расчётную с эталонной), затем использует соответствующую модель.
+        Сначала классифицирует кривую на основе P, Q и параметров скважины, затем использует соответствующую модель.
         
         :param X_calc: Расчётные значения X
         :param Y_calc: Расчётные значения Y
-        :param X_data: Опциональные эталонные значения X (если None, используется X_calc)
-        :param Y_data: Опциональные эталонные значения Y (если None, используется Y_calc)
+        :param P: Давление (временной ряд) для классификации
+        :param Q: Дебит (временной ряд) для классификации
+        :param h: Толщина пласта (опционально)
+        :param L: Длина трещины (опционально)
+        :param W: Ширина трещины (опционально)
         :return: Кортеж (X_fitted, Y_fitted, curve_class) - подогнанные значения и класс кривой
         """
         if not self.is_fitted:
             raise RuntimeError("Модель не обучена. Вызовите fit() сначала.")
         
-        # Если эталонные данные не предоставлены, используем расчётные (fallback)
-        if X_data is None:
-            X_data = X_calc
-        if Y_data is None:
-            Y_data = Y_calc
-        
-        # Классифицируем кривую (сравниваем расчётную с эталонной)
-        curve_class = self.classifier.predict(X_calc, Y_calc, X_data, Y_data)
+        # Классифицируем кривую на основе P, Q и параметров скважины
+        curve_class = self.classifier.predict(P, Q, h=h, L=L, W=W)
         
         # Выбираем соответствующую модель
         if curve_class == 0:

@@ -26,15 +26,140 @@ class CurveClassifier:
     def __init__(self, classifier_type: str = 'logistic', use_scaling: bool = True):
         """
         :param classifier_type: Тип классификатора ('logistic', 'tree', 'forest')
-        :param use_scaling: Использовать ли стандартизацию признаков
+        :param use_scaling: Использовать ли стандартизацию признаков (всегда True для нормализации)
         """
         self.classifier_type = classifier_type
-        self.use_scaling = use_scaling
+        self.use_scaling = True  # Всегда используем нормализацию для классификатора
         self.classifier = None
-        self.scaler = StandardScaler() if use_scaling else None
+        self.scaler = StandardScaler()  # Всегда создаём scaler для нормализации признаков
         self.median_steepness = None
         self.is_fitted = False
         
+    def extract_pq_features(self, P: np.ndarray, Q: np.ndarray, 
+                           h: Optional[float] = None, L: Optional[float] = None, 
+                           W: Optional[float] = None) -> np.ndarray:
+        """
+        Извлекает статистические признаки из временных рядов P и Q, а также параметры скважины.
+        
+        Признаки:
+        1-12. Статистики P и Q (см. ниже)
+        13. h (толщина пласта) - полный вес (1.0)
+        14. L (длина трещины) - сниженный вес (0.7)
+        15. W (ширина трещины) - сниженный вес (0.7)
+        
+        Статистики P и Q:
+        1. Среднее P
+        2. Медиана P
+        3. Стандартное отклонение P
+        4. Диапазон P (max - min)
+        5. Наклон P (линейный тренд)
+        6. Среднее Q
+        7. Медиана Q
+        8. Стандартное отклонение Q
+        9. Диапазон Q (max - min)
+        10. Наклон Q (линейный тренд)
+        11. Корреляция P и Q
+        12. Отношение средних P/Q
+        
+        :param P: Давление (временной ряд)
+        :param Q: Дебит (временной ряд)
+        :param h: Толщина пласта (опционально, один для всей скважины)
+        :param L: Длина трещины (опционально)
+        :param W: Ширина трещины (опционально)
+        :return: Массив признаков (15 элементов, если h, L, W предоставлены, иначе 12)
+        """
+        P = np.asarray(P).flatten()
+        Q = np.asarray(Q).flatten()
+        
+        # Убираем NaN и Inf
+        valid_mask = np.isfinite(P) & np.isfinite(Q) & (P > 0) & (Q > 0)
+        
+        if np.sum(valid_mask) < 3:
+            return np.zeros(12)
+        
+        P_valid = P[valid_mask]
+        Q_valid = Q[valid_mask]
+        
+        # Признаки для P
+        P_mean = np.mean(P_valid)
+        P_median = np.median(P_valid)
+        P_std = np.std(P_valid) if len(P_valid) > 1 else 0.0
+        P_range = np.max(P_valid) - np.min(P_valid)
+        
+        # Линейный тренд для P
+        if len(P_valid) > 1:
+            x_p = np.arange(len(P_valid))
+            P_slope = np.polyfit(x_p, P_valid, 1)[0] if len(P_valid) > 1 else 0.0
+        else:
+            P_slope = 0.0
+        
+        # Признаки для Q
+        Q_mean = np.mean(Q_valid)
+        Q_median = np.median(Q_valid)
+        Q_std = np.std(Q_valid) if len(Q_valid) > 1 else 0.0
+        Q_range = np.max(Q_valid) - np.min(Q_valid)
+        
+        # Линейный тренд для Q
+        if len(Q_valid) > 1:
+            x_q = np.arange(len(Q_valid))
+            Q_slope = np.polyfit(x_q, Q_valid, 1)[0] if len(Q_valid) > 1 else 0.0
+        else:
+            Q_slope = 0.0
+        
+        # Корреляция P и Q
+        if len(P_valid) > 1 and len(Q_valid) > 1 and len(P_valid) == len(Q_valid):
+            try:
+                P_Q_corr = np.corrcoef(P_valid, Q_valid)[0, 1]
+                if not np.isfinite(P_Q_corr):
+                    P_Q_corr = 0.0
+            except Exception:
+                P_Q_corr = 0.0
+        else:
+            P_Q_corr = 0.0
+        
+        # Отношение средних
+        P_Q_ratio = P_mean / (Q_mean + 1e-10)
+        
+        # Базовые признаки из P и Q
+        features = [
+            P_mean, P_median, P_std, P_range, P_slope,
+            Q_mean, Q_median, Q_std, Q_range, Q_slope,
+            P_Q_corr, P_Q_ratio
+        ]
+        
+        # Добавляем параметры скважины с разными весами
+        # h - полный вес (1.0), L и W - сниженный вес (0.7)
+        # Преобразуем в скаляры, если это массивы
+        
+        if h is not None:
+            h_scalar = float(h) if not isinstance(h, (int, float)) else h
+            if np.isfinite(h_scalar) and h_scalar > 0:
+                features.append(h_scalar * 1.0)  # Полный вес для h
+            else:
+                features.append(0.0)
+        else:
+            features.append(0.0)
+        
+        if L is not None:
+            L_scalar = float(L) if not isinstance(L, (int, float)) else L
+            if np.isfinite(L_scalar) and L_scalar > 0:
+                features.append(L_scalar * 0.7)  # Сниженный вес для L
+            else:
+                features.append(0.0)
+        else:
+            features.append(0.0)
+        
+        if W is not None:
+            W_scalar = float(W) if not isinstance(W, (int, float)) else W
+            if np.isfinite(W_scalar) and W_scalar > 0:
+                features.append(W_scalar * 0.7)  # Сниженный вес для W
+            else:
+                features.append(0.0)
+        else:
+            features.append(0.0)
+        
+        return np.array(features)
+    
     def compute_curve_classification_metric(self, X_calc: np.ndarray, Y_calc: np.ndarray,
                                            X_data: np.ndarray, Y_data: np.ndarray) -> float:
         """
@@ -368,35 +493,57 @@ class CurveClassifier:
         
         return features
     
-    def fit(self, X_calc_curves: list, Y_calc_curves: list,
+    def fit(self, P_curves: list, Q_curves: list,
+            X_calc_curves: list, Y_calc_curves: list,
             X_data_curves: list, Y_data_curves: list,
+            h_values: Optional[list] = None,
+            L_values: Optional[list] = None,
+            W_values: Optional[list] = None,
             labels: Optional[np.ndarray] = None) -> 'CurveClassifier':
         """
-        Обучает классификатор на массиве расчётных и эталонных кривых.
+        Обучает классификатор на массиве P-Q признаков и метках, определённых из сравнения X-Y кривых.
         
-        Если labels не предоставлены, автоматически вычисляет классы на основе медианы метрики отношения крутости.
+        Если labels не предоставлены, автоматически вычисляет классы на основе метрики отношения крутости.
         Класс 0: расчётная круче эталонной (нужно ужимать)
         Класс 1: расчётная положе эталонной (нужно растягивать)
         
-        :param X_calc_curves: Список массивов расчётных X для каждой кривой
-        :param Y_calc_curves: Список массивов расчётных Y для каждой кривой
-        :param X_data_curves: Список массивов эталонных X для каждой кривой
-        :param Y_data_curves: Список массивов эталонных Y для каждой кривой
+        :param P_curves: Список массивов давления P для каждой кривой
+        :param Q_curves: Список массивов дебита Q для каждой кривой
+        :param X_calc_curves: Список массивов расчётных X для каждой кривой (для определения меток)
+        :param Y_calc_curves: Список массивов расчётных Y для каждой кривой (для определения меток)
+        :param X_data_curves: Список массивов эталонных X для каждой кривой (для определения меток)
+        :param Y_data_curves: Список массивов эталонных Y для каждой кривой (для определения меток)
+        :param h_values: Опциональный список значений h (толщина пласта) для каждой кривой
+        :param L_values: Опциональный список значений L (длина трещины) для каждой кривой
+        :param W_values: Опциональный список значений W (ширина трещины) для каждой кривой
         :param labels: Опциональные метки классов (0 или 1). Если None, вычисляются автоматически
         :return: self
         """
-        if len(X_calc_curves) != len(Y_calc_curves) or len(X_calc_curves) != len(X_data_curves) or len(X_calc_curves) != len(Y_data_curves):
-            raise ValueError(f"Количество кривых не совпадает: X_calc={len(X_calc_curves)}, Y_calc={len(Y_calc_curves)}, "
-                           f"X_data={len(X_data_curves)}, Y_data={len(Y_data_curves)}")
+        if len(P_curves) != len(Q_curves) or len(P_curves) != len(X_calc_curves):
+            raise ValueError(f"Количество кривых не совпадает: P={len(P_curves)}, Q={len(Q_curves)}, "
+                           f"X_calc={len(X_calc_curves)}")
         
-        # Вычисляем признаки для всех кривых (сравнение расчётной и эталонной)
+        # Вычисляем признаки из P и Q для всех кривых
         features_list = []
         steepness_ratio_values = []
         
-        for X_calc, Y_calc, X_data, Y_data in zip(X_calc_curves, Y_calc_curves, X_data_curves, Y_data_curves):
-            features = self.compute_curve_features(X_calc, Y_calc, X_data, Y_data)
-            features_list.append(features)
-            # Используем новую метрику классификации на основе формы кривой
+        # Обрабатываем опциональные параметры скважины
+        if h_values is None:
+            h_values = [None] * len(P_curves)
+        if L_values is None:
+            L_values = [None] * len(P_curves)
+        if W_values is None:
+            W_values = [None] * len(P_curves)
+        
+        for P, Q, X_calc, Y_calc, X_data, Y_data, h, L, W in zip(
+            P_curves, Q_curves, X_calc_curves, Y_calc_curves, X_data_curves, Y_data_curves,
+            h_values, L_values, W_values
+        ):
+            # Извлекаем признаки из P, Q и параметров скважины
+            pq_features = self.extract_pq_features(P, Q, h=h, L=L, W=W)
+            features_list.append(pq_features)
+            
+            # Вычисляем метрику для определения метки (сравнение расчётной и эталонной)
             steepness_ratio_values.append(self.compute_curve_classification_metric(X_calc, Y_calc, X_data, Y_data))
         
         X_features = np.array(features_list)
@@ -416,19 +563,23 @@ class CurveClassifier:
             # Вычисляем среднее для информации
             self.median_steepness = np.mean(steepness_ratio_array)
         
-        if len(labels) != len(X_calc_curves):
-            raise ValueError(f"Количество меток ({len(labels)}) не совпадает с количеством кривых ({len(X_calc_curves)})")
+        if len(labels) != len(P_curves):
+            raise ValueError(f"Количество меток ({len(labels)}) не совпадает с количеством кривых ({len(P_curves)})")
         
         # Стандартизация признаков
         if self.use_scaling:
             X_features = self.scaler.fit_transform(X_features)
         
-        # Обучение классификатора
+        # Обучение классификатора с регуляризацией
+        # Нормализация данных уже применена выше через self.scaler (если use_scaling=True)
         if self.classifier_type == 'logistic':
-            self.classifier = LogisticRegression(random_state=42, max_iter=1000)
+            # C=1.0 - стандартная регуляризация
+            self.classifier = LogisticRegression(C=1.0, random_state=42, max_iter=1000)
         elif self.classifier_type == 'tree':
+            # Ограничение глубины для предотвращения переобучения
             self.classifier = DecisionTreeClassifier(random_state=42, max_depth=5)
         elif self.classifier_type == 'forest':
+            # Ограничение глубины для предотвращения переобучения
             self.classifier = RandomForestClassifier(random_state=42, n_estimators=50, max_depth=5)
         else:
             raise ValueError(f"Неизвестный тип классификатора: {self.classifier_type}")
@@ -438,24 +589,27 @@ class CurveClassifier:
         
         return self
     
-    def predict(self, X_calc: np.ndarray, Y_calc: np.ndarray,
-                X_data: np.ndarray, Y_data: np.ndarray) -> int:
+    def predict(self, P: np.ndarray, Q: np.ndarray,
+                h: Optional[float] = None, L: Optional[float] = None, 
+                W: Optional[float] = None) -> int:
         """
-        Предсказывает класс коррекции кривой.
+        Предсказывает класс коррекции кривой на основе P, Q и параметров скважины.
         
         Класс 0: расчётная круче эталонной (нужно ужимать)
         Класс 1: расчётная положе эталонной (нужно растягивать)
         
-        :param X_calc: Расчётные значения X
-        :param Y_calc: Расчётные значения Y
-        :param X_data: Эталонные значения X
-        :param Y_data: Эталонные значения Y
+        :param P: Давление (временной ряд)
+        :param Q: Дебит (временной ряд)
+        :param h: Толщина пласта (опционально)
+        :param L: Длина трещины (опционально)
+        :param W: Ширина трещины (опционально)
         :return: Класс кривой (0 или 1)
         """
         if not self.is_fitted:
             raise RuntimeError("Классификатор не обучен. Вызовите fit() сначала.")
         
-        features = self.compute_curve_features(X_calc, Y_calc, X_data, Y_data).reshape(1, -1)
+        # Извлекаем признаки из P, Q и параметров скважины
+        features = self.extract_pq_features(P, Q, h=h, L=L, W=W).reshape(1, -1)
         
         if self.use_scaling:
             features = self.scaler.transform(features)
@@ -463,21 +617,24 @@ class CurveClassifier:
         prediction = self.classifier.predict(features)[0]
         return int(prediction)
     
-    def predict_proba(self, X_calc: np.ndarray, Y_calc: np.ndarray,
-                     X_data: np.ndarray, Y_data: np.ndarray) -> Tuple[float, float]:
+    def predict_proba(self, P: np.ndarray, Q: np.ndarray,
+                     h: Optional[float] = None, L: Optional[float] = None, 
+                     W: Optional[float] = None) -> Tuple[float, float]:
         """
-        Возвращает вероятности принадлежности к классам.
+        Возвращает вероятности принадлежности к классам на основе P, Q и параметров скважины.
         
-        :param X_calc: Расчётные значения X
-        :param Y_calc: Расчётные значения Y
-        :param X_data: Эталонные значения X
-        :param Y_data: Эталонные значения Y
+        :param P: Давление (временной ряд)
+        :param Q: Дебит (временной ряд)
+        :param h: Толщина пласта (опционально)
+        :param L: Длина трещины (опционально)
+        :param W: Ширина трещины (опционально)
         :return: Кортеж (вероятность класса 0, вероятность класса 1)
         """
         if not self.is_fitted:
             raise RuntimeError("Классификатор не обучен. Вызовите fit() сначала.")
         
-        features = self.compute_curve_features(X_calc, Y_calc, X_data, Y_data).reshape(1, -1)
+        # Извлекаем признаки из P, Q и параметров скважины
+        features = self.extract_pq_features(P, Q, h=h, L=L, W=W).reshape(1, -1)
         
         if self.use_scaling:
             features = self.scaler.transform(features)

@@ -165,13 +165,13 @@ class QuadraticRegressionModel:
             coef = np.asarray(self.Y_model.coef_).flatten()
             
             if len(coef) >= 3:
-                # Ограничиваем квадратичный коэффициент c в пределах [-0.15, 0.15]
-                # Уменьшено с [-0.2, 0.2] для предотвращения перегибов
+                # Ограничиваем квадратичный коэффициент c в пределах [-0.2, 0.2]
+                # Ослаблено для предотвращения излишнего ужимания
                 c = coef[2]
-                if c < -0.15:
-                    coef[2] = -0.15
-                elif c > 0.15:
-                    coef[2] = 0.15
+                if c < -0.2:
+                    coef[2] = -0.2
+                elif c > 0.2:
+                    coef[2] = 0.2
                 
                 # Дополнительная проверка: если квадратичный член создаёт перегиб,
                 # дополнительно уменьшаем его
@@ -182,9 +182,10 @@ class QuadraticRegressionModel:
                 # Дополнительно ограничиваем, если коэффициент слишком большой относительно линейного
                 if len(coef) >= 2:
                     a_y = coef[1]
-                    # Если квадратичный член больше 30% от линейного по модулю, уменьшаем его
-                    if abs(a_y) > 1e-10 and abs(c) > 0.3 * abs(a_y):
-                        c_max = 0.3 * abs(a_y)
+                    # Если квадратичный член больше 50% от линейного по модулю, уменьшаем его
+                    # Ослаблено с 30% до 50% для предотвращения излишнего ужимания
+                    if abs(a_y) > 1e-10 and abs(c) > 0.5 * abs(a_y):
+                        c_max = 0.5 * abs(a_y)
                         coef[2] = np.sign(c) * min(abs(c), c_max)
                 
                 # Обновляем коэффициенты модели (сохраняем исходную форму)
@@ -214,7 +215,8 @@ class QuadraticRegressionModel:
         
         # Предсказание для Y с квадратичным членом
         if self.Y_model is not None:
-            if self.poly_features is None:
+            # Обратная совместимость: если poly_features не был сохранён, создаём новый
+            if not hasattr(self, 'poly_features') or self.poly_features is None:
                 # Fallback: создаём новый трансформер, если не был сохранён
                 poly_features = PolynomialFeatures(degree=2, include_bias=True)
                 Y_features = poly_features.fit_transform(Y_calc.reshape(-1, 1))

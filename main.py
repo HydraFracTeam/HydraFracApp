@@ -527,11 +527,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 classifier_type='logistic',
                 quad_regularization_multiplier=5.0  # Увеличенная регуляризация для квадратичного члена
             )
-            # Создаём списки расчётных и эталонных кривых
+            # Создаём списки расчётных и эталонных кривых, а также P и Q для классификации
             X_calc_curves_list = []
             Y_calc_curves_list = []
             X_data_curves_list = []
             Y_data_curves_list = []
+            P_curves_list = []
+            Q_curves_list = []
+            h_values_list = []
+            L_values_list = []
+            W_values_list = []
             
             # Восстанавливаем кривые из полных массивов
             current_idx = 0
@@ -550,7 +555,16 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     X_calc = np.asarray(dim_data.X).flatten()
                     Y_calc = np.asarray(dim_data.Y).flatten()
                     
-                    min_len = min(len(X_data), len(Y_data), len(X_calc), len(Y_calc))
+                    # Извлекаем P и Q
+                    P = well_data.pressure.values if hasattr(well_data.pressure, 'values') else np.array(well_data.pressure)
+                    Q = well_data.flow_rate.values if hasattr(well_data.flow_rate, 'values') else np.array(well_data.flow_rate)
+                    
+                    # Извлекаем параметры скважины (один для всей скважины)
+                    h = well_data.thickness if hasattr(well_data, 'thickness') else None
+                    L = well_data.fracture_length if hasattr(well_data, 'fracture_length') else None
+                    W = well_data.fracture_width if hasattr(well_data, 'fracture_width') else None
+                    
+                    min_len = min(len(X_data), len(Y_data), len(X_calc), len(Y_calc), len(P), len(Q))
                     if min_len < 2:
                         continue
                     
@@ -558,13 +572,20 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     Y_calc_curves_list.append(Y_calc[:min_len])
                     X_data_curves_list.append(X_data[:min_len])
                     Y_data_curves_list.append(Y_data[:min_len])
+                    P_curves_list.append(P[:min_len])
+                    Q_curves_list.append(Q[:min_len])
+                    h_values_list.append(h)
+                    L_values_list.append(L)
+                    W_values_list.append(W)
                 except Exception:
                     continue
             
             model.fit(
                 X_calc_all, Y_calc_all, X_data_all, Y_data_all,
+                P_curves=P_curves_list, Q_curves=Q_curves_list,
                 X_calc_curves=X_calc_curves_list, Y_calc_curves=Y_calc_curves_list,
-                X_data_curves=X_data_curves_list, Y_data_curves=Y_data_curves_list
+                X_data_curves=X_data_curves_list, Y_data_curves=Y_data_curves_list,
+                h_values=h_values_list, L_values=L_values_list, W_values=W_values_list
             )
             
             self.trained_interpolator = model
@@ -1938,8 +1959,15 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 # Используем обученную модель для подгонки
                 if isinstance(self.trained_interpolator, BinaryCurveModel):
                     # Бинарная модель с классификацией
+                    # Извлекаем P и Q для классификации
+                    P = self.current_data.pressure.values if hasattr(self.current_data.pressure, 'values') else np.array(self.current_data.pressure)
+                    Q = self.current_data.flow_rate.values if hasattr(self.current_data.flow_rate, 'values') else np.array(self.current_data.flow_rate)
+                    # Извлекаем параметры скважины
+                    h = self.current_data.thickness if hasattr(self.current_data, 'thickness') else None
+                    L = self.current_data.fracture_length if hasattr(self.current_data, 'fracture_length') else None
+                    W = self.current_data.fracture_width if hasattr(self.current_data, 'fracture_width') else None
                     X_fitted, Y_fitted, curve_class = self.trained_interpolator.predict(
-                        X_calc, Y_calc, X_data, Y_data
+                        X_calc, Y_calc, P, Q, h=h, L=L, W=W
                     )
                     curve_type_str = "ужимать (расчётная круче)" if curve_class == 0 else "растягивать (расчётная положе)"
                     print(f"Кривая классифицирована: {curve_type_str} (класс {curve_class})")
@@ -1979,7 +2007,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 # Получаем коэффициенты в зависимости от типа модели
                 if isinstance(self.trained_interpolator, BinaryCurveModel):
                     # Для бинарной модели получаем коэффициенты соответствующей модели
-                    curve_class = self.trained_interpolator.classifier.predict(X_calc, Y_calc, X_data, Y_data)
+                    # curve_class уже вычислен выше при вызове predict
                     if curve_class == 0 and self.trained_interpolator.model_flat.is_fitted:
                         coef = self.trained_interpolator.model_flat.get_coefficients()
                     elif curve_class == 1 and self.trained_interpolator.model_steep.is_fitted:
