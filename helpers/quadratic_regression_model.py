@@ -7,6 +7,7 @@ import numpy as np
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import r2_score
 from typing import Dict, Any, Optional, Tuple
 import warnings
 
@@ -77,11 +78,8 @@ class QuadraticRegressionModel:
             # Метрики для X
             X_pred = self.X_model.predict(X_features)
             self.rmse_x = np.sqrt(np.mean((X_data_clean - X_pred) ** 2))
-            ss_tot_x = np.sum((X_data_clean - np.mean(X_data_clean)) ** 2)
-            if ss_tot_x > 0:
-                self.r2_x = 1 - np.sum((X_data_clean - X_pred) ** 2) / ss_tot_x
-            else:
-                self.r2_x = 0.0
+            # Используем готовый метод sklearn для R²
+            self.r2_x = r2_score(X_data_clean, X_pred)
         else:
             # Если fit_only_y, X не изменяется
             self.X_model = None
@@ -114,11 +112,8 @@ class QuadraticRegressionModel:
         Y_pred_shifted = Y_pred
         
         self.rmse_y = np.sqrt(np.mean((Y_data_clean - Y_pred_shifted) ** 2))
-        ss_tot_y = np.sum((Y_data_clean - np.mean(Y_data_clean)) ** 2)
-        if ss_tot_y > 0:
-            self.r2_y = 1 - np.sum((Y_data_clean - Y_pred_shifted) ** 2) / ss_tot_y
-        else:
-            self.r2_y = 0.0
+        # Используем готовый метод sklearn для R²
+        self.r2_y = r2_score(Y_data_clean, Y_pred_shifted)
         
         # Применяем физические ограничения к коэффициентам
         self._apply_physical_constraints()

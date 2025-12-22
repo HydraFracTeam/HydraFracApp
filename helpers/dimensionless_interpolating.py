@@ -4,7 +4,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from scipy.interpolate import RBFInterpolator
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, r2_score
 
 from helpers.math_error_logger import log_math_error, log_metric_error, log_computation_error
 
@@ -760,10 +760,8 @@ class DimensionlessCurveInterpolator:
         denom = np.where(np.abs(P_ref_eval) < 1e-12, 1e-12, np.abs(P_ref_eval))
         mape = float(np.nanmean(np.abs(diff) / denom) * 100.0)
         
-        # R² (Coefficient of Determination)
-        ss_res = np.nansum((P_ref_eval - P_pred_eval) ** 2)
-        ss_tot = np.nansum((P_ref_eval - np.nanmean(P_ref_eval)) ** 2)
-        r2 = float(1 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
+        # R² (Coefficient of Determination) - используем готовый метод sklearn
+        r2 = float(r2_score(P_ref_eval, P_pred_eval))
         
         # Max Error
         max_error = float(np.nanmax(np.abs(diff)))

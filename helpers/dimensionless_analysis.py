@@ -774,19 +774,17 @@ def fit_xy_curve_coefficients(
     Y_fitted = a_y * Y_calc + b + c * (Y_calc ** 2)
     
     # Вычисляем метрики
-    y_mean = np.nanmean(Y_data_clean)
-    ss_tot = np.sum((Y_data_clean - y_mean) ** 2)
-    if ss_tot > 0:
-        r2 = 1 - (rmse_after ** 2 * len(Y_data_clean)) / ss_tot
-    else:
-        r2 = 0.0
+    # Используем готовый метод sklearn для R²
+    from sklearn.metrics import r2_score
+    r2 = r2_score(Y_data_clean, Y_fit)
     
-    # Точность в процентах (нормализованная)
-    y_range = np.nanmax(Y_data_clean) - np.nanmin(Y_data_clean)
-    if y_range > 0:
-        accuracy = max(0, (1 - rmse_after / y_range) * 100)
-    else:
-        accuracy = 0.0
+    # Accuracy: доля совпавших точек (относительная ошибка < 10%)
+    # Точка считается совпавшей, если |Y_data - Y_fit| / |Y_data| < 0.1
+    Y_data_safe = np.where(np.abs(Y_data_clean) < 1e-12, 1e-12, np.abs(Y_data_clean))
+    relative_errors = np.abs(Y_data_clean - Y_fit) / Y_data_safe
+    # Порог 10% для совпадения
+    matched_points = np.sum(relative_errors < 0.1)
+    accuracy = (matched_points / len(Y_data_clean)) * 100.0 if len(Y_data_clean) > 0 else 0.0
     
     return {
         'a': a,  # Коэффициент для X

@@ -26,6 +26,7 @@ from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
 from helpers.quadratic_regression_model import QuadraticRegressionModel
 from helpers.binary_curve_model import BinaryCurveModel
 from helpers.ml_methods import DimensionlessExtrapolator
+from sklearn.metrics import r2_score
 from helpers.grp_analysis import analyze_flow_regime, compute_productivity_index, detect_flow_regime_transitions, generate_type_curves, match_type_curves
 
 from schemas.well_data import WellTimeSeries
@@ -1951,12 +1952,19 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     rmse_y = np.sqrt(np.mean((Y_data[mask] - Y_fitted[mask]) ** 2))
                     rmse_x = np.sqrt(np.mean((X_data[mask] - X_fitted[mask]) ** 2))
                     
-                    y_mean = np.mean(Y_data[mask])
-                    ss_tot = np.sum((Y_data[mask] - y_mean) ** 2)
-                    r2_y = 1 - np.sum((Y_data[mask] - Y_fitted[mask]) ** 2) / ss_tot if ss_tot > 0 else 0.0
+                    # Используем готовый метод sklearn для R²
+                    r2_y = r2_score(Y_data[mask], Y_fitted[mask])
                     
-                    y_range = np.max(Y_data[mask]) - np.min(Y_data[mask])
-                    accuracy = max(0, (1 - rmse_y / y_range) * 100) if y_range > 0 else 0.0
+                    # Accuracy: доля совпавших точек (относительная ошибка < 10%)
+                    # Точка считается совпавшей, если |Y_data - Y_fitted| / |Y_data| < 0.1
+                    Y_data_masked = Y_data[mask]
+                    Y_fitted_masked = Y_fitted[mask]
+                    # Избегаем деления на ноль
+                    Y_data_safe = np.where(np.abs(Y_data_masked) < 1e-12, 1e-12, np.abs(Y_data_masked))
+                    relative_errors = np.abs(Y_data_masked - Y_fitted_masked) / Y_data_safe
+                    # Порог 10% для совпадения
+                    matched_points = np.sum(relative_errors < 0.1)
+                    accuracy = (matched_points / len(Y_data_masked)) * 100.0 if len(Y_data_masked) > 0 else 0.0
                 else:
                     rmse_y = np.inf
                     rmse_x = np.inf
@@ -2524,10 +2532,8 @@ class MyApp(QMainWindow, Ui_mainWindow):
                             # MAE относительно эталона
                             ref_mae = np.mean(np.abs(ref_pressure_sorted - filtered_pressure_on_ref))
                             
-                            # R² относительно эталона
-                            ss_res = np.sum((ref_pressure_sorted - filtered_pressure_on_ref) ** 2)
-                            ss_tot = np.sum((ref_pressure_sorted - np.mean(ref_pressure_sorted)) ** 2)
-                            ref_r2 = 1 - (ss_res / (ss_tot + 1e-12)) if ss_tot > 1e-12 else 0.0
+                            # R² относительно эталона - используем готовый метод sklearn
+                            ref_r2 = r2_score(ref_pressure_sorted, filtered_pressure_on_ref)
                             
                             # Относительная ошибка относительно эталона
                             ref_range = np.max(ref_pressure_sorted) - np.min(ref_pressure_sorted)
