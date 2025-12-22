@@ -24,6 +24,7 @@ from helpers.dimensionless_plotting import plot_dimensionless_grouped
 from helpers.dimensionless.filtration.utils import select_filter_method
 from helpers.dimensionless_interpolating import DimensionlessCurveInterpolator
 from helpers.quadratic_regression_model import QuadraticRegressionModel
+from helpers.binary_curve_model import BinaryCurveModel
 from helpers.ml_methods import DimensionlessExtrapolator
 from helpers.grp_analysis import analyze_flow_regime, compute_productivity_index, detect_flow_regime_transitions, generate_type_curves, match_type_curves
 
@@ -422,7 +423,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
         return complete_curves
     
     def on_train_interpolator(self) -> None:
-        """Обучает квадратичную регрессию для подгонки расчётных X-Y под эталонные X-Y из данных на массиве всех скважин"""
+        """Обучает бинарную модель с классификацией кривых и двумя специализированными аппроксиматорами"""
         if not self.loaded_data:
             self.show_info("Ошибка", "Нет загруженных данных для обучения")
             return
@@ -433,6 +434,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
             Y_calc_all = []
             X_data_all = []
             Y_data_all = []
+            
+            # Списки кривых для классификации (каждая кривая отдельно)
+            X_curves = []
+            Y_curves = []
             
             # Находим кривые без пропусков и с эталонными X-Y
             complete_curves = self._find_complete_curves()
@@ -480,6 +485,10 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     X_calc = X_calc[:min_len]
                     Y_calc = Y_calc[:min_len]
                     
+                    # Добавляем кривую в список для классификации (используем эталонные X-Y)
+                    X_curves.append(X_data.copy())
+                    Y_curves.append(Y_data.copy())
+                    
                     # Добавляем в общий массив (преобразуем в список для extend)
                     X_calc_all.extend(X_calc.tolist() if hasattr(X_calc, 'tolist') else list(X_calc))
                     Y_calc_all.extend(Y_calc.tolist() if hasattr(Y_calc, 'tolist') else list(Y_calc))
@@ -497,35 +506,103 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     f"Убедитесь, что в данных есть эталонные X и Y для скважин без пропусков.")
                 return
             
+            # Проверяем, что есть хотя бы 2 кривые для классификации
+            if len(X_curves) < 2:
+                self.show_info("Ошибка", 
+                    f"Недостаточно кривых для классификации. Найдено: {len(X_curves)}, требуется минимум 2.\n"
+                    f"Классификация требует как минимум 2 кривые для разделения на классы.")
+                return
+            
             # Преобразуем в numpy массивы
             X_calc_all = np.array(X_calc_all)
             Y_calc_all = np.array(Y_calc_all)
             X_data_all = np.array(X_data_all)
             Y_data_all = np.array(Y_data_all)
             
-            # Обучаем квадратичную регрессию (подгоняем и X, и Y)
-            model = QuadraticRegressionModel(alpha=1.0, fit_only_y=False)
-            model.fit(X_calc_all, Y_calc_all, X_data_all, Y_data_all)
+            # Обучаем бинарную модель с классификацией
+            model = BinaryCurveModel(alpha=0.1, fit_only_y=False, classifier_type='logistic')
+            # Создаём списки расчётных и эталонных кривых
+            X_calc_curves_list = []
+            Y_calc_curves_list = []
+            X_data_curves_list = []
+            Y_data_curves_list = []
+            
+            # Восстанавливаем кривые из полных массивов
+            current_idx = 0
+            for idx, well_data in complete_curves:
+                if not (hasattr(well_data, 'X') and well_data.X is not None and
+                        hasattr(well_data, 'Y') and well_data.Y is not None):
+                    continue
+                try:
+                    params = self._get_params(well_data)
+                    dim_data = convert_to_dimensionless_curves(
+                        well_data.time, well_data.pressure, well_data.flow_rate,
+                        well_data.depression, params, x_mode='alt'
+                    )
+                    X_data = well_data.X.values if hasattr(well_data.X, 'values') else np.array(well_data.X)
+                    Y_data = well_data.Y.values if hasattr(well_data.Y, 'values') else np.array(well_data.Y)
+                    X_calc = np.asarray(dim_data.X).flatten()
+                    Y_calc = np.asarray(dim_data.Y).flatten()
+                    
+                    min_len = min(len(X_data), len(Y_data), len(X_calc), len(Y_calc))
+                    if min_len < 2:
+                        continue
+                    
+                    X_calc_curves_list.append(X_calc[:min_len])
+                    Y_calc_curves_list.append(Y_calc[:min_len])
+                    X_data_curves_list.append(X_data[:min_len])
+                    Y_data_curves_list.append(Y_data[:min_len])
+                except Exception:
+                    continue
+            
+            model.fit(
+                X_calc_all, Y_calc_all, X_data_all, Y_data_all,
+                X_calc_curves=X_calc_curves_list, Y_calc_curves=Y_calc_curves_list,
+                X_data_curves=X_data_curves_list, Y_data_curves=Y_data_curves_list
+            )
             
             self.trained_interpolator = model
             self.trained_interpolator_path = None  # Сбрасываем путь, так как модель переобучена
             
             # Получаем метрики
             metrics = model.get_metrics()
-            coef = model.get_coefficients()
+            model_info = model.get_model_info()
+            classifier_info = model.get_classification_info()
             
             # Обновляем статус
             if hasattr(self, 'model_status_label'):
-                self.model_status_label.setText(f"Обучена на {metrics['n_samples']} точках")
+                total_samples = metrics.get('n_samples_flat', 0) + metrics.get('n_samples_steep', 0)
+                self.model_status_label.setText(f"Обучена на {total_samples} точках ({len(X_curves)} кривых)")
             
             # Формируем сообщение
-            msg = f"Модель обучена на {metrics['n_samples']} точках из {len(complete_curves)} скважин.\n\n"
-            msg += f"Коэффициенты:\n"
-            msg += f"  X: a = {coef['a']:.6f}\n"
-            msg += f"  Y: a_y = {coef['a_y']:.6f}, b = {coef['b']:.6f}, c = {coef['c']:.6f}\n\n"
-            msg += f"Метрики:\n"
-            msg += f"  X: RMSE = {metrics['rmse_x']:.6e}, R² = {metrics['r2_x']:.4f}\n"
-            msg += f"  Y: RMSE = {metrics['rmse_y']:.6e}, R² = {metrics['r2_y']:.4f}"
+            msg = f"Бинарная модель обучена на {len(X_curves)} кривых.\n\n"
+            msg += f"Классификатор:\n"
+            msg += f"  Тип: {classifier_info['classifier_type']}\n"
+            msg += f"  Медиана пологости: {classifier_info['median_steepness']:.4f}\n\n"
+            
+            msg += f"Модель для класса 0 (ужимать - расчётная круче эталонной):\n"
+            if 'flat' in metrics:
+                flat_metrics = metrics['flat']
+                flat_coef = model.model_flat.get_coefficients()
+                msg += f"  Обучена на {flat_metrics['n_samples']} точках\n"
+                msg += f"  Коэффициенты: a = {flat_coef.get('a', 1.0):.6f}, "
+                msg += f"a_y = {flat_coef.get('a_y', 1.0):.6f}, b = {flat_coef.get('b', 0.0):.6f}, "
+                msg += f"c = {flat_coef.get('c', 0.0):.6f}\n"
+                msg += f"  RMSE Y: {flat_metrics['rmse_y']:.6e}, R² Y: {flat_metrics['r2_y']:.4f}\n\n"
+            else:
+                msg += f"  Не обучена (недостаточно данных)\n\n"
+            
+            msg += f"Модель для класса 1 (растягивать - расчётная положе эталонной):\n"
+            if 'steep' in metrics:
+                steep_metrics = metrics['steep']
+                steep_coef = model.model_steep.get_coefficients()
+                msg += f"  Обучена на {steep_metrics['n_samples']} точках\n"
+                msg += f"  Коэффициенты: a = {steep_coef.get('a', 1.0):.6f}, "
+                msg += f"a_y = {steep_coef.get('a_y', 1.0):.6f}, b = {steep_coef.get('b', 0.0):.6f}, "
+                msg += f"c = {steep_coef.get('c', 0.0):.6f}\n"
+                msg += f"  RMSE Y: {steep_metrics['rmse_y']:.6e}, R² Y: {steep_metrics['r2_y']:.4f}"
+            else:
+                msg += f"  Не обучена (недостаточно данных)"
             
             self.show_info("Успех", msg)
             
@@ -587,7 +664,7 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 interp = pickle.load(f)
             
             # Проверяем, что это правильный тип
-            if not isinstance(interp, (DimensionlessCurveInterpolator, QuadraticRegressionModel)):
+            if not isinstance(interp, (DimensionlessCurveInterpolator, QuadraticRegressionModel, BinaryCurveModel)):
                 self.show_info("Ошибка", "Загруженный файл не является моделью интерполяции")
                 return
             
@@ -604,7 +681,17 @@ class MyApp(QMainWindow, Ui_mainWindow):
                 self.model_status_label.setText(f"Загружена: {filename}")
             
             # Формируем информацию о модели в зависимости от типа
-            if isinstance(interp, QuadraticRegressionModel):
+            if isinstance(interp, BinaryCurveModel):
+                metrics = interp.get_metrics()
+                classifier_info = interp.get_classification_info()
+                model_info = f"Модель: Бинарная модель с классификацией\n"
+                model_info += f"Классификатор: {classifier_info['classifier_type']}\n"
+                model_info += f"Медиана пологости: {classifier_info['median_steepness']:.4f}\n"
+                if 'flat' in metrics:
+                    model_info += f"Пологие: {metrics['flat']['n_samples']} точек\n"
+                if 'steep' in metrics:
+                    model_info += f"Крутые: {metrics['steep']['n_samples']} точек"
+            elif isinstance(interp, QuadraticRegressionModel):
                 metrics = interp.get_metrics()
                 coef = interp.get_coefficients()
                 model_info = f"Модель: Квадратичная регрессия (Ridge)\n"
@@ -944,7 +1031,17 @@ class MyApp(QMainWindow, Ui_mainWindow):
         # Формируем информацию о результатах
         if use_trained_model and not use_local_mode:
             method_used = 'trained_model'
-            if isinstance(self.trained_interpolator, QuadraticRegressionModel):
+            if isinstance(self.trained_interpolator, BinaryCurveModel):
+                # Для BinaryCurveModel
+                best_method = 'binary_curve_model'
+                metrics = self.trained_interpolator.get_metrics()
+                # Используем среднее RMSE обеих моделей
+                rmse_flat = metrics.get('flat', {}).get('rmse_y', 0.0) if 'flat' in metrics else 0.0
+                rmse_steep = metrics.get('steep', {}).get('rmse_y', 0.0) if 'steep' in metrics else 0.0
+                avg_rmse = (rmse_flat + rmse_steep) / 2.0 if (rmse_flat > 0 and rmse_steep > 0) else (rmse_flat if rmse_flat > 0 else rmse_steep)
+                rmse_scores = {'binary_curve_model': avg_rmse}
+                n_samples = metrics.get('n_samples_flat', 0) + metrics.get('n_samples_steep', 0)
+            elif isinstance(self.trained_interpolator, QuadraticRegressionModel):
                 # Для QuadraticRegressionModel
                 best_method = 'quadratic_regression'
                 metrics = self.trained_interpolator.get_metrics()
@@ -1831,10 +1928,22 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # Используем обученную модель, если она есть
             if (self.trained_interpolator is not None and 
-                isinstance(self.trained_interpolator, QuadraticRegressionModel) and
                 self.trained_interpolator.is_fitted):
                 # Используем обученную модель для подгонки
-                X_fitted, Y_fitted = self.trained_interpolator.predict(X_calc, Y_calc)
+                if isinstance(self.trained_interpolator, BinaryCurveModel):
+                    # Бинарная модель с классификацией
+                    X_fitted, Y_fitted, curve_class = self.trained_interpolator.predict(
+                        X_calc, Y_calc, X_data, Y_data
+                    )
+                    curve_type_str = "ужимать (расчётная круче)" if curve_class == 0 else "растягивать (расчётная положе)"
+                    print(f"Кривая классифицирована: {curve_type_str} (класс {curve_class})")
+                elif isinstance(self.trained_interpolator, QuadraticRegressionModel):
+                    # Обычная квадратичная регрессия
+                    X_fitted, Y_fitted = self.trained_interpolator.predict(X_calc, Y_calc)
+                else:
+                    # Для других типов моделей используем локальную подгонку
+                    X_fitted = X_calc.copy()
+                    Y_fitted = Y_calc.copy()
                 
                 # Вычисляем метрики
                 mask = np.isfinite(X_data) & np.isfinite(Y_data) & np.isfinite(X_fitted) & np.isfinite(Y_fitted)
@@ -1854,14 +1963,26 @@ class MyApp(QMainWindow, Ui_mainWindow):
                     r2_y = 0.0
                     accuracy = 0.0
                 
-                coef = self.trained_interpolator.get_coefficients()
+                # Получаем коэффициенты в зависимости от типа модели
+                if isinstance(self.trained_interpolator, BinaryCurveModel):
+                    # Для бинарной модели получаем коэффициенты соответствующей модели
+                    curve_class = self.trained_interpolator.classifier.predict(X_calc, Y_calc, X_data, Y_data)
+                    if curve_class == 0 and self.trained_interpolator.model_flat.is_fitted:
+                        coef = self.trained_interpolator.model_flat.get_coefficients()
+                    elif curve_class == 1 and self.trained_interpolator.model_steep.is_fitted:
+                        coef = self.trained_interpolator.model_steep.get_coefficients()
+                    else:
+                        # Fallback на значения по умолчанию
+                        coef = {'a': 1.0, 'a_y': 1.0, 'b': 0.0, 'c': 0.0}
+                else:
+                    coef = self.trained_interpolator.get_coefficients()
                 
                 # Формируем результат в формате fit_xy_curve_coefficients
                 fit_result = {
-                    'a': coef['a'],
-                    'a_y': coef['a_y'],
-                    'b': coef['b'],
-                    'c': coef['c'],
+                    'a': coef.get('a', 1.0),
+                    'a_y': coef.get('a_y', 1.0),
+                    'b': coef.get('b', 0.0),
+                    'c': coef.get('c', 0.0),
                     'rmse': rmse_y,
                     'rmse_before': rmse_y,  # Для обученной модели это не применимо
                     'accuracy': accuracy,
@@ -1897,11 +2018,20 @@ class MyApp(QMainWindow, Ui_mainWindow):
             
             # Указываем, используется ли обученная модель
             if (self.trained_interpolator is not None and 
-                isinstance(self.trained_interpolator, QuadraticRegressionModel) and
                 self.trained_interpolator.is_fitted):
-                metrics = self.trained_interpolator.get_metrics()
-                report += f"ℹ️ Использована обученная модель (квадратичная регрессия с регуляризацией)\n"
-                report += f"   Обучена на {metrics['n_samples']} точках из всех скважин\n\n"
+                if isinstance(self.trained_interpolator, BinaryCurveModel):
+                    metrics = self.trained_interpolator.get_metrics()
+                    classifier_info = self.trained_interpolator.get_classification_info()
+                    report += f"ℹ️ Использована обученная бинарная модель с классификацией\n"
+                    report += f"   Классификатор: {classifier_info['classifier_type']}\n"
+                    report += f"   Пологие кривые: {metrics.get('n_samples_flat', 0)} точек\n"
+                    report += f"   Крутые кривые: {metrics.get('n_samples_steep', 0)} точек\n\n"
+                elif isinstance(self.trained_interpolator, QuadraticRegressionModel):
+                    metrics = self.trained_interpolator.get_metrics()
+                    report += f"ℹ️ Использована обученная модель (квадратичная регрессия с регуляризацией)\n"
+                    report += f"   Обучена на {metrics['n_samples']} точках из всех скважин\n\n"
+                else:
+                    report += f"ℹ️ Использована обученная модель\n\n"
             else:
                 report += f"ℹ️ Использована локальная подгонка для текущей скважины\n\n"
             
@@ -1939,9 +2069,13 @@ class MyApp(QMainWindow, Ui_mainWindow):
             c_val = fit_result.get('c', 0.0)
             model_info = ""
             if (self.trained_interpolator is not None and 
-                isinstance(self.trained_interpolator, QuadraticRegressionModel) and
                 self.trained_interpolator.is_fitted):
-                model_info = "\n(Использована обученная модель на массиве всех скважин)"
+                if isinstance(self.trained_interpolator, BinaryCurveModel):
+                    model_info = "\n(Использована обученная бинарная модель с классификацией)"
+                elif isinstance(self.trained_interpolator, QuadraticRegressionModel):
+                    model_info = "\n(Использована обученная модель на массиве всех скважин)"
+                else:
+                    model_info = "\n(Использована обученная модель)"
             else:
                 model_info = "\n(Использована локальная подгонка для текущей скважины)"
             

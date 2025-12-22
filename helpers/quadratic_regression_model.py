@@ -19,9 +19,9 @@ class QuadraticRegressionModel:
     Обучается на массиве всех скважин с регуляризацией и физическими ограничениями.
     """
     
-    def __init__(self, alpha: float = 1.0, fit_only_y: bool = False):
+    def __init__(self, alpha: float = 0.1, fit_only_y: bool = False):
         """
-        :param alpha: Коэффициент регуляризации L2 (Ridge)
+        :param alpha: Коэффициент регуляризации L2 (Ridge) - уменьшен по умолчанию для лучшей подгонки
         :param fit_only_y: Если True, подгоняется только Y (X не изменяется)
         """
         self.alpha = alpha
@@ -87,13 +87,15 @@ class QuadraticRegressionModel:
             self.rmse_x = 0.0
             self.r2_x = 1.0
         
-        # Обучение модели для Y с квадратичным членом
-        # Y_fit = a_y * Y_calc + b + c * Y_calc^2
+        # Обучение модели для Y с квадратичным членом и bias
+        # Y_fit = b + a_y * Y_calc + c * Y_calc^2
         # Используем PolynomialFeatures для квадратичного члена
+        # ВАЖНО: include_bias=True добавляет константный член [1, Y, Y^2]
         poly_features = PolynomialFeatures(degree=2, include_bias=True)
         Y_features = poly_features.fit_transform(Y_calc_clean.reshape(-1, 1))
         
         # Ridge регрессия с регуляризацией
+        # fit_intercept=False, так как bias уже включен в PolynomialFeatures
         self.Y_model = Ridge(alpha=self.alpha, fit_intercept=False)
         self.Y_model.fit(Y_features, Y_data_clean)
         
