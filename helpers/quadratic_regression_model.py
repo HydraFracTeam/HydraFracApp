@@ -4,7 +4,7 @@
 """
 
 import numpy as np
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge, ElasticNet
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import r2_score
@@ -20,15 +20,20 @@ class QuadraticRegressionModel:
     Обучается на массиве всех скважин с регуляризацией и физическими ограничениями.
     """
     
-    def __init__(self, alpha: float = 0.1, fit_only_y: bool = False):
+    def __init__(self, alpha: float = 0.1, fit_only_y: bool = False, 
+                 quad_regularization_multiplier: float = 5.0):
         """
         :param alpha: Коэффициент регуляризации L2 (Ridge) - уменьшен по умолчанию для лучшей подгонки
         :param fit_only_y: Если True, подгоняется только Y (X не изменяется)
+        :param quad_regularization_multiplier: Множитель регуляризации для квадратичного члена (c)
+                                               Увеличивает штраф для квадратичного члена, чтобы избежать перегибов
         """
         self.alpha = alpha
         self.fit_only_y = fit_only_y
+        self.quad_regularization_multiplier = quad_regularization_multiplier
         self.X_model = None  # Модель для X
         self.Y_model = None  # Модель для Y
+        self.poly_features = None  # PolynomialFeatures трансформер для Y
         self.is_fitted = False
         self.n_samples = 0
         self.rmse_x = None
@@ -91,15 +96,46 @@ class QuadraticRegressionModel:
         # где shift - явный сдвиг всей кривой вверх-вниз (не зависит от Y_calc)
         # Используем PolynomialFeatures для квадратичного члена
         # ВАЖНО: include_bias=True добавляет константный член [1, Y, Y^2]
-        poly_features = PolynomialFeatures(degree=2, include_bias=True)
-        Y_features = poly_features.fit_transform(Y_calc_clean.reshape(-1, 1))
+        self.poly_features = PolynomialFeatures(degree=2, include_bias=True)
+        Y_features = self.poly_features.fit_transform(Y_calc_clean.reshape(-1, 1))
         
-        # Ridge регрессия с регуляризацией
-        # fit_intercept=True добавляет отдельный intercept (сдвиг), который обеспечивает
-        # гибкость корректировки всей кривой вверх-вниз без изменения формы
-        # Этот intercept обучается отдельно и не так сильно ограничен регуляризацией
+        # Применяем дифференцированную регуляризацию через нормализацию признаков
+        # Нормализуем квадратичный признак сильнее, чтобы регуляризация действовала эффективнее
+        # Это эквивалентно увеличению штрафа для квадратичного коэффициента
+        n_features = Y_features.shape[1]  # Должно быть 3: [1, Y, Y^2]
+        Y_features_normalized = Y_features.copy()
+        
+        if n_features >= 3:
+            # Увеличиваем масштаб квадратичного признака, чтобы регуляризация действовала сильнее
+            # Больший масштаб признака -> меньший коэффициент -> больший штраф при той же регуляризации
+            quad_feature_idx = 2  # Индекс квадратичного признака [1, Y, Y^2]
+            quad_scale = np.sqrt(self.quad_regularization_multiplier)
+            Y_features_normalized[:, quad_feature_idx] *= quad_scale
+        
+        # Используем Ridge с нормализованными признаками
         self.Y_model = Ridge(alpha=self.alpha, fit_intercept=True)
-        self.Y_model.fit(Y_features, Y_data_clean)
+        self.Y_model.fit(Y_features_normalized, Y_data_clean)
+        
+        # Корректируем коэффициенты обратно после нормализации
+        coef = np.asarray(self.Y_model.coef_).flatten()
+        if n_features >= 3:
+            # Компенсируем масштабирование признака в коэффициенте
+            coef[quad_feature_idx] /= quad_scale
+            self.Y_model.coef_ = coef.reshape(self.Y_model.coef_.shape)
+        
+        # Дополнительная регуляризация: если квадратичный член всё ещё слишком большой,
+        # применяем мягкое ограничение
+        coef = np.asarray(self.Y_model.coef_).flatten()
+        if len(coef) >= 3:
+            c_original = coef[2]
+            # Если коэффициент слишком большой относительно линейного, дополнительно уменьшаем
+            if len(coef) >= 2:
+                a_y = coef[1]
+                # Если квадратичный член больше 50% от линейного по модулю, уменьшаем его
+                if abs(a_y) > 1e-10 and abs(c_original) > 0.5 * abs(a_y):
+                    c_max = 0.5 * abs(a_y)
+                    coef[2] = np.sign(c_original) * min(abs(c_original), c_max)
+                    self.Y_model.coef_ = coef.reshape(self.Y_model.coef_.shape)
         
         # Метрики для Y
         Y_pred = self.Y_model.predict(Y_features)
@@ -129,12 +165,27 @@ class QuadraticRegressionModel:
             coef = np.asarray(self.Y_model.coef_).flatten()
             
             if len(coef) >= 3:
-                # Ограничиваем квадратичный коэффициент c в пределах [-0.2, 0.2]
+                # Ограничиваем квадратичный коэффициент c в пределах [-0.15, 0.15]
+                # Уменьшено с [-0.2, 0.2] для предотвращения перегибов
                 c = coef[2]
-                if c < -0.2:
-                    coef[2] = -0.2
-                elif c > 0.2:
-                    coef[2] = 0.2
+                if c < -0.15:
+                    coef[2] = -0.15
+                elif c > 0.15:
+                    coef[2] = 0.15
+                
+                # Дополнительная проверка: если квадратичный член создаёт перегиб,
+                # дополнительно уменьшаем его
+                # Перегиб возникает, если вторая производная меняет знак
+                # Для Y_fit = shift + b + a_y * Y + c * Y^2
+                # Вторая производная = 2 * c
+                # Если |c| слишком большой, может быть перегиб
+                # Дополнительно ограничиваем, если коэффициент слишком большой относительно линейного
+                if len(coef) >= 2:
+                    a_y = coef[1]
+                    # Если квадратичный член больше 30% от линейного по модулю, уменьшаем его
+                    if abs(a_y) > 1e-10 and abs(c) > 0.3 * abs(a_y):
+                        c_max = 0.3 * abs(a_y)
+                        coef[2] = np.sign(c) * min(abs(c), c_max)
                 
                 # Обновляем коэффициенты модели (сохраняем исходную форму)
                 original_shape = self.Y_model.coef_.shape
@@ -163,8 +214,13 @@ class QuadraticRegressionModel:
         
         # Предсказание для Y с квадратичным членом
         if self.Y_model is not None:
-            poly_features = PolynomialFeatures(degree=2, include_bias=True)
-            Y_features = poly_features.fit_transform(Y_calc.reshape(-1, 1))
+            if self.poly_features is None:
+                # Fallback: создаём новый трансформер, если не был сохранён
+                poly_features = PolynomialFeatures(degree=2, include_bias=True)
+                Y_features = poly_features.fit_transform(Y_calc.reshape(-1, 1))
+            else:
+                # Используем сохранённый трансформер для консистентности
+                Y_features = self.poly_features.transform(Y_calc.reshape(-1, 1))
             # predict() автоматически добавляет intercept (сдвиг), если fit_intercept=True
             Y_fitted = self.Y_model.predict(Y_features)
         else:

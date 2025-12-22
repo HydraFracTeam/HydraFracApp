@@ -521,7 +521,12 @@ class MyApp(QMainWindow, Ui_mainWindow):
             Y_data_all = np.array(Y_data_all)
             
             # Обучаем бинарную модель с классификацией
-            model = BinaryCurveModel(alpha=0.1, fit_only_y=False, classifier_type='logistic')
+            model = BinaryCurveModel(
+                alpha=0.1, 
+                fit_only_y=False, 
+                classifier_type='logistic',
+                quad_regularization_multiplier=5.0  # Увеличенная регуляризация для квадратичного члена
+            )
             # Создаём списки расчётных и эталонных кривых
             X_calc_curves_list = []
             Y_calc_curves_list = []

@@ -26,22 +26,33 @@ class BinaryCurveModel:
     def __init__(self, 
                  classifier_type: str = 'logistic',
                  alpha: float = 0.1,
-                 fit_only_y: bool = False):
+                 fit_only_y: bool = False,
+                 quad_regularization_multiplier: float = 5.0):
         """
         :param classifier_type: Тип классификатора ('logistic', 'tree', 'forest')
         :param alpha: Коэффициент регуляризации L2 для моделей аппроксимации
         :param fit_only_y: Если True, подгоняется только Y (X не изменяется)
+        :param quad_regularization_multiplier: Множитель регуляризации для квадратичного члена
         """
         self.classifier_type = classifier_type
         self.alpha = alpha
         self.fit_only_y = fit_only_y
+        self.quad_regularization_multiplier = quad_regularization_multiplier
         
         # Классификатор кривых
         self.classifier = CurveClassifier(classifier_type=classifier_type)
         
-        # Две модели аппроксимации
-        self.model_flat = QuadraticRegressionModel(alpha=alpha, fit_only_y=fit_only_y)  # Для пологих (класс 0)
-        self.model_steep = QuadraticRegressionModel(alpha=alpha, fit_only_y=fit_only_y)  # Для крутых (класс 1)
+        # Две модели аппроксимации с увеличенной регуляризацией для квадратичного члена
+        self.model_flat = QuadraticRegressionModel(
+            alpha=alpha, 
+            fit_only_y=fit_only_y,
+            quad_regularization_multiplier=quad_regularization_multiplier
+        )  # Для пологих (класс 0)
+        self.model_steep = QuadraticRegressionModel(
+            alpha=alpha, 
+            fit_only_y=fit_only_y,
+            quad_regularization_multiplier=quad_regularization_multiplier
+        )  # Для крутых (класс 1)
         
         self.is_fitted = False
         self.n_samples_flat = 0
