@@ -144,6 +144,7 @@ class MyApp(QMainWindow, Ui_MainWindow):
             'N': data_item.fractures_count,
             'a_L': data_item.a_l_ratio,
             'dP': data_item.depression,
+            'W': data_item.fracture_length,
         }
     
     def _get_quality_label(self, rmse: float, short: bool = False) -> str:
@@ -798,6 +799,7 @@ class MyApp(QMainWindow, Ui_MainWindow):
         phi = params.get('phi', 0.1)
         c_t = params.get('c_t', 1e-4)
         L = params.get('L', 100.0)
+        W = params.get('W', 100.0)
         
         # Получаем время и дебит для пропусков
         time_gaps = time_array[gaps_indices[valid_XY_mask]]
@@ -812,7 +814,7 @@ class MyApp(QMainWindow, Ui_MainWindow):
                                       flow_rate_gaps, flow_rate_mean)
         
         # Восстанавливаем Δp_i из Y: Δp_i = (Q * B * t) / (24 * φ * c_t * h * L² * Y)
-        delta_p_i_gaps = (flow_rate_gaps * B * time_gaps) / (24 * phi * c_t * h * L**2 * Y_values_gaps)
+        delta_p_i_gaps = (flow_rate_gaps * B * time_gaps) / (24 * phi * c_t * h * W**2 * Y_values_gaps)
         delta_p_i_gaps = np.where(np.isfinite(delta_p_i_gaps) & (delta_p_i_gaps > 0), 
                                  delta_p_i_gaps, dim_data.delta_p_i)
         
@@ -893,7 +895,7 @@ class MyApp(QMainWindow, Ui_MainWindow):
                         flow_rate_gaps_smooth = np.where((np.isfinite(flow_rate_gaps_smooth) & (flow_rate_gaps_smooth > 0)), 
                                                           flow_rate_gaps_smooth, flow_rate_mean)
                     
-                    delta_p_i_gaps_smooth = (flow_rate_gaps_smooth * B * time_gaps_smooth) / (24 * phi * c_t * h * L**2 * Y_values_gaps)
+                    delta_p_i_gaps_smooth = (flow_rate_gaps_smooth * B * time_gaps_smooth) / (24 * phi * c_t * h * W**2 * Y_values_gaps)
                     delta_p_i_gaps_smooth = np.where(np.isfinite(delta_p_i_gaps_smooth) & (delta_p_i_gaps_smooth > 0), 
                                                      delta_p_i_gaps_smooth, dim_data.delta_p_i)
                     

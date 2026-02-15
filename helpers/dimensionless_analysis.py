@@ -18,9 +18,7 @@ warnings.filterwarnings('ignore')
 @dataclass
 class DimensionlessParameters:
     """Безразмерные параметры для МГРП"""
-    # Фильтрационный параметр
     X: np.ndarray  # (0.00864 * k * h * Δp_i) / (μ * B * Q)
-    # Ёмкостной параметр  
     Y: np.ndarray  # (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i)
     
     # Исходные физические данные
@@ -46,11 +44,11 @@ class DimensionlessConverter:
     
     def __init__(self):
         self.default_params = {
-            'k': 1.0,  # мД
+            'k': 5,  # мД
             'mu': 1.0,  # мПа·с
             'B': 1.0,  # безразмерный
-            'phi': 0.1,  # безразмерный
-            'c_t': 1e-4,  # 1/атм
+            'phi': 0.2,  # безразмерный
+            'c_t': 4e-5,  # 1/атм
         }
     
     def convert_to_dimensionless(self, 
@@ -82,6 +80,9 @@ class DimensionlessConverter:
         phi = well_params.get('phi', self.default_params['phi'])
         c_t = well_params.get('c_t', self.default_params['c_t'])
         L = well_params.get('L', 100.0)
+        W = well_params.get('W', 100.0)
+        print(f"mu = {mu}")
+        print(f"k = {k}")
         
         # Нормировочный перепад давления (скаляр) для pD: используем размах как надёжную норму
         try:
@@ -94,33 +95,35 @@ class DimensionlessConverter:
         # Конвертируем в numpy массивы
         t = time.values
         p = pressure.values
-        q = flow_rate.values
+        q = flow_rate.values#/well_params['N']
         
-        # Обработка depression: если None, вычисляем из давления
-        if depression is None:
-            # Вычисляем приращение давления из самого давления
-            dP = np.diff(p, prepend=p[0]) if len(p) > 0 else np.array([])
-            # Логируем предупреждение
-            try:
-                from helpers.math_error_logger import log_math_error
-                log_math_error(
-                    subsystem="dimensionless_conversion",
-                    method="convert_to_dimensionless",
-                    error_type="missing_depression",
-                    error_value=0.0,
-                    error_message="depression is None, computed from pressure",
-                    data_volume=len(p),
-                    data_quality=1.0 - (np.sum(np.isnan(p)) / len(p)) if len(p) > 0 else 0.0
-                )
-            except Exception:
-                pass  # Не прерываем выполнение при ошибке логирования
-        else:
-            dP = depression.values
+        # # Обработка depression: если None, вычисляем из давления
+        # if depression is None:
+        #     # Вычисляем приращение давления из самого давления
+        #     dP = np.diff(p, prepend=p[0]) if len(p) > 0 else np.array([])
+        #     # Логируем предупреждение
+        #     try:
+        #         from helpers.math_error_logger import log_math_error
+        #         log_math_error(
+        #             subsystem="dimensionless_conversion",
+        #             method="convert_to_dimensionless",
+        #             error_type="missing_depression",
+        #             error_value=0.0,
+        #             error_message="depression is None, computed from pressure",
+        #             data_volume=len(p),
+        #             data_quality=1.0 - (np.sum(np.isnan(p)) / len(p)) if len(p) > 0 else 0.0
+        #         )
+        #     except Exception:
+        #         pass  # Не прерываем выполнение при ошибке логирования
+        # else:
+        dP = depression.values
         
         # Средний дебит (используется только для режима 'constant')
-        Q = flow_rate.mean() if not flow_rate.empty else 1.0
-
+        # Q = flow_rate.mean() if not flow_rate.empty else 1.0
+        Q = np.mean(q)
+        # print(well_params)
         delta_p_vec = dP
+        print(dP)
             
         
         # Безопасная замена нулей на маленькое число во избежание деления на ноль
@@ -128,13 +131,13 @@ class DimensionlessConverter:
         delta_p_vec_safe = np.where(np.abs(delta_p_vec) < 1e-12, 1e-12, delta_p_vec)
         
         # Фильтрационный параметр X
-        if x_mode == 'darcy':
-            # X = (dp/dt) * (k * h) / (Q * mu * B)
-            dt = np.gradient(t)
-            dt = np.where(np.abs(dt) < 1e-12, 1e-12, dt)
-            dp = np.gradient(p)
-            X = (dp / dt) * (k * h) / ((Q if Q != 0 else 1e-12) * mu * B)
-        elif x_mode == 'alt':
+        # if x_mode == 'darcy':
+        #     # X = (dp/dt) * (k * h) / (Q * mu * B)
+        #     dt = np.gradient(t)
+        #     dt = np.where(np.abs(dt) < 1e-12, 1e-12, dt)
+        #     dp = np.gradient(p)
+        #     X = (dp / dt) * (k * h) / ((Q if Q != 0 else 1e-12) * mu * B)
+        if x_mode == 'alt':
             # Стандартная формула: X = (0.00864 * k * h * Δp_i) / (μ * B * Q)
             # где Δp_i - вектор приращений давления из данных (dP), Q - вектор дебита из данных
             # Никакое масштабирование не применяется
@@ -144,20 +147,24 @@ class DimensionlessConverter:
             # Константный X по определению
             # Используем вектор Δp (dP из данных CSV, если передан, иначе вычисленный)
             # С защитой от деления на ноль
-            Q_safe = Q if Q != 0 else 1.0
+            Q_safe = Q if Q != 0 else 1e-12
             X = (0.00864 * k * h * delta_p_vec) / (mu * B * Q_safe)
         
+        print(f"использую W={W}")
         # Ёмкостной параметр Y
         if x_mode == 'alt':
             # Стандартная формула: Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp_i)
             # где Δp_i - вектор приращений давления из данных (dP), Q - вектор дебита из данных
             # Никакое масштабирование не применяется
-            Y = (q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
+            Y = (q * B * t) / (24 * phi * c_t * h * W**2 * delta_p_vec_safe)
         else:
+            q_safe = Q if Q != 0 else 1e-12
             # Стандартная формула: Y = (Q * B * t) / (24 * φ * c_t * h * L² * Δp)
             # Используем delta_p_vec_safe для защиты от деления на ноль
-            Y = (Q * B * t) / (24 * phi * c_t * h * L**2 * delta_p_vec_safe)
+            Y = (q_safe * B * t) / (24 * phi * c_t * h * W**2 * delta_p_vec_safe)
         
+        
+        print("Готов вернуть данные")
         return DimensionlessParameters(
             X=X,
             Y=Y,
