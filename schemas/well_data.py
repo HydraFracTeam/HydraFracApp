@@ -12,7 +12,7 @@ class WellData(BaseModel):
     skin: float = Field(ge=-10, le=50, description="Фактор скин-эффекта")
     h: float = Field(gt=0, description="Толщина пласта, м")
     n: int = Field(ge=1, le=100, description="Количество трещин")
-    w: float = Field(gt=0, description="Ширина трещины, м")
+    w: float = Field(gt=0, description="Длина скважины, м")
     l: float = Field(gt=0, description="Длина трещины, м")
     a_l: float = Field(gt=0, le=1, description="Отношение a/L")
     
