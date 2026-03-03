@@ -2,18 +2,16 @@
 Модуль для наполнения UI компонентов приложения.
 Работает ТОЛЬКО с элементами, созданными в main_ui.ui
 """
-from PySide6.QtWidgets import (
+from PySide6.QtWidgets import ( QMainWindow,
     QWidget, QVBoxLayout, QHBoxLayout,
     QTableView
 )
-
-from main import MyApp
 
 import pyqtgraph as pg
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 
-def setup_interface(app: 'MyApp') -> None:
+def setup_interface(app: QMainWindow) -> None:
     """
     Инициализация динамических элементов UI:
     - графики (pyqtgraph)
@@ -29,7 +27,7 @@ def setup_interface(app: 'MyApp') -> None:
 # ------------------------------------------------------------------
 
 
-def attach_pg_to_widget(container: QWidget) -> pg.PlotItem:
+def attach_pg_to_widget(container: QMainWindow) -> pg.PlotItem:
     """
     Встраивает pyqtgraph в QWidget из .ui
     и возвращает PlotItem для рисования
@@ -50,14 +48,14 @@ def attach_pg_to_widget(container: QWidget) -> pg.PlotItem:
     return plot_widget.getPlotItem()
 
 
-def setup_timeseries_tab(app: 'MyApp') -> None:
-    app.p_graphic = attach_pg_to_widget(
+def setup_timeseries_tab(app: QMainWindow) -> None:
+    app.ui.p_graphic = attach_pg_to_widget(
         app.findChild(QWidget, "p_graphic")
     )
-    app.q_graphic = attach_pg_to_widget(
+    app.ui.q_graphic = attach_pg_to_widget(
         app.findChild(QWidget, "q_graphic")
     )
-    app.dim_plot = attach_pg_to_widget(
+    app.ui.dim_plot = attach_pg_to_widget(
         app.findChild(QWidget, "dim_plot")
     )
 
@@ -66,7 +64,7 @@ def setup_timeseries_tab(app: 'MyApp') -> None:
 # Эталонные кривые
 # ------------------------------------------------------------------
 
-def setup_type_curves_tab(app: 'MyApp') -> None:
+def setup_type_curves_tab(app: QMainWindow) -> None:
     placeholder = app.findChild(
         QWidget, "type_curves_plot_placeholder"
     )
@@ -75,11 +73,11 @@ def setup_type_curves_tab(app: 'MyApp') -> None:
     if layout is None:
         layout = QVBoxLayout(placeholder)
 
-    app.type_curves_widget = pg.PlotWidget()
-    app.type_curves_widget.setLogMode(True, True)
-    app.type_curves_widget.showGrid(x=True, y=True)
-    app.type_curves_widget.setLabel('left', 'Дебит, м³/сут')
-    app.type_curves_widget.setLabel('bottom', 'Время, ч')
+    app.ui.type_curves_widget = pg.PlotWidget()
+    app.ui.type_curves_widget.setLogMode(True, True)
+    app.ui.type_curves_widget.showGrid(x=True, y=True)
+    app.ui.type_curves_widget.setLabel('left', 'Дебит, м³/сут')
+    app.ui.type_curves_widget.setLabel('bottom', 'Время, ч')
 
-    layout.addWidget(app.type_curves_widget)
+    layout.addWidget(app.ui.type_curves_widget)
 

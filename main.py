@@ -27,7 +27,7 @@ from ui_origin import Ui_MainWindow
 
 
 # from helpers.input_test import diag_dimensional
-from helpers.ui_setup import setup_interface
+from old_helpers.ui_setup import setup_interface
 # from helpers.utils import get_filename
 
 
