@@ -17,287 +17,8 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="horizontalLayout_3">
-    <item>
-     <widget class="QGroupBox" name="left_panel">
-      <property name="sizePolicy">
-       <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
-        <horstretch>0</horstretch>
-        <verstretch>0</verstretch>
-       </sizepolicy>
-      </property>
-      <property name="title">
-       <string/>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayout">
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout">
-         <item>
-          <widget class="QPushButton" name="load_template_button">
-           <property name="text">
-            <string>Загрузить csv/pq файл</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="load_file_label">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="text">
-            <string>Загрузите файл</string>
-           </property>
-           <property name="alignment">
-            <set>Qt::AlignmentFlag::AlignCenter</set>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="params_group">
-         <property name="title">
-          <string>Параметры</string>
-         </property>
-         <layout class="QGridLayout">
-          <item row="1" column="0">
-           <widget class="QLabel" name="thickness_label">
-            <property name="text">
-             <string>Толщина пласта h, м</string>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="1">
-           <widget class="QSpinBox" name="n_spinBox">
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-            <property name="maximum">
-             <number>10000</number>
-            </property>
-           </widget>
-          </item>
-          <item row="3" column="0">
-           <widget class="QLabel" name="skin_label">
-            <property name="text">
-             <string>Skin</string>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="0">
-           <widget class="QLabel" name="n_label">
-            <property name="text">
-             <string>N (трещины)</string>
-            </property>
-           </widget>
-          </item>
-          <item row="3" column="1">
-           <widget class="QDoubleSpinBox" name="skin_doubleSpinBox">
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-          <item row="0" column="1">
-           <widget class="QDoubleSpinBox" name="width_doubleSpinBox">
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-            <property name="decimals">
-             <number>2</number>
-            </property>
-            <property name="maximum">
-             <double>1000000.000000000000000</double>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="1">
-           <widget class="QDoubleSpinBox" name="thickness_doubleSpinBox">
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-          <item row="2" column="0">
-           <widget class="QLabel" name="aL_label">
-            <property name="text">
-             <string>a/L</string>
-            </property>
-           </widget>
-          </item>
-          <item row="0" column="0">
-           <widget class="QLabel" name="w_label">
-            <property name="text">
-             <string>Длина трещины W, м</string>
-            </property>
-           </widget>
-          </item>
-          <item row="2" column="1">
-           <widget class="QDoubleSpinBox" name="aL_doubleSpinBox">
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="groupBox_3">
-         <property name="title">
-          <string>Выбор скважины</string>
-         </property>
-         <layout class="QVBoxLayout" name="verticalLayout_3">
-          <item>
-           <widget class="QComboBox" name="well_combo_dim">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="minimumSize">
-             <size>
-              <width>311</width>
-              <height>0</height>
-             </size>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_2">
-         <item>
-          <widget class="QGroupBox" name="interpolar_model_group">
-           <property name="title">
-            <string>Модель интерполяции</string>
-           </property>
-           <layout class="QGridLayout">
-            <item row="0" column="2">
-             <widget class="QPushButton" name="interpolar_save_model_btn">
-              <property name="text">
-               <string>Сохранить модель</string>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="0">
-             <widget class="QPushButton" name="interpolar_train_model_btn">
-              <property name="text">
-               <string>Обучить модель</string>
-              </property>
-             </widget>
-            </item>
-            <item row="1" column="2">
-             <widget class="QLabel" name="interpolar_model_status_label">
-              <property name="text">
-               <string>Модель не обучена</string>
-              </property>
-              <property name="alignment">
-               <set>Qt::AlignmentFlag::AlignCenter</set>
-              </property>
-             </widget>
-            </item>
-            <item row="1" column="0">
-             <widget class="QPushButton" name="interpolar_load_model_btn">
-              <property name="text">
-               <string>Загрузить модель</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="approx_model_group">
-         <property name="title">
-          <string>Модель аппроксимации</string>
-         </property>
-         <layout class="QGridLayout">
-          <item row="0" column="1">
-           <widget class="QPushButton" name="approx_save_model_btn">
-            <property name="text">
-             <string>Сохранить модель</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="1">
-           <widget class="QLabel" name="approx_model_status_label">
-            <property name="text">
-             <string>Модель не обучена</string>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignmentFlag::AlignCenter</set>
-            </property>
-           </widget>
-          </item>
-          <item row="0" column="0">
-           <widget class="QPushButton" name="approx_train_model_btn">
-            <property name="text">
-             <string>Обучить модель</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="0">
-           <widget class="QPushButton" name="approx_load_model_btn">
-            <property name="text">
-             <string>Загрузить модель</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="report_group">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="title">
-          <string>Отчёт</string>
-         </property>
-         <layout class="QVBoxLayout" name="verticalLayout_2">
-          <item>
-           <widget class="QTextEdit" name="text_report">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>0</height>
-             </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>16777215</width>
-              <height>16777215</height>
-             </size>
-            </property>
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-    </item>
-    <item>
+   <layout class="QGridLayout" name="gridLayout_2">
+    <item row="0" column="1">
      <widget class="QTabWidget" name="tab_widget">
       <property name="sizePolicy">
        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
@@ -312,11 +33,11 @@
        <attribute name="title">
         <string>Операции и графики</string>
        </attribute>
-       <layout class="QVBoxLayout">
+       <layout class="QVBoxLayout" name="verticalLayout">
         <item>
          <widget class="QGroupBox" name="control_gbox">
           <property name="sizePolicy">
-           <sizepolicy hsizetype="Expanding" vsizetype="Maximum">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
             <horstretch>0</horstretch>
             <verstretch>0</verstretch>
            </sizepolicy>
@@ -324,24 +45,21 @@
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>234</height>
+            <height>275</height>
            </size>
           </property>
           <property name="maximumSize">
            <size>
-            <width>1581</width>
-            <height>265</height>
+            <width>1667</width>
+            <height>330</height>
            </size>
           </property>
           <property name="title">
            <string>Управление</string>
           </property>
-          <layout class="QHBoxLayout" name="horizontalLayout_7">
+          <layout class="QHBoxLayout" name="horizontalLayout">
            <item>
             <layout class="QVBoxLayout" name="verticalLayout_4">
-             <property name="sizeConstraint">
-              <enum>QLayout::SizeConstraint::SetMinimumSize</enum>
-             </property>
              <item>
               <widget class="QPushButton" name="interp_btn">
                <property name="sizePolicy">
@@ -452,28 +170,38 @@
              <property name="title">
               <string>Реальные данные</string>
              </property>
-             <layout class="QHBoxLayout" name="horizontalLayout_5">
-              <item>
-               <widget class="QWidget" name="p_graphic" native="true">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QWidget" name="q_graphic" native="true">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-               </widget>
-              </item>
-             </layout>
+             <widget class="QWidget" name="p_graphic" native="true">
+              <property name="geometry">
+               <rect>
+                <x>12</x>
+                <y>33</y>
+                <width>632</width>
+                <height>175</height>
+               </rect>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+             <widget class="QWidget" name="q_graphic" native="true">
+              <property name="geometry">
+               <rect>
+                <x>650</x>
+                <y>33</y>
+                <width>631</width>
+                <height>175</height>
+               </rect>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
             </widget>
            </item>
           </layout>
@@ -481,6 +209,12 @@
         </item>
         <item>
          <widget class="QGroupBox" name="dimensionless_gbox">
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>618</height>
+           </size>
+          </property>
           <property name="title">
            <string>Расчетные данные</string>
           </property>
@@ -547,56 +281,6 @@
                </layout>
               </widget>
              </item>
-             <item>
-              <widget class="QGroupBox" name="groupBox_4">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="title">
-                <string>Типовые кривые</string>
-               </property>
-               <layout class="QVBoxLayout" name="verticalLayout_6">
-                <item>
-                 <widget class="QCheckBox" name="cb_gfunc">
-                  <property name="text">
-                   <string>G-функция(Nolte)</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QCheckBox" name="cb_mbt">
-                  <property name="text">
-                   <string>Время материального баланса</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QCheckBox" name="cb_type_gry">
-                  <property name="text">
-                   <string>Линейный режим</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QCheckBox" name="cb_type_cinco">
-                  <property name="text">
-                   <string>Билинейный режим</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QCheckBox" name="cb_type_valko">
-                  <property name="text">
-                   <string>Псевдорадиальный режим</string>
-                  </property>
-                 </widget>
-                </item>
-               </layout>
-              </widget>
-             </item>
             </layout>
            </item>
            <item>
@@ -637,151 +321,13 @@
         </item>
        </layout>
       </widget>
-      <widget class="QWidget" name="grp_tab">
-       <attribute name="title">
-        <string>Анализ ГРП</string>
-       </attribute>
-       <layout class="QVBoxLayout">
-        <item>
-         <widget class="QGroupBox" name="groupBox_6">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Expanding" vsizetype="Maximum">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="title">
-           <string>Параметры ГРП</string>
-          </property>
-          <layout class="QHBoxLayout" name="horizontalLayout_10">
-           <item>
-            <layout class="QVBoxLayout" name="verticalLayout_10">
-             <item>
-              <widget class="QLabel" name="fractures_value_label">
-               <property name="text">
-                <string>Трещины: -</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QLabel" name="fracture_length_label">
-               <property name="text">
-                <string>Длина трещины: -</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QLabel" name="fracture_width_label">
-               <property name="text">
-                <string>Ширина трещины: -</string>
-               </property>
-              </widget>
-             </item>
-            </layout>
-           </item>
-           <item>
-            <layout class="QVBoxLayout" name="verticalLayout_11">
-             <item>
-              <widget class="QLabel" name="skin_value_label">
-               <property name="text">
-                <string>Skin: -</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QLabel" name="al_ratio_label">
-               <property name="text">
-                <string>a/L: -</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QLabel" name="thickness_value_label">
-               <property name="text">
-                <string>Толщина: -</string>
-               </property>
-              </widget>
-             </item>
-            </layout>
-           </item>
-          </layout>
-         </widget>
-        </item>
-        <item>
-         <widget class="QGroupBox" name="groupBox_5">
-          <property name="title">
-           <string>Анализ</string>
-          </property>
-          <layout class="QVBoxLayout" name="verticalLayout_12">
-           <item>
-            <layout class="QHBoxLayout" name="horizontalLayout_9">
-             <item>
-              <widget class="QPushButton" name="flow_regime_btn">
-               <property name="text">
-                <string>Анализ режима течения</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QPushButton" name="transitions_btn">
-               <property name="text">
-                <string>Индекс продуктивности</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QPushButton" name="productivity_btn">
-               <property name="text">
-                <string>Переходы режимов</string>
-               </property>
-              </widget>
-             </item>
-            </layout>
-           </item>
-           <item>
-            <widget class="QTextEdit" name="grp_results_text"/>
-           </item>
-          </layout>
-         </widget>
-        </item>
-       </layout>
-      </widget>
       <widget class="QWidget" name="type_curves_tab">
        <attribute name="title">
         <string>Эталонные кривые</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayout_9">
         <item>
-         <layout class="QHBoxLayout" name="horizontalLayout_4">
-          <item>
-           <widget class="QPushButton" name="linear_btn">
-            <property name="text">
-             <string>Линейное течение</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="bilinear_btn">
-            <property name="text">
-             <string>Билинейное течение</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="pseudoradial_btn">
-            <property name="text">
-             <string>Псевдорадиальное течение</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="match_curves_btn">
-            <property name="text">
-             <string>Сопоставить с данными</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
+         <layout class="QHBoxLayout" name="horizontalLayout_4"/>
         </item>
         <item>
          <widget class="QWidget" name="type_curves_plot_placeholder" native="true">
@@ -819,6 +365,204 @@
         </item>
        </layout>
       </widget>
+     </widget>
+    </item>
+    <item row="0" column="0">
+     <widget class="QGroupBox" name="left_panel">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="title">
+       <string/>
+      </property>
+      <layout class="QGridLayout" name="gridLayout_3">
+       <item row="1" column="0">
+        <widget class="QGroupBox" name="params_group">
+         <property name="title">
+          <string>Параметры</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout">
+          <item row="0" column="0">
+           <widget class="QLabel" name="w_label">
+            <property name="text">
+             <string>Длина трещины W, м</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QDoubleSpinBox" name="width_doubleSpinBox">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="decimals">
+             <number>2</number>
+            </property>
+            <property name="maximum">
+             <double>1000000.000000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="thickness_label">
+            <property name="text">
+             <string>Толщина пласта h, м</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QDoubleSpinBox" name="thickness_doubleSpinBox">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="aL_label">
+            <property name="text">
+             <string>a/L</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QDoubleSpinBox" name="aL_doubleSpinBox">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="skin_label">
+            <property name="text">
+             <string>Skin</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QDoubleSpinBox" name="skin_doubleSpinBox">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="n_label">
+            <property name="text">
+             <string>N (трещины)</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QSpinBox" name="n_spinBox">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="maximum">
+             <number>10000</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item row="0" column="0">
+        <layout class="QGridLayout" name="gridLayout_4">
+         <item row="0" column="0">
+          <widget class="QPushButton" name="load_template_button">
+           <property name="text">
+            <string>Загрузить csv/pq файл</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QLabel" name="load_file_label">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="text">
+            <string>Загрузите файл</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignmentFlag::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item row="3" column="0">
+        <layout class="QHBoxLayout" name="horizontalLayout_2"/>
+       </item>
+       <item row="4" column="0">
+        <widget class="QGroupBox" name="report_group">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="title">
+          <string>Отчёт</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_2">
+          <item>
+           <widget class="QTextEdit" name="text_report">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>16777215</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QGroupBox" name="groupBox_3">
+         <property name="title">
+          <string>Выбор скважины</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_3">
+          <item>
+           <widget class="QComboBox" name="well_combo_dim">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>311</width>
+              <height>0</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
      </widget>
     </item>
    </layout>

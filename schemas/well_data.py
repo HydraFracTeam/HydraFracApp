@@ -3,7 +3,7 @@ from typing import Optional
 import pandas as pd
 
 
-class WellData(BaseModel):
+class RefenceData(BaseModel):
     """
     Датакласс для данных разведки месторождений и ГРП.
     Содержит все необходимые параметры для анализа скважины.
@@ -57,23 +57,3 @@ class WellTimeSeries(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class FlowRegimeAnalysis(BaseModel):
-    """
-    Результаты анализа режима течения.
-    """
-    regime_type: str = Field(description="Тип режима течения")
-    confidence: float = Field(ge=0, le=1, description="Уверенность в классификации")
-    characteristic_time: Optional[float] = Field(default=None, description="Характерное время перехода")
-    parameters: dict = Field(description="Параметры режима")
-
-
-class TypeCurveMatch(BaseModel):
-    """
-    Результаты сопоставления с эталонными кривыми.
-    """
-    curve_type: str = Field(description="Тип эталонной кривой")
-    match_quality: float = Field(ge=0, le=1, description="Качество сопоставления")
-    estimated_parameters: dict = Field(description="Оцененные параметры")
-    residuals: pd.Series = Field(description="Остатки")
-    
-    model_config = ConfigDict(arbitrary_types_allowed=True)
