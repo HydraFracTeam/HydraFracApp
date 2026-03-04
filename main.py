@@ -14,7 +14,7 @@ import pickle
 import os
 
 
-from ui_origin import Ui_MainWindow
+from ui import Ui_MainWindow
 
 # from helpers.parse_well_data import parse_well_data
 # from helpers.ml_methods import (detect_outliers)
