@@ -20,9 +20,9 @@ class OptimizeThresholds(BaseModel):
     def validate_bounds(self):
 
         if self.L_max < self.L_min:
-            raise ValueError("L_max должно быть >= L_min")
+            raise ValueError("Макс. граница должна быть больше или равной минимальной")
 
         if self.k_max < self.k_min:
-            raise ValueError("k_max должно быть >= k_min")
+            raise ValueError("Макс. граница должна быть больше или равной минимальной")
 
         return self

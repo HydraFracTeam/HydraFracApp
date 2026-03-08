@@ -15,7 +15,6 @@ class RawDynamicData: # храним как изначальные введен�
     Q: np.ndarray
 
     is_Q_in_dynamic_input: bool
-    source_file: str | None = None
     
 @dataclass
 class ProcessedDynamicData: # храним как данные, с которыми работаем и которыми манипулируем

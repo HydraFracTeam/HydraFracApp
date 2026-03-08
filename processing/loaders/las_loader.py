@@ -40,5 +40,4 @@ def load_dynamic_data_from_las(file_path: str) -> RawDynamicData:
         P=np.asarray(validated.P, dtype=float),
         Q=np.asarray(validated.Q, dtype=float) if validated.Q else None,
         is_Q_in_dynamic_input=validated.Q is not None,
-        source_file=file_path
     )

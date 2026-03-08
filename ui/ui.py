@@ -119,6 +119,7 @@ class Ui_MainWindow(object):
         self.well_length_spinbox.setReadOnly(False)
         self.well_length_spinbox.setDecimals(2)
         self.well_length_spinbox.setMaximum(10000.000000000000000)
+        self.well_length_spinbox.setValue(2500.000000000000000)
 
         self.horizontalLayout_14.addWidget(self.well_length_spinbox)
 
@@ -138,6 +139,7 @@ class Ui_MainWindow(object):
         self.well_height_spinBox.setReadOnly(False)
         self.well_height_spinBox.setDecimals(2)
         self.well_height_spinBox.setMaximum(10000.000000000000000)
+        self.well_height_spinBox.setValue(10.000000000000000)
 
         self.horizontalLayout_13.addWidget(self.well_height_spinBox)
 
@@ -163,6 +165,7 @@ class Ui_MainWindow(object):
         self.viscosity_spinBox.setDecimals(3)
         self.viscosity_spinBox.setMaximum(10.000000000000000)
         self.viscosity_spinBox.setSingleStep(0.100000000000000)
+        self.viscosity_spinBox.setValue(1.000000000000000)
 
         self.horizontalLayout_10.addWidget(self.viscosity_spinBox)
 
@@ -183,6 +186,7 @@ class Ui_MainWindow(object):
         self.volume_coef_spinBox.setDecimals(3)
         self.volume_coef_spinBox.setMaximum(10.000000000000000)
         self.volume_coef_spinBox.setSingleStep(0.100000000000000)
+        self.volume_coef_spinBox.setValue(1.000000000000000)
 
         self.horizontalLayout_11.addWidget(self.volume_coef_spinBox)
 
@@ -208,6 +212,7 @@ class Ui_MainWindow(object):
         self.porosity_spinBox.setDecimals(3)
         self.porosity_spinBox.setMaximum(10.000000000000000)
         self.porosity_spinBox.setSingleStep(0.100000000000000)
+        self.porosity_spinBox.setValue(0.200000000000000)
 
         self.horizontalLayout_9.addWidget(self.porosity_spinBox)
 
@@ -227,6 +232,7 @@ class Ui_MainWindow(object):
         self.frac_amount_spinBox.setReadOnly(False)
         self.frac_amount_spinBox.setMinimum(2)
         self.frac_amount_spinBox.setMaximum(1000)
+        self.frac_amount_spinBox.setValue(10)
 
         self.horizontalLayout_8.addWidget(self.frac_amount_spinBox)
 
@@ -247,8 +253,9 @@ class Ui_MainWindow(object):
         self.compressibility_spinBox.setObjectName(u"compressibility_spinBox")
         self.compressibility_spinBox.setEnabled(False)
         self.compressibility_spinBox.setReadOnly(False)
-        self.compressibility_spinBox.setDecimals(3)
+        self.compressibility_spinBox.setDecimals(6)
         self.compressibility_spinBox.setMaximum(1000.000000000000000)
+        self.compressibility_spinBox.setValue(0.000040000000000)
 
         self.horizontalLayout_12.addWidget(self.compressibility_spinBox)
 
@@ -284,6 +291,7 @@ class Ui_MainWindow(object):
         self.debit_doubleSpinBox.setEnabled(False)
         self.debit_doubleSpinBox.setReadOnly(False)
         self.debit_doubleSpinBox.setMaximum(100000.000000000000000)
+        self.debit_doubleSpinBox.setValue(100.000000000000000)
 
         self.horizontalLayout_15.addWidget(self.debit_doubleSpinBox)
 
@@ -318,6 +326,9 @@ class Ui_MainWindow(object):
         self.frac_length_min_border_doubleSpinBox = QDoubleSpinBox(self.groupBox_4)
         self.frac_length_min_border_doubleSpinBox.setObjectName(u"frac_length_min_border_doubleSpinBox")
         self.frac_length_min_border_doubleSpinBox.setEnabled(False)
+        self.frac_length_min_border_doubleSpinBox.setDecimals(2)
+        self.frac_length_min_border_doubleSpinBox.setMaximum(10000.000000000000000)
+        self.frac_length_min_border_doubleSpinBox.setValue(0.010000000000000)
 
         self.horizontalLayout_20.addWidget(self.frac_length_min_border_doubleSpinBox)
 
@@ -329,6 +340,8 @@ class Ui_MainWindow(object):
         self.frac_length_max_border_doubleSpinBox = QDoubleSpinBox(self.groupBox_4)
         self.frac_length_max_border_doubleSpinBox.setObjectName(u"frac_length_max_border_doubleSpinBox")
         self.frac_length_max_border_doubleSpinBox.setEnabled(False)
+        self.frac_length_max_border_doubleSpinBox.setMaximum(10000.000000000000000)
+        self.frac_length_max_border_doubleSpinBox.setValue(10000.000000000000000)
 
         self.horizontalLayout_20.addWidget(self.frac_length_max_border_doubleSpinBox)
 
@@ -348,6 +361,9 @@ class Ui_MainWindow(object):
         self.permeability_min_border_doubleSpinBox = QDoubleSpinBox(self.groupBox_5)
         self.permeability_min_border_doubleSpinBox.setObjectName(u"permeability_min_border_doubleSpinBox")
         self.permeability_min_border_doubleSpinBox.setEnabled(False)
+        self.permeability_min_border_doubleSpinBox.setDecimals(4)
+        self.permeability_min_border_doubleSpinBox.setMaximum(1000.000000000000000)
+        self.permeability_min_border_doubleSpinBox.setValue(0.000100000000000)
 
         self.horizontalLayout_19.addWidget(self.permeability_min_border_doubleSpinBox)
 
@@ -356,11 +372,14 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_19.addWidget(self.permeability_max_border_label)
 
-        self.permeability_max_border_doubleSpinBox_2 = QDoubleSpinBox(self.groupBox_5)
-        self.permeability_max_border_doubleSpinBox_2.setObjectName(u"permeability_max_border_doubleSpinBox_2")
-        self.permeability_max_border_doubleSpinBox_2.setEnabled(False)
+        self.permeability_max_border_doubleSpinBox = QDoubleSpinBox(self.groupBox_5)
+        self.permeability_max_border_doubleSpinBox.setObjectName(u"permeability_max_border_doubleSpinBox")
+        self.permeability_max_border_doubleSpinBox.setEnabled(False)
+        self.permeability_max_border_doubleSpinBox.setDecimals(4)
+        self.permeability_max_border_doubleSpinBox.setMaximum(1000.000000000000000)
+        self.permeability_max_border_doubleSpinBox.setValue(100.000000000000000)
 
-        self.horizontalLayout_19.addWidget(self.permeability_max_border_doubleSpinBox_2)
+        self.horizontalLayout_19.addWidget(self.permeability_max_border_doubleSpinBox)
 
 
         self.verticalLayout_12.addWidget(self.groupBox_5)
