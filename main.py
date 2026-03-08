@@ -10,7 +10,6 @@ import numpy as np
 from typing import List, Dict, Tuple
 
 
-
 from ui.ui import Ui_MainWindow
 from core.app_state import AppState
 from utils import format_pydantic_error
