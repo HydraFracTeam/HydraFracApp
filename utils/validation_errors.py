@@ -1,24 +1,32 @@
-# processing/validation_errors.py
-
 from pydantic import ValidationError
 
 
-def format_pydantic_error(e: ValidationError) -> str:
+def format_pydantic_error(e: Exception) -> str:
     """
-    Convert Pydantic ValidationError into a user-friendly message.
+    Convert ValidationError or ValueError into a user-friendly message.
     """
 
-    messages = []
+    # Обработка ошибок pydantic
+    if isinstance(e, ValidationError):
 
-    for error in e.errors():
+        messages = []
 
-        field = ".".join(str(loc) for loc in error.get("loc", []))
-        msg = error.get("msg", "")
-        msg = msg.replace("Value error," , "") # чтобы не было английского в ошибках
+        for error in e.errors():
 
-        if field:
-            messages.append(f"{field}: {msg}")
-        else:
-            messages.append(msg)
+            field = ".".join(str(loc) for loc in error.get("loc", []))
+            msg = error.get("msg", "")
+            msg = msg.replace("Value error,", "").strip()
 
-    return ";\n".join(messages)
+            if field:
+                messages.append(f"{field}: {msg}")
+            else:
+                messages.append(msg)
+
+        return ";\n".join(messages)
+
+    # Обработка обычных ValueError
+    if isinstance(e, ValueError):
+        return str(e)
+
+    # fallback для любых других ошибок
+    return f"Unexpected error: {str(e)}"
