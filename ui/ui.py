@@ -116,7 +116,7 @@ class Ui_MainWindow(object):
         self.well_length_spinbox = QDoubleSpinBox(self.static_params_group)
         self.well_length_spinbox.setObjectName(u"well_length_spinbox")
         self.well_length_spinbox.setEnabled(False)
-        self.well_length_spinbox.setReadOnly(True)
+        self.well_length_spinbox.setReadOnly(False)
         self.well_length_spinbox.setDecimals(2)
         self.well_length_spinbox.setMaximum(10000.000000000000000)
 
@@ -135,7 +135,7 @@ class Ui_MainWindow(object):
         self.well_height_spinBox = QDoubleSpinBox(self.static_params_group)
         self.well_height_spinBox.setObjectName(u"well_height_spinBox")
         self.well_height_spinBox.setEnabled(False)
-        self.well_height_spinBox.setReadOnly(True)
+        self.well_height_spinBox.setReadOnly(False)
         self.well_height_spinBox.setDecimals(2)
         self.well_height_spinBox.setMaximum(10000.000000000000000)
 
@@ -159,7 +159,7 @@ class Ui_MainWindow(object):
         self.viscosity_spinBox = QDoubleSpinBox(self.static_params_group)
         self.viscosity_spinBox.setObjectName(u"viscosity_spinBox")
         self.viscosity_spinBox.setEnabled(False)
-        self.viscosity_spinBox.setReadOnly(True)
+        self.viscosity_spinBox.setReadOnly(False)
         self.viscosity_spinBox.setDecimals(3)
         self.viscosity_spinBox.setMaximum(10.000000000000000)
         self.viscosity_spinBox.setSingleStep(0.100000000000000)
@@ -179,7 +179,7 @@ class Ui_MainWindow(object):
         self.volume_coef_spinBox = QDoubleSpinBox(self.static_params_group)
         self.volume_coef_spinBox.setObjectName(u"volume_coef_spinBox")
         self.volume_coef_spinBox.setEnabled(False)
-        self.volume_coef_spinBox.setReadOnly(True)
+        self.volume_coef_spinBox.setReadOnly(False)
         self.volume_coef_spinBox.setDecimals(3)
         self.volume_coef_spinBox.setMaximum(10.000000000000000)
         self.volume_coef_spinBox.setSingleStep(0.100000000000000)
@@ -204,7 +204,7 @@ class Ui_MainWindow(object):
         self.porosity_spinBox = QDoubleSpinBox(self.static_params_group)
         self.porosity_spinBox.setObjectName(u"porosity_spinBox")
         self.porosity_spinBox.setEnabled(False)
-        self.porosity_spinBox.setReadOnly(True)
+        self.porosity_spinBox.setReadOnly(False)
         self.porosity_spinBox.setDecimals(3)
         self.porosity_spinBox.setMaximum(10.000000000000000)
         self.porosity_spinBox.setSingleStep(0.100000000000000)
@@ -224,7 +224,7 @@ class Ui_MainWindow(object):
         self.frac_amount_spinBox = QSpinBox(self.static_params_group)
         self.frac_amount_spinBox.setObjectName(u"frac_amount_spinBox")
         self.frac_amount_spinBox.setEnabled(False)
-        self.frac_amount_spinBox.setReadOnly(True)
+        self.frac_amount_spinBox.setReadOnly(False)
         self.frac_amount_spinBox.setMinimum(2)
         self.frac_amount_spinBox.setMaximum(1000)
 
@@ -246,7 +246,7 @@ class Ui_MainWindow(object):
         self.compressibility_spinBox = QDoubleSpinBox(self.static_params_group)
         self.compressibility_spinBox.setObjectName(u"compressibility_spinBox")
         self.compressibility_spinBox.setEnabled(False)
-        self.compressibility_spinBox.setReadOnly(True)
+        self.compressibility_spinBox.setReadOnly(False)
         self.compressibility_spinBox.setDecimals(3)
         self.compressibility_spinBox.setMaximum(1000.000000000000000)
 
@@ -282,6 +282,7 @@ class Ui_MainWindow(object):
         self.debit_doubleSpinBox = QDoubleSpinBox(self.static_params_group)
         self.debit_doubleSpinBox.setObjectName(u"debit_doubleSpinBox")
         self.debit_doubleSpinBox.setEnabled(False)
+        self.debit_doubleSpinBox.setReadOnly(False)
         self.debit_doubleSpinBox.setMaximum(100000.000000000000000)
 
         self.horizontalLayout_15.addWidget(self.debit_doubleSpinBox)
@@ -292,11 +293,11 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_14.addLayout(self.verticalLayout_13)
 
-        self.pushButton_2 = QPushButton(self.static_params_group)
-        self.pushButton_2.setObjectName(u"pushButton_2")
-        self.pushButton_2.setEnabled(False)
+        self.insert_static_params_button = QPushButton(self.static_params_group)
+        self.insert_static_params_button.setObjectName(u"insert_static_params_button")
+        self.insert_static_params_button.setEnabled(False)
 
-        self.verticalLayout_14.addWidget(self.pushButton_2)
+        self.verticalLayout_14.addWidget(self.insert_static_params_button)
 
 
         self.verticalLayout_3.addWidget(self.static_params_group)
@@ -364,11 +365,11 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_12.addWidget(self.groupBox_5)
 
-        self.pushButton_3 = QPushButton(self.optimize_params_block)
-        self.pushButton_3.setObjectName(u"pushButton_3")
-        self.pushButton_3.setEnabled(False)
+        self.insert_thresholds_button = QPushButton(self.optimize_params_block)
+        self.insert_thresholds_button.setObjectName(u"insert_thresholds_button")
+        self.insert_thresholds_button.setEnabled(False)
 
-        self.verticalLayout_12.addWidget(self.pushButton_3)
+        self.verticalLayout_12.addWidget(self.insert_thresholds_button)
 
 
         self.verticalLayout_3.addWidget(self.optimize_params_block)
@@ -378,11 +379,11 @@ class Ui_MainWindow(object):
         self.calculate_block.setMinimumSize(QSize(0, 0))
         self.verticalLayout_10 = QVBoxLayout(self.calculate_block)
         self.verticalLayout_10.setObjectName(u"verticalLayout_10")
-        self.pushButton = QPushButton(self.calculate_block)
-        self.pushButton.setObjectName(u"pushButton")
-        self.pushButton.setEnabled(False)
+        self.calculate_opt_parameters_button = QPushButton(self.calculate_block)
+        self.calculate_opt_parameters_button.setObjectName(u"calculate_opt_parameters_button")
+        self.calculate_opt_parameters_button.setEnabled(False)
 
-        self.verticalLayout_10.addWidget(self.pushButton)
+        self.verticalLayout_10.addWidget(self.calculate_opt_parameters_button)
 
         self.groupBox_6 = QGroupBox(self.calculate_block)
         self.groupBox_6.setObjectName(u"groupBox_6")
@@ -700,7 +701,7 @@ class Ui_MainWindow(object):
         self.debit_label_support.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e \u0443\u043a\u0430\u0437\u0430\u0442\u044c \u0434\u0435\u0431\u0438\u0442:", None))
         self.debit_status_label.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0435\u0442", None))
         self.debit_label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u0435\u0431\u0438\u0442 ", None))
-        self.pushButton_2.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0432\u0435\u0441\u0442\u0438 \u0441\u0442\u0430\u0442\u0438\u0447\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
+        self.insert_static_params_button.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0432\u0435\u0441\u0442\u0438 \u0441\u0442\u0430\u0442\u0438\u0447\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
         self.optimize_params_block.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0442\u0438\u043c\u0438\u0437\u0438\u0440\u0443\u0435\u043c\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
         self.groupBox_4.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u0443\u0434\u043b\u0438\u043d\u0430 \u0442\u0440\u0435\u0449\u0438\u043d\u044b, \u043c", None))
         self.frac_length_min_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0438\u043d. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
@@ -708,9 +709,9 @@ class Ui_MainWindow(object):
         self.groupBox_5.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u043d\u0438\u0446\u0430\u0435\u043c\u043e\u0441\u0442\u044c, \u043c\u0414", None))
         self.permeability_min_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0438\u043d. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
         self.permeability_max_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0430\u043a\u0441. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
-        self.pushButton_3.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0432\u0435\u0441\u0442\u0438 \u0433\u0440\u0430\u043d\u0438\u0446\u044b \u043e\u043f\u0442\u0438\u043c\u0438\u0437\u0430\u0446\u0438\u0438", None))
+        self.insert_thresholds_button.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0432\u0435\u0441\u0442\u0438 \u0433\u0440\u0430\u043d\u0438\u0446\u044b \u043e\u043f\u0442\u0438\u043c\u0438\u0437\u0430\u0446\u0438\u0438", None))
         self.calculate_block.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u044f \u0440\u0430\u0441\u0447\u0435\u0442\u0430", None))
-        self.pushButton.setText(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0441\u0447\u0438\u0442\u0430\u0442\u044c \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
+        self.calculate_opt_parameters_button.setText(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0441\u0447\u0438\u0442\u0430\u0442\u044c \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
         self.groupBox_6.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u0443\u0447\u0435\u043d\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
         self.skin_result_label.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0438\u043d-\u0444\u0430\u043a\u0442\u043e\u0440", None))
         self.permeability_result_label.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u043d\u0438\u0446\u0430\u0435\u043c\u043e\u0441\u0442\u044c, \u043c\u0414", None))

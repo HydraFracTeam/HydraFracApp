@@ -11,21 +11,41 @@ class StaticParams(BaseModel):
     B: float
     ct: float
     N: int
-    aL: float
 
     Q_constant: Optional[float] = None
 
-    @field_validator("W", "h", "mu", "ct")
+    @field_validator("W")
     @classmethod
-    def must_be_positive(cls, v):
+    def validate_W(cls, v):
         if v <= 0:
-            raise ValueError("Параметр должен быть положительным")
+            raise ValueError("Длина пласта должна быть положительной")
+        return v
+
+    @field_validator("h")
+    @classmethod
+    def validate_h(cls, v):
+        if v <= 0:
+            raise ValueError("Высота пласта должна быть положительной")
+        return v
+
+    @field_validator("mu")
+    @classmethod
+    def validate_mu(cls, v):
+        if v <= 0:
+            raise ValueError("Вязкость должна быть положительной")
+        return v
+
+    @field_validator("ct")
+    @classmethod
+    def validate_ct(cls, v):
+        if v <= 0:
+            raise ValueError("Общая сжимаемость должна быть положительной")
         return v
 
     @field_validator("phi")
     @classmethod
     def validate_phi(cls, v):
-        if not (0 < v < 1):
+        if not (0 <= v <= 1):
             raise ValueError("Пористость должна быть между 0 и 1")
         return v
 
@@ -49,7 +69,7 @@ class StaticParams(BaseModel):
         if v is None:
             return v
 
-        if v <= 0:
-            raise ValueError("Дебит должен быть положительным")
+        if v < 0:
+            raise ValueError("Дебит должен быть неотрицательным")
 
         return v

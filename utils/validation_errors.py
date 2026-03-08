@@ -14,10 +14,11 @@ def format_pydantic_error(e: ValidationError) -> str:
 
         field = ".".join(str(loc) for loc in error.get("loc", []))
         msg = error.get("msg", "")
+        msg = msg.replace("Value error," , "") # чтобы не было английского в ошибках
 
         if field:
             messages.append(f"{field}: {msg}")
         else:
             messages.append(msg)
 
-    return "; ".join(messages)
+    return ";\n".join(messages)

@@ -12,7 +12,13 @@ from typing import List, Dict, Tuple
 
 from ui.ui import Ui_MainWindow
 from core.app_state import AppState
-from core.models import RawDynamicData 
+from utils import format_pydantic_error
+# датаклассы
+from core.models import RawDynamicData
+
+# pydantic
+from schemas.static_params import StaticParams
+
 
 from processing.loaders import csv_loader, las_loader
 from utils import get_file_suffix, get_filename
@@ -31,7 +37,7 @@ class MyApp(QMainWindow):
             self.ui.load_file_button,
             self.ui.insert_data_from_buffer_button,
         ]
-        self._common_static_params: List[QSpinBox] = [
+        self._common_static_controls: List[QSpinBox] = [
             self.ui.well_length_spinbox,
             self.ui.well_height_spinBox,
             self.ui.viscosity_spinBox,
@@ -39,13 +45,17 @@ class MyApp(QMainWindow):
             self.ui.porosity_spinBox,
             self.ui.frac_amount_spinBox,
             self.ui.compressibility_spinBox,
+            self.ui.insert_static_params_button,
         ]
                
         # Соединяем ui элементы и соответствующие функции
         self.setup_load_dynamic_data_menu()
+        self.setup_static_data_menu()
         # Создаем  интерфейс с вкладками
         setup_interface(self)
     
+    
+    ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
     def setup_load_dynamic_data_menu(self):
         self.ui.load_file_button.clicked.connect(self.load_dynamic_data_from_file)
         self.ui.reset_data_button.clicked.connect(self.reset_all_data)
@@ -65,7 +75,6 @@ class MyApp(QMainWindow):
             return
 
         suffix = get_file_suffix(file_path)
-
         try:
             if suffix == ".csv":
                 raw_data = csv_loader.load_dynamic_data_from_csv(file_path)
@@ -86,15 +95,52 @@ class MyApp(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Ошибка загрузки динамических данных",
-                str(e)
+                format_pydantic_error(e)
             )
             return
     
-        
-    def show_in_text_report(self, text: str) -> None:
-        self.ui.text_report.append(text)
-        
+    ## РАЗДЕЛ РАБОТЫ СО СТАТИЧНЫМИ ПАРАМЕТРАМИ
+
+    def setup_static_data_menu(self):
+        self.ui.insert_static_params_button.clicked.connect(self.get_static_params)
+
+    def get_static_params(self):
+
+        raw = self.app_state.raw_dynamic
+        if raw is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала загрузите динамические данные.")
+            return
+
+        data = {
+            "W": self.ui.well_length_spinbox.value(),
+            "h": self.ui.well_height_spinBox.value(),
+            "mu": self.ui.viscosity_spinBox.value(),
+            "phi": self.ui.porosity_spinBox.value(),
+            "B": self.ui.volume_coef_spinBox.value(),
+            "ct": self.ui.compressibility_spinBox.value(),
+            "N": self.ui.frac_amount_spinBox.value(),
+        }
+
+        # дебит
+        if not raw.is_Q_in_dynamic_input:
+            data["Q_constant"] = self.ui.debit_doubleSpinBox.value()
+
+        try:
+            params = StaticParams(**data)
+
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Ошибка ввода параметров",
+                format_pydantic_error(e)
+            )
+            return
+
+        self.app_state.static_params = params
+
+        self.show_in_text_report("Статические параметры успешно введены.")
     
+    ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
     def enable_load_menu_buttons(self) -> None:
         for elem in self._load_controls:
             elem.setEnabled(True)
@@ -105,24 +151,28 @@ class MyApp(QMainWindow):
             elem.setEnabled(False)
     
     def enable_static_params(self) -> None:
-        for spinbox in self._common_static_params:
+        for spinbox in self._common_static_controls:
             spinbox.setEnabled(True)
         if self.app_state.raw_dynamic and not self.app_state.raw_dynamic.is_Q_in_dynamic_input:
             self.ui.debit_status_label.setText("Да")
             self.ui.debit_doubleSpinBox.setEnabled(True)
             
     def disable_static_params(self) -> None:
-        for spinbox in self._common_static_params:
+        for spinbox in self._common_static_controls:
             spinbox.setEnabled(False)
         self.ui.debit_status_label.setText("Нет")
         self.ui.debit_doubleSpinBox.setEnabled(False)
         
+    ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
     def reset_all_data(self):
         self.app_state = AppState()
         self.enable_load_menu_buttons()
         self.disable_static_params()
         self.ui.text_report.clear()
         self.ui.load_file_label.setText("Файл не загружен")
+            
+    def show_in_text_report(self, text: str) -> None:
+        self.ui.text_report.append(text)
     
             
 

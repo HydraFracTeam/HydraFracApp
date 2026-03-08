@@ -4,7 +4,6 @@ from pydantic import ValidationError
 
 from schemas.raw_dynamic_input import RawDynamicDataInput
 from core.models import RawDynamicData
-from utils import format_pydantic_error
 
 
 def load_dynamic_data_from_las(file_path: str) -> RawDynamicData:
@@ -30,15 +29,11 @@ def load_dynamic_data_from_las(file_path: str) -> RawDynamicData:
     if "q" in curves:
         Q = las[curves["q"]].tolist()
 
-    try:
-        validated = RawDynamicDataInput(
+    validated = RawDynamicDataInput(
             t=t,
             P=P,
             Q=Q
         )
-
-    except ValidationError as e:
-        raise ValueError(format_pydantic_error(e))
 
     return RawDynamicData(
         t=np.asarray(validated.t, dtype=float),
