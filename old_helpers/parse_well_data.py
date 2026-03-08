@@ -2,7 +2,6 @@ import pandas as pd
 from typing import Optional, Tuple, List, Dict
 import numpy as np
 
-from schemas.well_data import WellData, WellTimeSeries
 
 
 def parse_well_data(file_path) -> Tuple[Optional[List[WellTimeSeries]], Optional[str]]:

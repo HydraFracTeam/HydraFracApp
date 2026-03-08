@@ -53,9 +53,9 @@
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_2">
               <item>
-               <widget class="QPushButton" name="load_template_button">
+               <widget class="QPushButton" name="load_file_button">
                 <property name="text">
-                 <string>Загрузить csv/pq файл</string>
+                 <string>Загрузить .csv/.las файл</string>
                 </property>
                </widget>
               </item>
@@ -80,7 +80,7 @@
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_3">
               <item>
-               <widget class="QPushButton" name="insert_data_ui_button">
+               <widget class="QPushButton" name="insert_data_from_buffer_button">
                 <property name="text">
                  <string>Вставка из буфера обмена</string>
                 </property>
@@ -135,13 +135,16 @@
                  <bool>false</bool>
                 </property>
                 <property name="readOnly">
-                 <bool>true</bool>
+                 <bool>false</bool>
                 </property>
                 <property name="decimals">
                  <number>2</number>
                 </property>
                 <property name="maximum">
                  <double>10000.000000000000000</double>
+                </property>
+                <property name="value">
+                 <double>2500.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -150,25 +153,28 @@
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_13">
               <item>
-               <widget class="QLabel" name="well_thickness_label">
+               <widget class="QLabel" name="well_height_label">
                 <property name="text">
                  <string>Толщина пласта, м</string>
                 </property>
                </widget>
               </item>
               <item>
-               <widget class="QDoubleSpinBox" name="well_thickness__spinBox">
+               <widget class="QDoubleSpinBox" name="well_height_spinBox">
                 <property name="enabled">
                  <bool>false</bool>
                 </property>
                 <property name="readOnly">
-                 <bool>true</bool>
+                 <bool>false</bool>
                 </property>
                 <property name="decimals">
                  <number>2</number>
                 </property>
                 <property name="maximum">
                  <double>10000.000000000000000</double>
+                </property>
+                <property name="value">
+                 <double>10.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -193,7 +199,7 @@
                  <bool>false</bool>
                 </property>
                 <property name="readOnly">
-                 <bool>true</bool>
+                 <bool>false</bool>
                 </property>
                 <property name="decimals">
                  <number>3</number>
@@ -203,6 +209,9 @@
                 </property>
                 <property name="singleStep">
                  <double>0.100000000000000</double>
+                </property>
+                <property name="value">
+                 <double>1.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -223,7 +232,7 @@
                  <bool>false</bool>
                 </property>
                 <property name="readOnly">
-                 <bool>true</bool>
+                 <bool>false</bool>
                 </property>
                 <property name="decimals">
                  <number>3</number>
@@ -233,6 +242,9 @@
                 </property>
                 <property name="singleStep">
                  <double>0.100000000000000</double>
+                </property>
+                <property name="value">
+                 <double>1.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -257,7 +269,7 @@
                  <bool>false</bool>
                 </property>
                 <property name="readOnly">
-                 <bool>true</bool>
+                 <bool>false</bool>
                 </property>
                 <property name="decimals">
                  <number>3</number>
@@ -267,6 +279,9 @@
                 </property>
                 <property name="singleStep">
                  <double>0.100000000000000</double>
+                </property>
+                <property name="value">
+                 <double>0.200000000000000</double>
                 </property>
                </widget>
               </item>
@@ -287,13 +302,16 @@
                  <bool>false</bool>
                 </property>
                 <property name="readOnly">
-                 <bool>true</bool>
+                 <bool>false</bool>
                 </property>
                 <property name="minimum">
                  <number>2</number>
                 </property>
                 <property name="maximum">
                  <number>1000</number>
+                </property>
+                <property name="value">
+                 <number>10</number>
                 </property>
                </widget>
               </item>
@@ -316,13 +334,16 @@
                <bool>false</bool>
               </property>
               <property name="readOnly">
-               <bool>true</bool>
+               <bool>false</bool>
               </property>
               <property name="decimals">
-               <number>3</number>
+               <number>6</number>
               </property>
               <property name="maximum">
                <double>1000.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>0.000040000000000</double>
               </property>
              </widget>
             </item>
@@ -342,7 +363,7 @@
               <item>
                <widget class="QLabel" name="debit_status_label">
                 <property name="text">
-                 <string>да</string>
+                 <string>Нет</string>
                 </property>
                </widget>
               </item>
@@ -358,24 +379,18 @@
                </widget>
               </item>
               <item>
-               <widget class="QSpinBox" name="debit_spinBox">
+               <widget class="QDoubleSpinBox" name="debit_doubleSpinBox">
                 <property name="enabled">
                  <bool>false</bool>
                 </property>
                 <property name="readOnly">
-                 <bool>true</bool>
-                </property>
-                <property name="minimum">
-                 <number>0</number>
+                 <bool>false</bool>
                 </property>
                 <property name="maximum">
-                 <number>1000000</number>
-                </property>
-                <property name="singleStep">
-                 <number>10</number>
+                 <double>100000.000000000000000</double>
                 </property>
                 <property name="value">
-                 <number>0</number>
+                 <double>100.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -384,7 +399,7 @@
            </layout>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton_2">
+           <widget class="QPushButton" name="insert_static_params_button">
             <property name="enabled">
              <bool>false</bool>
             </property>
@@ -420,6 +435,15 @@
                <property name="enabled">
                 <bool>false</bool>
                </property>
+               <property name="decimals">
+                <number>2</number>
+               </property>
+               <property name="maximum">
+                <double>10000.000000000000000</double>
+               </property>
+               <property name="value">
+                <double>0.010000000000000</double>
+               </property>
               </widget>
              </item>
              <item>
@@ -433,6 +457,12 @@
               <widget class="QDoubleSpinBox" name="frac_length_max_border_doubleSpinBox">
                <property name="enabled">
                 <bool>false</bool>
+               </property>
+               <property name="maximum">
+                <double>10000.000000000000000</double>
+               </property>
+               <property name="value">
+                <double>10000.000000000000000</double>
                </property>
               </widget>
              </item>
@@ -463,6 +493,15 @@
                <property name="enabled">
                 <bool>false</bool>
                </property>
+               <property name="decimals">
+                <number>4</number>
+               </property>
+               <property name="maximum">
+                <double>1000.000000000000000</double>
+               </property>
+               <property name="value">
+                <double>0.000100000000000</double>
+               </property>
               </widget>
              </item>
              <item>
@@ -473,9 +512,18 @@
               </widget>
              </item>
              <item>
-              <widget class="QDoubleSpinBox" name="permeability_max_border_doubleSpinBox_2">
+              <widget class="QDoubleSpinBox" name="permeability_max_border_doubleSpinBox">
                <property name="enabled">
                 <bool>false</bool>
+               </property>
+               <property name="decimals">
+                <number>4</number>
+               </property>
+               <property name="maximum">
+                <double>1000.000000000000000</double>
+               </property>
+               <property name="value">
+                <double>100.000000000000000</double>
                </property>
               </widget>
              </item>
@@ -483,7 +531,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton_3">
+           <widget class="QPushButton" name="insert_thresholds_button">
             <property name="enabled">
              <bool>false</bool>
             </property>
@@ -508,7 +556,7 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_10">
           <item>
-           <widget class="QPushButton" name="pushButton">
+           <widget class="QPushButton" name="calculate_opt_parameters_button">
             <property name="enabled">
              <bool>false</bool>
             </property>
@@ -538,7 +586,7 @@
              <item>
               <layout class="QHBoxLayout" name="horizontalLayout_24">
                <item>
-                <widget class="QLabel" name="frac_llength_min_border_label_4">
+                <widget class="QLabel" name="skin_result_label">
                  <property name="text">
                   <string>Скин-фактор</string>
                  </property>
@@ -559,14 +607,14 @@
              <item>
               <layout class="QHBoxLayout" name="horizontalLayout_23">
                <item>
-                <widget class="QLabel" name="frac_llength_min_border_label_3">
+                <widget class="QLabel" name="permeability_result_label">
                  <property name="text">
                   <string>Проницаемость, мД</string>
                  </property>
                 </widget>
                </item>
                <item>
-                <widget class="QDoubleSpinBox" name="frac_llength_min_border_doubleSpinBox_3">
+                <widget class="QDoubleSpinBox" name="permeability_result_spinbox">
                  <property name="enabled">
                   <bool>false</bool>
                  </property>
@@ -580,14 +628,14 @@
              <item>
               <layout class="QHBoxLayout" name="horizontalLayout_22">
                <item>
-                <widget class="QLabel" name="frac_llength_min_border_label_2">
+                <widget class="QLabel" name="frac_length_result_label">
                  <property name="text">
                   <string>Полудлина трещины, м</string>
                  </property>
                 </widget>
                </item>
                <item>
-                <widget class="QDoubleSpinBox" name="frac_llength_min_border_doubleSpinBox_2">
+                <widget class="QDoubleSpinBox" name="frac_length_result_spinbox">
                  <property name="enabled">
                   <bool>false</bool>
                  </property>
