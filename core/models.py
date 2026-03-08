@@ -50,6 +50,13 @@ class SolverState:
 class UserDataset:
 
     dynamic_data: ProcessedDynamicData
+    dimensionless: DimensionlessData
     static_params: StaticParams
     optimize_thresholds: OptimizeThresholds
 
+
+@dataclass
+class ReferenceCurve:
+    dynamic_data: ProcessedDynamicData
+    dimensionless: DimensionlessData
+    static_params: StaticParams

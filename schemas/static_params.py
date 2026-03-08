@@ -19,28 +19,28 @@ class StaticParams(BaseModel):
     @classmethod
     def must_be_positive(cls, v):
         if v <= 0:
-            raise ValueError("Parameter must be positive")
+            raise ValueError("Параметр должен быть положительным")
         return v
 
     @field_validator("phi")
     @classmethod
     def validate_phi(cls, v):
         if not (0 < v < 1):
-            raise ValueError("Porosity must be between 0 and 1")
+            raise ValueError("Пористость должна быть между 0 и 1")
         return v
 
     @field_validator("B")
     @classmethod
     def validate_B(cls, v):
         if v <= 0:
-            raise ValueError("Volume coefficient must be positive")
+            raise ValueError("Объемный коэффициент должен быть положительным")
         return v
 
     @field_validator("N")
     @classmethod
     def validate_N(cls, v):
-        if v < 1:
-            raise ValueError("Number of fractures must be >= 1")
+        if v < 2:
+            raise ValueError("Количество трещин должно быть >= 2")
         return v
 
     @field_validator("Q_constant")
@@ -50,6 +50,6 @@ class StaticParams(BaseModel):
             return v
 
         if v <= 0:
-            raise ValueError("Flow rate must be positive")
+            raise ValueError("Дебит должен быть положительным")
 
         return v

@@ -2,31 +2,33 @@ from typing import Optional, List
 from pydantic import BaseModel, field_validator, model_validator
 import numpy as np
 
+from config import settings
+
 
 class RawDynamicDataInput(BaseModel):
     """
     Сырые динамические данные пользователя.
-    Загружаются из CSV.
+    Загружаются из CSV или вставляются из буфера обмена.
     """
 
     t: List[float]
     P: List[float]
     Q: Optional[List[float]] = None
 
-    MIN_POINTS: int = 20
+    MIN_POINTS: int = settings.MIN_POINTS
 
     @model_validator(mode="after")
     def validate_lengths(self):
         n = len(self.t)
 
         if n < self.MIN_POINTS:
-            raise ValueError(f"Minimum number of time points is {self.MIN_POINTS}")
+            raise ValueError(f"Минимальное количество временных точек равно {self.MIN_POINTS}")
 
         if len(self.P) != n:
-            raise ValueError("Length of P must match length of t")
+            raise ValueError("Длина P должна совпадать с длиной t")
 
         if self.Q is not None and len(self.Q) != n:
-            raise ValueError("Length of Q must match length of t")
+            raise ValueError("Длина Q должна совпадать с длиной t")
 
         return self
 
@@ -37,14 +39,14 @@ class RawDynamicDataInput(BaseModel):
         arr = np.array(v, dtype=float)
 
         if np.isnan(arr).any():
-            raise ValueError("Time array cannot contain NaN")
+            raise ValueError("Временной массив не может содержать NaN")
 
         if np.any(arr < 0):
-            raise ValueError("Time values must be non-negative")
+            raise ValueError("Временные значения должны быть неотрицательными")
 
         # проверка монотонности
         if not np.all(np.diff(arr) > 0):
-            raise ValueError("Time values must be strictly increasing")
+            raise ValueError("Временные значения должны строго возрастать")
 
         return v
 
@@ -55,7 +57,7 @@ class RawDynamicDataInput(BaseModel):
         arr = np.array(v, dtype=float)
 
         if np.any(arr < 0):
-            raise ValueError("Pressure values must be non-negative")
+            raise ValueError("Значения давления должны быть неотрицательными")
 
         return v
 
@@ -69,6 +71,6 @@ class RawDynamicDataInput(BaseModel):
         arr = np.array(v, dtype=float)
 
         if np.any(arr < 0):
-            raise ValueError("Дебит должен быть неотрцительным")
+            raise ValueError("Дебит должен быть неотрицательным")
 
         return v
