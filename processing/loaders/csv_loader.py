@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from schemas.raw_dynamic_input import RawDynamicDataInput
 from core.models import RawDynamicData
+from utils import format_pydantic_error
 
 
 def load_dynamic_data_from_csv(file_path: str) -> RawDynamicData:
@@ -33,13 +34,8 @@ def load_dynamic_data_from_csv(file_path: str) -> RawDynamicData:
             Q=Q
         )
     except ValidationError as e:
-        # Формируем понятные сообщения об ошибках для пользователя
-        error_messages = []
-        for error in e.errors():
-            error_messages.append(error['msg'])
-        
         # Объединяем все сообщения об ошибках в одно
-        combined_message = "; ".join(error_messages)
+        combined_message = format_pydantic_error(e)
         raise ValueError(combined_message)
 
     # Сохраняем в датакласс для последующей работы

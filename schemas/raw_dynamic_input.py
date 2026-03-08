@@ -4,7 +4,6 @@ import numpy as np
 
 from config import settings
 
-
 class RawDynamicDataInput(BaseModel):
     """
     Сырые динамические данные пользователя.

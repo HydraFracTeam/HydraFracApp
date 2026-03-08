@@ -12,9 +12,10 @@ from pathlib import Path
 
 from ui.ui import Ui_MainWindow
 from core.app_state import AppState
+from core.models import RawDynamicData 
 
-from processing.loaders import csv_loader
-from utils import get_file_suffix
+from processing.loaders import csv_loader, las_loader
+from utils import get_file_suffix, get_filename
 from old_helpers.ui_setup import setup_interface
 
 
@@ -26,6 +27,7 @@ class MyApp(QMainWindow):
         self.ui.setupUi(self)
         self.app_state = AppState()
         
+        
         # Соединяем ui элементы и соответствующие функции
         self.setup_load_menu()
         # Создаем  интерфейс с вкладками
@@ -34,8 +36,10 @@ class MyApp(QMainWindow):
     def setup_load_menu(self):
         self.ui.load_file_button.clicked.connect(self.load_dynamic_data_from_file)
         # self.ui.insert_data_from_buffer_button.connect(...)
-        
-    def load_dynamic_data_from_file(self):
+    
+    
+    
+    def load_dynamic_data_from_file(self) -> RawDynamicData:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Выберите файл с данным",
@@ -59,8 +63,10 @@ class MyApp(QMainWindow):
                 raise ValueError("Загружать можно только .csv или .las файлы.")
         
             self.app_state.raw_dynamic = raw_data
-            self.ui.text_report.append("Динамические данные успешны загружены. \
-                                       \n Можно переходить к вводу статичных параметров.")
+            
+            file_name = get_filename(file_path=file_path)
+            self.ui.load_file_label.setText(file_name)
+            self.show_in_text_report(f"Динамические данные успешны загружены из файла {file_name}.")
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -68,6 +74,13 @@ class MyApp(QMainWindow):
                 str(e)
             )
             return
+        
+        
+    def show_in_text_report(self, text: str) -> None:
+        self.ui.text_report.append(text)
+        
+    
+    
             
 
 if __name__ == "__main__":
