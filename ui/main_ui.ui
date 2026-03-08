@@ -55,7 +55,7 @@
               <item>
                <widget class="QPushButton" name="load_file_button">
                 <property name="text">
-                 <string>Загрузить csv/pq файл</string>
+                 <string>Загрузить .csv/.las файл</string>
                 </property>
                </widget>
               </item>
@@ -150,14 +150,14 @@
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_13">
               <item>
-               <widget class="QLabel" name="well_thickness_label">
+               <widget class="QLabel" name="well_height_label">
                 <property name="text">
                  <string>Толщина пласта, м</string>
                 </property>
                </widget>
               </item>
               <item>
-               <widget class="QDoubleSpinBox" name="well_thickness__spinBox">
+               <widget class="QDoubleSpinBox" name="well_height_spinBox">
                 <property name="enabled">
                  <bool>false</bool>
                 </property>
@@ -342,7 +342,7 @@
               <item>
                <widget class="QLabel" name="debit_status_label">
                 <property name="text">
-                 <string>да</string>
+                 <string>Нет</string>
                 </property>
                </widget>
               </item>
@@ -358,24 +358,12 @@
                </widget>
               </item>
               <item>
-               <widget class="QSpinBox" name="debit_spinBox">
+               <widget class="QDoubleSpinBox" name="debit_doubleSpinBox">
                 <property name="enabled">
                  <bool>false</bool>
                 </property>
-                <property name="readOnly">
-                 <bool>true</bool>
-                </property>
-                <property name="minimum">
-                 <number>0</number>
-                </property>
                 <property name="maximum">
-                 <number>1000000</number>
-                </property>
-                <property name="singleStep">
-                 <number>10</number>
-                </property>
-                <property name="value">
-                 <number>0</number>
+                 <double>100000.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -538,7 +526,7 @@
              <item>
               <layout class="QHBoxLayout" name="horizontalLayout_24">
                <item>
-                <widget class="QLabel" name="frac_llength_min_border_label_4">
+                <widget class="QLabel" name="skin_result_label">
                  <property name="text">
                   <string>Скин-фактор</string>
                  </property>
@@ -559,14 +547,14 @@
              <item>
               <layout class="QHBoxLayout" name="horizontalLayout_23">
                <item>
-                <widget class="QLabel" name="frac_llength_min_border_label_3">
+                <widget class="QLabel" name="permeability_result_label">
                  <property name="text">
                   <string>Проницаемость, мД</string>
                  </property>
                 </widget>
                </item>
                <item>
-                <widget class="QDoubleSpinBox" name="frac_llength_min_border_doubleSpinBox_3">
+                <widget class="QDoubleSpinBox" name="permeability_result_spinbox">
                  <property name="enabled">
                   <bool>false</bool>
                  </property>
@@ -580,14 +568,14 @@
              <item>
               <layout class="QHBoxLayout" name="horizontalLayout_22">
                <item>
-                <widget class="QLabel" name="frac_llength_min_border_label_2">
+                <widget class="QLabel" name="frac_length_result_label">
                  <property name="text">
                   <string>Полудлина трещины, м</string>
                  </property>
                 </widget>
                </item>
                <item>
-                <widget class="QDoubleSpinBox" name="frac_llength_min_border_doubleSpinBox_2">
+                <widget class="QDoubleSpinBox" name="frac_length_result_spinbox">
                  <property name="enabled">
                   <bool>false</bool>
                  </property>
