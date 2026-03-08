@@ -54,10 +54,10 @@ class Ui_MainWindow(object):
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-        self.load_template_button = QPushButton(self.groupBox_3)
-        self.load_template_button.setObjectName(u"load_template_button")
+        self.load_file_button = QPushButton(self.groupBox_3)
+        self.load_file_button.setObjectName(u"load_file_button")
 
-        self.horizontalLayout_2.addWidget(self.load_template_button)
+        self.horizontalLayout_2.addWidget(self.load_file_button)
 
         self.load_file_label = QLabel(self.groupBox_3)
         self.load_file_label.setObjectName(u"load_file_label")
@@ -75,10 +75,10 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_3 = QHBoxLayout()
         self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
-        self.insert_data_ui_button = QPushButton(self.groupBox_3)
-        self.insert_data_ui_button.setObjectName(u"insert_data_ui_button")
+        self.insert_data_from_buffer_button = QPushButton(self.groupBox_3)
+        self.insert_data_from_buffer_button.setObjectName(u"insert_data_from_buffer_button")
 
-        self.horizontalLayout_3.addWidget(self.insert_data_ui_button)
+        self.horizontalLayout_3.addWidget(self.insert_data_from_buffer_button)
 
         self.reset_data_button = QPushButton(self.groupBox_3)
         self.reset_data_button.setObjectName(u"reset_data_button")
@@ -689,9 +689,9 @@ class Ui_MainWindow(object):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"MainWindow", None))
         self.left_panel.setTitle("")
         self.groupBox_3.setTitle(QCoreApplication.translate("MainWindow", u"\u0414\u0438\u043d\u0430\u043c\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b", None))
-        self.load_template_button.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c csv/pq \u0444\u0430\u0439\u043b", None))
+        self.load_file_button.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c csv/pq \u0444\u0430\u0439\u043b", None))
         self.load_file_label.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u0444\u0430\u0439\u043b", None))
-        self.insert_data_ui_button.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0441\u0442\u0430\u0432\u043a\u0430 \u0438\u0437 \u0431\u0443\u0444\u0435\u0440\u0430 \u043e\u0431\u043c\u0435\u043d\u0430", None))
+        self.insert_data_from_buffer_button.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0441\u0442\u0430\u0432\u043a\u0430 \u0438\u0437 \u0431\u0443\u0444\u0435\u0440\u0430 \u043e\u0431\u043c\u0435\u043d\u0430", None))
         self.reset_data_button.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.static_params_group.setTitle(QCoreApplication.translate("MainWindow", u"\u0421\u0442\u0430\u0442\u0438\u0447\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u043f\u043b\u0430\u0441\u0442\u0430 \u0438 \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b", None))
         self.well_length_label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u043b\u0438\u043d\u0430 \u043f\u043b\u0430\u0441\u0442\u0430, \u043c", None))
