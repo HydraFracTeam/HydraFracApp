@@ -46,6 +46,7 @@ class MyApp(QMainWindow):
     def setup_load_dynamic_data_menu(self):
         self.ui.load_file_button.clicked.connect(self.load_dynamic_data_from_file)
         self.ui.reset_data_button.clicked.connect(self.reset_all_data)
+        ## todo позже добавить вставку из буфера через отдельное окошко, как будет все готово
         # self.ui.insert_data_from_buffer_button.connect(...)
     
     def load_dynamic_data_from_file(self):
