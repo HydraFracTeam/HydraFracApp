@@ -27,7 +27,10 @@ class MyApp(QMainWindow):
         self.ui.setupUi(self)
         self.app_state = AppState()
         
-        
+        self._load_controls: List[QWidget] = [
+            self.ui.load_file_button,
+            self.ui.insert_data_from_buffer_button,
+        ]
         self._common_static_params: List[QSpinBox] = [
             self.ui.well_length_spinbox,
             self.ui.well_height_spinBox,
@@ -93,13 +96,13 @@ class MyApp(QMainWindow):
         
     
     def enable_load_menu_buttons(self) -> None:
-        self.ui.load_file_button.setEnabled(True)
-        self.ui.insert_data_from_buffer_button.setEnabled(True)
+        for elem in self._load_controls:
+            elem.setEnabled(True)
         
     
     def disable_load_menu_buttons(self) -> None:
-        self.ui.load_file_button.setEnabled(False)
-        self.ui.insert_data_from_buffer_button.setEnabled(False)
+        for elem in self._load_controls:
+            elem.setEnabled(False)
     
     def enable_static_params(self) -> None:
         for spinbox in self._common_static_params:
