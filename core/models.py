@@ -4,7 +4,6 @@ from typing import Optional
 
 
 from schemas.static_params import StaticParams
-from schemas.optimize_thresholds import OptimizeThresholds
 
 
 @dataclass
@@ -17,7 +16,7 @@ class RawDynamicData: # храним как изначальные введен�
     is_Q_in_dynamic_input: bool
     
 @dataclass
-class ProcessedDynamicData: # храним как данные, с которыми работаем и которыми манипулируем
+class ProcessingDynamicData: # храним как данные, с которыми работаем и которыми манипулируем
     t: np.ndarray
     P: np.ndarray
     Q: np.ndarray
@@ -46,16 +45,7 @@ class SolverState:
 
 
 @dataclass
-class UserDataset:
-
-    dynamic_data: ProcessedDynamicData
-    dimensionless: DimensionlessData
-    static_params: StaticParams
-    optimize_thresholds: OptimizeThresholds
-
-
-@dataclass
 class ReferenceCurve:
-    dynamic_data: ProcessedDynamicData
+    dynamic_data: RawDynamicData
     dimensionless: DimensionlessData
     static_params: StaticParams

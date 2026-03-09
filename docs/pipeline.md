@@ -2,7 +2,7 @@
 
 # Application Workflow
 
-Документ описывает полный поток данных и действий в приложении интерпретации ГДИС.
+Документ описывает поток данных и этапы работы приложения интерпретации ГДИС.
 
 ---
 
@@ -19,11 +19,11 @@ Static Parameters Input
    ↓
 Optimization Bounds Input
    ↓
-UserDataset Creation
+ProcessingDynamicData Creation
    ↓
 Preprocessing
    ↓
-Dimensionless Transformation
+Dimensionless Calculation
    ↓
 Solver
    ↓
@@ -37,29 +37,33 @@ Results Visualization
 Источник:
 
 ```
-CSV файл
-LAS файл
+CSV
+LAS
 ```
 
 Процесс:
 
 ```
-UI → csv_loader / las_loader → RawDynamicData
+UI
+ ↓
+csv_loader / las_loader
+ ↓
+RawDynamicData
 ```
 
-Проверки выполняются через:
+Валидация выполняется через:
 
 ```
 schemas.raw_dynamic_input.RawDynamicDataInput
 ```
 
-Результат:
+Результат сохраняется в:
 
 ```
-AppState.raw_dynamic
+AppState.raw_dynamic_data
 ```
 
-Содержит:
+Содержимое:
 
 ```
 t
@@ -68,11 +72,7 @@ Q
 is_Q_in_dynamic_input
 ```
 
-После успешной загрузки:
-
-```
-UI → разблокирует ввод статичных параметров
-```
+После загрузки UI разблокирует ввод статичных параметров.
 
 ---
 
@@ -90,7 +90,7 @@ ct
 N
 ```
 
-Если в динамических данных **нет дебита**, пользователь вводит:
+Если дебит отсутствует в файле:
 
 ```
 Q_constant
@@ -102,25 +102,17 @@ Q_constant
 schemas.static_params.StaticParams
 ```
 
-После успешной проверки:
+Результат сохраняется в:
 
 ```
 AppState.static_params
 ```
 
-Если дебит не был в файле:
+Если дебит был константным:
 
 ```
-Q = Q_constant / N
+RawDynamicData.Q = Q_constant
 ```
-
-и заполняется массив:
-
-```
-RawDynamicData.Q
-```
-
-После этого UI разблокирует следующий этап.
 
 ---
 
@@ -135,7 +127,7 @@ k_min
 k_max
 ```
 
-Проверка выполняется через:
+Валидация:
 
 ```
 schemas.optimize_thresholds.OptimizeThresholds
@@ -149,46 +141,33 @@ AppState.optimize_thresholds
 
 ---
 
-# 4. Создание рабочего датасета
+# 4. Создание рабочего набора динамических данных
 
-После ввода всех данных создаётся основной контейнер:
-
-```
-UserDataset
-```
-
-Он содержит:
+На основе исходных данных создаётся рабочая модель:
 
 ```
-ProcessedDynamicData
-StaticParams
-OptimizeThresholds
-DimensionlessData (пока None)
+ProcessingDynamicData
 ```
 
-Создание ProcessedDynamicData:
+Создание:
 
 ```
-ProcessedDynamicData(
+ProcessingDynamicData(
     t = RawDynamicData.t
     P = RawDynamicData.P
-    Q = RawDynamicData.Q
+    Q = normalize_Q_by_n(Q_total, N)
 )
 ```
 
-Сохраняется:
+Сохраняется в:
 
 ```
-AppState.fact_data
+AppState.processing_dynamic_data
 ```
-
-После этого пользователь может запускать расчёт.
 
 ---
 
 # 5. Preprocessing
-
-Перед интерпретацией выполняется обработка данных.
 
 Модуль:
 
@@ -204,13 +183,13 @@ processing/preprocessing.py
 3. экстраполяция временного ряда
 ```
 
-Изменяется:
+Результат сохраняется в:
 
 ```
-ProcessedDynamicData
+ProcessingDynamicData
 ```
 
-Добавляются:
+Поля:
 
 ```
 P_interpolated
@@ -232,7 +211,7 @@ core/dimensionless.py
 Использует:
 
 ```
-ProcessedDynamicData
+ProcessingDynamicData
 StaticParams
 ```
 
@@ -242,17 +221,17 @@ StaticParams
 DimensionlessData
 ```
 
-Содержит:
+Сохраняется в:
+
+```
+AppState.dimensionless
+```
+
+Поля:
 
 ```
 X
 Y
-```
-
-Сохраняется в:
-
-```
-UserDataset.dimensionless
 ```
 
 ---
@@ -268,8 +247,9 @@ core/solver.py
 Использует:
 
 ```
-UserDataset
-ReferenceCurves
+DimensionlessData
+ReferenceCurve
+OptimizeThresholds
 ```
 
 Алгоритм:
@@ -277,21 +257,21 @@ ReferenceCurves
 ```
 1. перебор skin
 2. масштабирование по W
-3. интерполяция эталонных кривых
+3. выбор эталонной кривой
 4. оптимизация k и L
-5. вычисление ошибки
+5. вычисление невязки
 ```
 
-Метрика ошибки:
+Метрика:
 
 ```
 L1 или L2 между XY кривыми
 ```
 
-Результат:
+Результат сохраняется в:
 
 ```
-SolverResult
+AppState.solver_state
 ```
 
 ---
@@ -324,30 +304,13 @@ permeability_result_spinbox
 reset_data_button
 ```
 
-Выполняет:
+Сбрасывает состояние:
 
 ```
 AppState = AppState()
 ```
 
-и UI возвращается к начальному состоянию.
-
----
-
-# AppState
-
-Центральный контейнер состояния приложения.
-
-Хранит:
-
-```
-raw_dynamic
-static_params
-optimize_thresholds
-fact_data (UserDataset)
-solver_state
-solver_result
-```
+и интерфейс возвращается в исходное состояние.
 
 ---
 
@@ -362,13 +325,13 @@ StaticParams
    ↓
 OptimizeThresholds
    ↓
-ProcessedDynamicData
+ProcessingDynamicData
    ↓
 DimensionlessData
    ↓
 Solver
    ↓
-Results
+SolverState
 ```
 
 ---
@@ -381,10 +344,10 @@ Results
 RawDynamicData → immutable
 ```
 
-Все изменения происходят в:
+Рабочие изменения происходят только в:
 
 ```
-ProcessedDynamicData
+ProcessingDynamicData
 DimensionlessData
+SolverState
 ```
-

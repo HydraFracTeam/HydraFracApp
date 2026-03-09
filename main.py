@@ -17,7 +17,8 @@ from utils import format_pydantic_error
 # pydantic
 from schemas.static_params import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
-from core.models import UserDataset, ProcessedDynamicData
+from core.models import ProcessingDynamicData
+from core.dimensionless import normalize_Q_by_n
 from processing.loaders import csv_loader, las_loader
 from utils import get_file_suffix, get_filename
 from old_helpers.ui_setup import setup_interface
@@ -97,7 +98,7 @@ class MyApp(QMainWindow):
             else:
                 raise ValueError("Загружать можно только .csv или .las файлы.")
         
-            self.app_state.raw_dynamic = raw_data
+            self.app_state.raw_dynamic_data = raw_data
             
             file_name = get_filename(file_path=file_path)
             self.ui.load_file_label.setText(file_name)
@@ -119,12 +120,12 @@ class MyApp(QMainWindow):
 
     def get_static_params(self):
 
-        raw = self.app_state.raw_dynamic
+        raw = self.app_state.raw_dynamic_data
         if raw is None:
             QMessageBox.warning(self, "Ошибка", "Сначала загрузите динамические данные.")
             return
 
-        data = {
+        static_data = {
             "W": self.ui.well_length_spinbox.value(),
             "h": self.ui.well_height_spinBox.value(),
             "mu": self.ui.viscosity_spinBox.value(),
@@ -136,10 +137,10 @@ class MyApp(QMainWindow):
 
         # если дебит был не в динамике 
         if not raw.is_Q_in_dynamic_input:
-            data["Q_constant"] = self.ui.debit_doubleSpinBox.value()
+            static_data["Q_constant"] = self.ui.debit_doubleSpinBox.value()
 
         try:
-            params = StaticParams(**data)
+            params = StaticParams(**static_data)
 
         except Exception as e:
             QMessageBox.warning(
@@ -152,9 +153,9 @@ class MyApp(QMainWindow):
         self.app_state.static_params = params
         # пересчитываем дебит для вводных данных после валидации статики
         if not raw.is_Q_in_dynamic_input:
-            self.app_state.raw_dynamic.Q = np.full(
-                len(self.app_state.raw_dynamic.t),
-                data["Q_constant"] / data["N"],
+            self.app_state.raw_dynamic_data.Q = np.full(
+                len(self.app_state.raw_dynamic_data.t),
+                static_data["Q_constant"],
                 dtype=float
             )
 
@@ -193,17 +194,14 @@ class MyApp(QMainWindow):
 
         self.app_state.optimize_thresholds = thresholds
 
-        # создаем UserDataset
-        current_dynamic_data = ProcessedDynamicData(
-            t = self.app_state.raw_dynamic.t,
-            P = self.app_state.raw_dynamic.P,
-            Q = self.app_state.raw_dynamic.Q,
+        normalized_Q = normalize_Q_by_n(
+            Q_total=self.app_state.raw_dynamic_data.Q,
+            N = self.app_state.static_params.N,
         )
-        self.app_state.fact_data = UserDataset(
-            dynamic_data=current_dynamic_data,
-            dimensionless=None, # появится после preprocessing
-            static_params=self.app_state.static_params,
-            optimize_thresholds=thresholds
+        self.app_state.processing_dynamic_data = ProcessingDynamicData(
+            t = self.app_state.raw_dynamic_data.t,
+            P = self.app_state.raw_dynamic_data.P,
+            Q = normalized_Q,
         )
 
         self.show_in_text_report("Границы оптимизации успешно заданы.")
@@ -223,7 +221,7 @@ class MyApp(QMainWindow):
     def enable_static_controls(self) -> None:
         for spinbox in self._static_controls:
             spinbox.setEnabled(True)
-        if self.app_state.raw_dynamic and not self.app_state.raw_dynamic.is_Q_in_dynamic_input:
+        if self.app_state.raw_dynamic_data and not self.app_state.raw_dynamic_data.is_Q_in_dynamic_input:
             self.ui.debit_status_label.setText("Да")
             self.ui.debit_doubleSpinBox.setEnabled(True)
             
@@ -248,7 +246,8 @@ class MyApp(QMainWindow):
     def disable_calculation_controls(self) -> None:
         for elem in self._calculation_controls:
             elem.setEnabled(False)
-            
+    
+        
     ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
     def reset_all_data(self):
         self.app_state = AppState()
