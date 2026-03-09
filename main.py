@@ -18,7 +18,7 @@ from utils import format_pydantic_error
 from schemas.static_params import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
 from core.models import ProcessingDynamicData
-from core.dimensionless import normalize_Q_by_n
+import processing.dimensional_transfrorms as dm_transformation
 from processing.loaders import csv_loader, las_loader
 from utils import get_file_suffix, get_filename
 from old_helpers.ui_setup import setup_interface
@@ -44,6 +44,7 @@ class MyApp(QMainWindow):
             self.ui.porosity_spinBox,
             self.ui.frac_amount_spinBox,
             self.ui.compressibility_spinBox,
+            self.ui.reservoir_pressure_spinbox,
             self.ui.insert_static_params_button,
         ]
         self._threshold_controls: List[QWidget] = [
@@ -133,6 +134,7 @@ class MyApp(QMainWindow):
             "B": self.ui.volume_coef_spinBox.value(),
             "ct": self.ui.compressibility_spinBox.value(),
             "N": self.ui.frac_amount_spinBox.value(),
+            "P0": self.ui.reservoir_pressure_spinbox.value(),
         }
 
         # если дебит был не в динамике 
@@ -194,15 +196,21 @@ class MyApp(QMainWindow):
 
         self.app_state.optimize_thresholds = thresholds
 
-        normalized_Q = normalize_Q_by_n(
+        normalized_Q = dm_transformation.normalize_Q_by_n(
             Q_total=self.app_state.raw_dynamic_data.Q,
             N = self.app_state.static_params.N,
+        )
+        calculated_dP = dm_transformation.calculate_dP(
+            P = self.app_state.raw_dynamic_data.P,
+            P0 = self.app_state.static_params.P0,
         )
         self.app_state.processing_dynamic_data = ProcessingDynamicData(
             t = self.app_state.raw_dynamic_data.t,
             P = self.app_state.raw_dynamic_data.P,
             Q = normalized_Q,
+            dP=calculated_dP,
         )
+        print(self.app_state.processing_dynamic_data)
 
         self.show_in_text_report("Границы оптимизации успешно заданы.")
         self.show_in_text_report("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")

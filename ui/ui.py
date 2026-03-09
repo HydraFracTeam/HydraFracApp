@@ -102,8 +102,8 @@ class Ui_MainWindow(object):
         sizePolicy3.setHeightForWidth(self.static_params_group.sizePolicy().hasHeightForWidth())
         self.static_params_group.setSizePolicy(sizePolicy3)
         self.static_params_group.setMinimumSize(QSize(0, 0))
-        self.verticalLayout_14 = QVBoxLayout(self.static_params_group)
-        self.verticalLayout_14.setObjectName(u"verticalLayout_14")
+        self.verticalLayout_13 = QVBoxLayout(self.static_params_group)
+        self.verticalLayout_13.setObjectName(u"verticalLayout_13")
         self.horizontalLayout_17 = QHBoxLayout()
         self.horizontalLayout_17.setObjectName(u"horizontalLayout_17")
         self.horizontalLayout_14 = QHBoxLayout()
@@ -147,7 +147,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_17.addLayout(self.horizontalLayout_13)
 
 
-        self.verticalLayout_14.addLayout(self.horizontalLayout_17)
+        self.verticalLayout_13.addLayout(self.horizontalLayout_17)
 
         self.horizontalLayout_18 = QHBoxLayout()
         self.horizontalLayout_18.setObjectName(u"horizontalLayout_18")
@@ -194,7 +194,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_18.addLayout(self.horizontalLayout_11)
 
 
-        self.verticalLayout_14.addLayout(self.horizontalLayout_18)
+        self.verticalLayout_13.addLayout(self.horizontalLayout_18)
 
         self.horizontalLayout_16 = QHBoxLayout()
         self.horizontalLayout_16.setObjectName(u"horizontalLayout_16")
@@ -240,7 +240,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_16.addLayout(self.horizontalLayout_8)
 
 
-        self.verticalLayout_14.addLayout(self.horizontalLayout_16)
+        self.verticalLayout_13.addLayout(self.horizontalLayout_16)
 
         self.horizontalLayout_12 = QHBoxLayout()
         self.horizontalLayout_12.setObjectName(u"horizontalLayout_12")
@@ -260,10 +260,29 @@ class Ui_MainWindow(object):
         self.horizontalLayout_12.addWidget(self.compressibility_spinBox)
 
 
-        self.verticalLayout_14.addLayout(self.horizontalLayout_12)
+        self.verticalLayout_13.addLayout(self.horizontalLayout_12)
 
-        self.verticalLayout_13 = QVBoxLayout()
-        self.verticalLayout_13.setObjectName(u"verticalLayout_13")
+        self.horizontalLayout_25 = QHBoxLayout()
+        self.horizontalLayout_25.setObjectName(u"horizontalLayout_25")
+        self.reservoir_pressure_label = QLabel(self.static_params_group)
+        self.reservoir_pressure_label.setObjectName(u"reservoir_pressure_label")
+
+        self.horizontalLayout_25.addWidget(self.reservoir_pressure_label)
+
+        self.reservoir_pressure_spinbox = QDoubleSpinBox(self.static_params_group)
+        self.reservoir_pressure_spinbox.setObjectName(u"reservoir_pressure_spinbox")
+        self.reservoir_pressure_spinbox.setEnabled(False)
+        self.reservoir_pressure_spinbox.setReadOnly(False)
+        self.reservoir_pressure_spinbox.setMaximum(100000.000000000000000)
+        self.reservoir_pressure_spinbox.setValue(100.000000000000000)
+
+        self.horizontalLayout_25.addWidget(self.reservoir_pressure_spinbox)
+
+
+        self.verticalLayout_13.addLayout(self.horizontalLayout_25)
+
+        self.horizontalLayout_26 = QHBoxLayout()
+        self.horizontalLayout_26.setObjectName(u"horizontalLayout_26")
         self.horizontalLayout_7 = QHBoxLayout()
         self.horizontalLayout_7.setObjectName(u"horizontalLayout_7")
         self.debit_label_support = QLabel(self.static_params_group)
@@ -277,7 +296,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_7.addWidget(self.debit_status_label)
 
 
-        self.verticalLayout_13.addLayout(self.horizontalLayout_7)
+        self.horizontalLayout_26.addLayout(self.horizontalLayout_7)
 
         self.horizontalLayout_15 = QHBoxLayout()
         self.horizontalLayout_15.setObjectName(u"horizontalLayout_15")
@@ -296,16 +315,16 @@ class Ui_MainWindow(object):
         self.horizontalLayout_15.addWidget(self.debit_doubleSpinBox)
 
 
-        self.verticalLayout_13.addLayout(self.horizontalLayout_15)
+        self.horizontalLayout_26.addLayout(self.horizontalLayout_15)
 
 
-        self.verticalLayout_14.addLayout(self.verticalLayout_13)
+        self.verticalLayout_13.addLayout(self.horizontalLayout_26)
 
         self.insert_static_params_button = QPushButton(self.static_params_group)
         self.insert_static_params_button.setObjectName(u"insert_static_params_button")
         self.insert_static_params_button.setEnabled(False)
 
-        self.verticalLayout_14.addWidget(self.insert_static_params_button)
+        self.verticalLayout_13.addWidget(self.insert_static_params_button)
 
 
         self.verticalLayout_3.addWidget(self.static_params_group)
@@ -717,6 +736,7 @@ class Ui_MainWindow(object):
         self.porosity_label.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0440\u0438\u0441\u0442\u043e\u0441\u0442\u044c", None))
         self.frac_amount_label.setText(QCoreApplication.translate("MainWindow", u"\u041a\u043e\u043b-\u0432\u043e \u0442\u0440\u0435\u0449\u0438\u043d", None))
         self.compressibility_label.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0436\u0438\u043c\u0430\u0435\u043c\u043e\u0441\u0442\u044c \u0441\u0438\u0441\u0442\u0435\u043c\u044b, \u0430\u0442\u043c^-1", None))
+        self.reservoir_pressure_label.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043b\u0430\u0441\u0442\u043e\u0432\u043e\u0435 \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u0435, \u043a\u0433\u0441/\u0441\u043c^2", None))
         self.debit_label_support.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e \u0443\u043a\u0430\u0437\u0430\u0442\u044c \u0434\u0435\u0431\u0438\u0442:", None))
         self.debit_status_label.setText(QCoreApplication.translate("MainWindow", u"\u041d\u0435\u0442", None))
         self.debit_label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u0435\u0431\u0438\u0442 ", None))

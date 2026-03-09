@@ -117,7 +117,7 @@
          <property name="title">
           <string>Статичные параметры пласта и скважины</string>
          </property>
-         <layout class="QVBoxLayout" name="verticalLayout_14">
+         <layout class="QVBoxLayout" name="verticalLayout_13">
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_17">
             <item>
@@ -350,7 +350,34 @@
            </layout>
           </item>
           <item>
-           <layout class="QVBoxLayout" name="verticalLayout_13">
+           <layout class="QHBoxLayout" name="horizontalLayout_25">
+            <item>
+             <widget class="QLabel" name="reservoir_pressure_label">
+              <property name="text">
+               <string>Пластовое давление, кгс/см^2</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QDoubleSpinBox" name="reservoir_pressure_spinbox">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="readOnly">
+               <bool>false</bool>
+              </property>
+              <property name="maximum">
+               <double>100000.000000000000000</double>
+              </property>
+              <property name="value">
+               <double>100.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_26">
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_7">
               <item>

@@ -20,6 +20,7 @@ class ProcessingDynamicData: # храним как данные, с которы
     t: np.ndarray
     P: np.ndarray
     Q: np.ndarray
+    dP: np.ndarray
     
     P_interpolated: Optional[np.ndarray] = None
 
