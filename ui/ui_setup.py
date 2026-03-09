@@ -7,12 +7,13 @@ from PySide6.QtWidgets import ( QMainWindow,
     QTableView
 )
 
+
 from ui.ui import Ui_MainWindow
 import pyqtgraph as pg
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 
-def setup_interface(app: Ui_MainWindow) -> None:
+def setup_add_interface(app: Ui_MainWindow) -> None:
     """
     Инициализация динамических элементов UI:
     - графики (pyqtgraph)
@@ -49,7 +50,7 @@ def attach_pg_to_widget(container: QMainWindow) -> pg.PlotItem:
     return plot_widget.getPlotItem()
 
 
-def setup_timeseries_tab(app: QMainWindow) -> None:
+def setup_timeseries_tab(app: Ui_MainWindow) -> None:
     app.ui.p_graphic = attach_pg_to_widget(
         app.findChild(QWidget, "p_graphic")
     )

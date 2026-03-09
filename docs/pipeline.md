@@ -88,6 +88,7 @@ phi
 B
 ct
 N
+P0 (пластовое давление)
 ```
 
 Если дебит отсутствует в файле:
@@ -156,6 +157,7 @@ ProcessingDynamicData(
     t = RawDynamicData.t
     P = RawDynamicData.P
     Q = normalize_Q_by_n(Q_total, N)
+    dp = calculate_dP(RawDynamicData.P, StaticParams.P0)
 )
 ```
 
@@ -192,6 +194,7 @@ ProcessingDynamicData
 Поля:
 
 ```
+dP
 P_interpolated
 t_extended
 P_extended

@@ -11,17 +11,33 @@ from typing import List, Dict, Tuple
 
 
 from ui.ui import Ui_MainWindow
+from ui import ( 
+    setup_add_interface, 
+    update_data_table_view, 
+    clear_data_table,
+    plot_pressure, 
+    plot_debit,
+    clear_plot,
+    )
 from core.app_state import AppState
-from utils import format_pydantic_error
 
 # pydantic
 from schemas.static_params import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
-from core.models import ProcessingDynamicData
-from core.dimensionless import normalize_Q_by_n
-from processing.loaders import csv_loader, las_loader
+# модельки
+from core.models import ProcessingDynamicData, DimensionlessData, SolverState
+# хелперы, расчеты
+from core.dimensionless import calculate_x, calculate_y
+from helpers import (
+    calculate_L_value, 
+    calculate_k_value,
+    calculate_dP,
+    normalize_Q_by_n,
+    )
 from utils import get_file_suffix, get_filename
-from old_helpers.ui_setup import setup_interface
+from utils import format_pydantic_error
+# загрузки данных
+from processing.loaders import csv_loader, las_loader
 
 
 
@@ -44,6 +60,7 @@ class MyApp(QMainWindow):
             self.ui.porosity_spinBox,
             self.ui.frac_amount_spinBox,
             self.ui.compressibility_spinBox,
+            self.ui.reservoir_pressure_spinbox,
             self.ui.insert_static_params_button,
         ]
         self._threshold_controls: List[QWidget] = [
@@ -66,8 +83,8 @@ class MyApp(QMainWindow):
         self.setup_static_data_menu()
         self.setup_threshold_menu()
         # Создаем  интерфейс с вкладками
-        setup_interface(self)
-    
+        setup_add_interface(self)
+
     
     ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
     def setup_load_dynamic_data_menu(self):
@@ -118,14 +135,9 @@ class MyApp(QMainWindow):
     def setup_static_data_menu(self):
         self.ui.insert_static_params_button.clicked.connect(self.get_static_params)
 
-    def get_static_params(self):
 
-        raw = self.app_state.raw_dynamic_data
-        if raw is None:
-            QMessageBox.warning(self, "Ошибка", "Сначала загрузите динамические данные.")
-            return
-
-        static_data = {
+    def read_static_from_ui(self):
+        static_dict = {
             "W": self.ui.well_length_spinbox.value(),
             "h": self.ui.well_height_spinBox.value(),
             "mu": self.ui.viscosity_spinBox.value(),
@@ -133,15 +145,23 @@ class MyApp(QMainWindow):
             "B": self.ui.volume_coef_spinBox.value(),
             "ct": self.ui.compressibility_spinBox.value(),
             "N": self.ui.frac_amount_spinBox.value(),
+            "P0": self.ui.reservoir_pressure_spinbox.value(),
         }
 
         # если дебит был не в динамике 
-        if not raw.is_Q_in_dynamic_input:
-            static_data["Q_constant"] = self.ui.debit_doubleSpinBox.value()
+        if not self.app_state.raw_dynamic_data.is_Q_in_dynamic_input:
+            static_dict["Q_constant"] = self.ui.debit_doubleSpinBox.value()
+        
+        return StaticParams(**static_dict)
+        
+    def get_static_params(self):
+        raw = self.app_state.raw_dynamic_data
+        if raw is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала загрузите динамические данные.")
+            return
 
         try:
-            params = StaticParams(**static_data)
-
+            static_params = self.read_static_from_ui()
         except Exception as e:
             QMessageBox.warning(
                 self,
@@ -150,12 +170,12 @@ class MyApp(QMainWindow):
             )
             return
         
-        self.app_state.static_params = params
+        self.app_state.static_params = static_params
         # пересчитываем дебит для вводных данных после валидации статики
-        if not raw.is_Q_in_dynamic_input:
+        if not raw.is_Q_in_dynamic_input and static_params.Q_constant is not None: # заходим, только если создали Q_constant ранее
             self.app_state.raw_dynamic_data.Q = np.full(
                 len(self.app_state.raw_dynamic_data.t),
-                static_data["Q_constant"],
+                static_params.Q_constant,
                 dtype=float
             )
 
@@ -167,22 +187,27 @@ class MyApp(QMainWindow):
     ## РАЗДЕЛ ГРАНИЦ ОПТИМИЗАЦИИ
     def setup_threshold_menu(self):
         self.ui.insert_thresholds_button.clicked.connect(self.get_thresholds)
-    
-    def get_thresholds(self):
+        
+    def read_thresholds_from_ui(self) -> OptimizeThresholds:
 
-        if self.app_state.static_params is None:
-            QMessageBox.warning(self, "Ошибка", "Сначала введите статические параметры.")
-            return
-
-        data = {
+        optimize_dict = {
             "L_min": self.ui.frac_length_min_border_doubleSpinBox.value(),
             "L_max": self.ui.frac_length_max_border_doubleSpinBox.value(),
             "k_min": self.ui.permeability_min_border_doubleSpinBox.value(),
             "k_max": self.ui.permeability_max_border_doubleSpinBox.value(),
         }
 
+        return OptimizeThresholds(**optimize_dict)
+   
+        
+    def get_thresholds(self):
+
+        if self.app_state.static_params is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала введите статические параметры.")
+            return
+
         try:
-            thresholds = OptimizeThresholds(**data)
+            thresholds = self.read_thresholds_from_ui()
 
         except Exception as e:
             QMessageBox.warning(
@@ -192,20 +217,23 @@ class MyApp(QMainWindow):
             )
             return
 
+        # считаем начальные значения для k и L
         self.app_state.optimize_thresholds = thresholds
-
-        normalized_Q = normalize_Q_by_n(
-            Q_total=self.app_state.raw_dynamic_data.Q,
-            N = self.app_state.static_params.N,
-        )
-        self.app_state.processing_dynamic_data = ProcessingDynamicData(
-            t = self.app_state.raw_dynamic_data.t,
-            P = self.app_state.raw_dynamic_data.P,
-            Q = normalized_Q,
-        )
-
+        
+        # создаем объект solver_state с начальными значениями
+        self._init_solver_state()
+        
+        # сохраняем динамические данные для работы
+        self.build_processing_dynamic()
+        
+        # расчитаем промежуточные XY после ввода
+        self.compute_dimensionless()
+        
         self.show_in_text_report("Границы оптимизации успешно заданы.")
+        self.update_data_table() # обновление таблицы
+        self.update_dim_plots() # обновление размерных графиков 
         self.show_in_text_report("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
+        
         self.disable_threshold_controls()
         self.enable_calculation_controls()
     
@@ -247,6 +275,87 @@ class MyApp(QMainWindow):
         for elem in self._calculation_controls:
             elem.setEnabled(False)
     
+    # ОБНОВЛЕНИЯ ДАННЫХ, ГРАФИКОВ
+    def refresh_ui(self):
+        self.update_data_table()
+        self.update_dim_plots()
+    
+    def update_dim_plots(self):
+        plot_pressure(
+            plot = self.ui.p_graphic,
+            t = self.app_state.processing_dynamic_data.t,
+            P = self.app_state.processing_dynamic_data.P,
+        )
+        plot_debit(
+            plot = self.ui.q_graphic,
+            t = self.app_state.processing_dynamic_data.t,
+            Q = self.app_state.processing_dynamic_data.Q,
+        )
+    
+    def reset_dim_plots(self):
+        clear_plot(self.ui.p_graphic)
+        clear_plot(self.ui.q_graphic)
+        
+    def update_data_table(self):
+        update_data_table_view(
+            self.ui.data_table,
+            processing=self.app_state.processing_dynamic_data,
+            dimensionless=self.app_state.dimensionless,
+        )
+        
+    def reset_data_table(self):
+        clear_data_table(self.ui.data_table)
+    
+    ## Вызов расчетов
+    def compute_dimensionless(self):
+        dyn = self.app_state.processing_dynamic_data
+        static = self.app_state.static_params
+        solver = self.app_state.solver_state
+
+        self.app_state.dimensionless = DimensionlessData(
+
+            X=calculate_x(
+                delta_p=dyn.dP,
+                k=solver.k_current,
+                h=static.h,
+                mu=static.mu,
+                B=static.B,
+                Q=dyn.Q,
+            ),
+
+            Y=calculate_y(
+                Q=dyn.Q,
+                t=dyn.t,
+                B=static.B,
+                delta_p=dyn.dP,
+                phi=static.phi,
+                ct=static.ct,
+                h=static.h,
+                L=solver.L_current,
+            )
+        )
+        
+    def build_processing_dynamic(self):
+        raw = self.app_state.raw_dynamic_data
+        static = self.app_state.static_params
+
+        normalized_Q = normalize_Q_by_n(
+            Q_total=raw.Q,
+            N=static.N
+        )
+
+        dP = calculate_dP(
+            P=raw.P,
+            P0=static.P0
+        )
+
+        self.app_state.processing_dynamic_data = ProcessingDynamicData(
+            t=raw.t,
+            P=raw.P,
+            Q=normalized_Q,
+            dP=dP
+        )
+        
         
     ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
     def reset_all_data(self):
@@ -256,10 +365,22 @@ class MyApp(QMainWindow):
         self.disable_threshold_controls()
         self.disable_calculation_controls()
         self.ui.text_report.clear()
+        self.reset_data_table()
+        self.reset_dim_plots()
         self.ui.load_file_label.setText("Файл не загружен")
             
     def show_in_text_report(self, text: str) -> None:
         self.ui.text_report.append(text)
+    
+    def _init_solver_state(self):
+        th = self.app_state.optimize_thresholds
+
+        self.app_state.solver_state = SolverState(
+            k_current=calculate_k_value(th.k_min, th.k_max),
+            L_current=calculate_L_value(th.L_min, th.L_max),
+            skin_current=-1,
+            residual=-1
+        )
     
             
 

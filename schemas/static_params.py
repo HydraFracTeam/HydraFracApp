@@ -11,6 +11,7 @@ class StaticParams(BaseModel):
     B: float
     ct: float
     N: int
+    P0: float
 
     Q_constant: Optional[float] = None
 
@@ -62,6 +63,14 @@ class StaticParams(BaseModel):
         if v < 2:
             raise ValueError("Количество трещин должно быть >= 2")
         return v
+    
+    @field_validator("P0")
+    @classmethod
+    def validate_P(cls, v):
+        if v <= 0:
+            raise ValueError("Пластовое давление должно быть положительным")
+        return v
+
 
     @field_validator("Q_constant")
     @classmethod
