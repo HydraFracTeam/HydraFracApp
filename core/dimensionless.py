@@ -1,63 +1,83 @@
 import numpy as np
 
 
-def compute_x(k: float, h: float, delta_p: np.ndarray, mu: float, bo: float, Q: np.ndarray) -> np.ndarray:
+def calculate_x(k: float, h: float, delta_p: np.ndarray, mu: float, B: float, Q: np.ndarray) -> np.ndarray:
     """
-    Calculate dimensionless filtration parameter X for oil wells.
-    
-    Formula: X = (0.00864 * k * h * |ΔP|) / (μ * Bo * Q/N)
-    
-    Args:
-        k: 
-        h: Formation height
-        delta_p: Pressure drop array
-        mu: Viscosity
-        bo: Oil volume coefficient
-        q_per_fracture: Flow rate per fracture array
-        
-    Returns:
-        X: Dimensionless filtration parameter array
+    Расчёт безразмерного фильтрационного параметра X.
+
+    Формула:
+        X = (0.00864 * k * h * |ΔP|) / (μ * Bo * Q)
+
+    Параметры:
+        k (float)           : проницаемость пласта
+        h (float)           : толщина пласта
+        delta_p (np.ndarray): депрессия (разность давлений ΔP)
+        mu (float)          : вязкость
+        B (float)          : объемный коэффициент нефти
+        Q (np.ndarray)      : дебит (уже нормированный на число трещин)
+
+    Возвращает:
+        np.ndarray : массив значений безразмерного параметра X
     """
+
+    # модуль депрессии
     abs_delta_p = np.abs(delta_p)
+
+    # числитель формулы
     numerator = 0.00864 * k * h * abs_delta_p
-    denominator = mu * bo * Q
-    
-    # Avoid division by zero
-    denominator = np.where(denominator == 0, 1e-10, denominator)
-    
+
+    # знаменатель
+    denominator = mu * B * Q
+
+    # защита от деления на ноль
+    denominator = np.where(denominator == 0, 1e-3, denominator)
+
     x_result = numerator / denominator
     return x_result
 
 
-def compute_y(q_per_fracture: np.ndarray, bo: float, t: np.ndarray, phi: float, ct: float, 
-              h: float, delta_p: np.ndarray, l: float) -> np.ndarray:
+def calculate_y(
+    Q: np.ndarray,
+    B: float,
+    t: np.ndarray,
+    phi: float,
+    ct: float,
+    h: float,
+    delta_p: np.ndarray,
+    L: float
+) -> np.ndarray:
     """
-    Calculate dimensionless capacity parameter Y.
-    
-    Formula: Y = (Q/N * Bo * t) / (24 * φ * Ct * h * |ΔP| * L^2)
-    
-    Args:
-        q_per_fracture: Flow rate per fracture array
-        bo: Oil volume coefficient
-        t: Time array
-        phi: Porosity
-        ct: Total compressibility
-        h: Formation height
-        delta_p: Pressure drop array
-        l: Fracture half-length
-        
-    Returns:
-        Y: Dimensionless capacity parameter array
+    Расчёт безразмерного ёмкостного параметра Y.
+
+    Формула:
+        Y = (Q/N * Bo * t) / (24 * φ * Ct * h * |ΔP| * L²)
+
+    Параметры:
+        Q (np.ndarray): дебит на одну трещину
+        B (float)                  : объемный коэффициент нефти
+        t (np.ndarray)             : время
+        phi (float)                : пористость
+        ct (float)                 : общая сжимаемость системы
+        h (float)                  : толщина пласта
+        delta_p (np.ndarray)       : депрессия (ΔP)
+        L (float)                  : полудлина трещины
+
+    Возвращает:
+        np.ndarray : массив значений безразмерного параметра Y
     """
-    # TODO: Implement the actual formula for computing Y based on physics
-    # This is a placeholder implementation
+
+    # модуль депрессии
     abs_delta_p = np.abs(delta_p)
-    numerator = q_per_fracture * bo * t
-    denominator = 24 * phi * ct * h * abs_delta_p * (l ** 2)
-    
-    # Avoid division by zero
-    denominator = np.where(denominator == 0, 1e-10, denominator)
-    
+
+    # числитель формулы
+    numerator = Q * B * t
+
+    # знаменатель
+    denominator = 24 * phi * ct * h * abs_delta_p * (L ** 2)
+
+    # защита от деления на ноль
+    denominator = np.where(denominator == 0, 1e-3, denominator)
+
     y_result = numerator / denominator
     return y_result
 

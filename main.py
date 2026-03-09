@@ -17,8 +17,14 @@ from utils import format_pydantic_error
 # pydantic
 from schemas.static_params import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
-from core.models import ProcessingDynamicData
-import processing.dimensional_transfrorms as dm_transformation
+from core.models import ProcessingDynamicData, DimensionlessData
+from core.dimensionless import calculate_x, calculate_y
+from helpers import (
+    calculate_L_value, 
+    calculate_k_value,
+    calculate_dP,
+    normalize_Q_by_n,
+    )
 from processing.loaders import csv_loader, las_loader
 from utils import get_file_suffix, get_filename
 from old_helpers.ui_setup import setup_interface
@@ -194,24 +200,62 @@ class MyApp(QMainWindow):
             )
             return
 
+        # считаем начальные значения для k и L
         self.app_state.optimize_thresholds = thresholds
-
-        normalized_Q = dm_transformation.normalize_Q_by_n(
+        
+        # создаем объект solver_state с начальными значениями
+        from core.models import SolverState
+        self.app_state.solver_state = SolverState(
+            k_current=calculate_k_value(
+                self.app_state.optimize_thresholds.k_min,
+                self.app_state.optimize_thresholds.k_max,
+            ),
+            L_current=calculate_L_value(
+                self.app_state.optimize_thresholds.L_min,
+                self.app_state.optimize_thresholds.L_max,
+            ),
+            skin_current=0.0,  # начальное значение скин-фактора
+            residual=0.0       # начальное значение невязки
+        )
+        # нормируем дебит
+        normalized_Q = normalize_Q_by_n(
             Q_total=self.app_state.raw_dynamic_data.Q,
             N = self.app_state.static_params.N,
         )
-        calculated_dP = dm_transformation.calculate_dP(
+        # расчет дельты P dP
+        calculated_dP = calculate_dP(
             P = self.app_state.raw_dynamic_data.P,
             P0 = self.app_state.static_params.P0,
         )
+        # сохраняем динамические данные для работы. 
         self.app_state.processing_dynamic_data = ProcessingDynamicData(
             t = self.app_state.raw_dynamic_data.t,
             P = self.app_state.raw_dynamic_data.P,
             Q = normalized_Q,
             dP=calculated_dP,
         )
-        print(self.app_state.processing_dynamic_data)
-
+        # расчитаем промежуточные XY после ввода
+        self.app_state.dimensionless = DimensionlessData(
+            X=calculate_x(
+                delta_p=self.app_state.processing_dynamic_data.dP,
+                k=self.app_state.solver_state.k_current,
+                h=self.app_state.static_params.h,
+                mu=self.app_state.static_params.mu,
+                B=self.app_state.static_params.B,
+                Q=self.app_state.processing_dynamic_data.Q,
+            ),
+            Y=calculate_y(
+                Q=self.app_state.processing_dynamic_data.Q,
+                t=self.app_state.processing_dynamic_data.t,
+                B=self.app_state.static_params.B,
+                delta_p=self.app_state.processing_dynamic_data.dP,
+                phi=self.app_state.static_params.phi,
+                ct=self.app_state.static_params.ct,
+                h=self.app_state.static_params.h,
+                L=self.app_state.solver_state.L_current,
+            )
+        )
+        print(self.app_state.dimensionless)
         self.show_in_text_report("Границы оптимизации успешно заданы.")
         self.show_in_text_report("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
         self.disable_threshold_controls()
