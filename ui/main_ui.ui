@@ -737,7 +737,7 @@
        </size>
       </property>
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="timeseries_tab">
        <attribute name="title">
@@ -964,19 +964,6 @@
        <layout class="QVBoxLayout" name="verticalLayout_8">
         <item>
          <widget class="QTableView" name="data_table"/>
-        </item>
-        <item>
-         <widget class="QLabel" name="data_info_label">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="text">
-           <string>Данные скважины еще не загружены</string>
-          </property>
-         </widget>
         </item>
        </layout>
       </widget>
