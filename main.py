@@ -20,6 +20,7 @@ from ui import (
     plot_xy,
     plot_burde,
     clear_plot,
+    PasteDataDialog,
     )
 import pyqtgraph as pg
 from core.app_state import AppState
@@ -98,9 +99,33 @@ class MyApp(QMainWindow):
     def setup_load_dynamic_data_menu(self):
         self.ui.load_file_button.clicked.connect(self.load_dynamic_data_from_file)
         self.ui.reset_data_button.clicked.connect(self.reset_all_data)
-        ## todo позже добавить вставку из буфера через отдельное окошко, как будет все готово
-        # self.ui.insert_data_from_buffer_button.connect(...)
-    
+        self.ui.insert_data_from_buffer_button.clicked.connect(self.insert_data_from_buffer)
+            
+    def insert_data_from_buffer(self):
+
+        dialog = PasteDataDialog(self)
+
+        if dialog.exec():
+
+            try:
+                raw = dialog.get_data()
+
+                self.app_state.raw_dynamic_data = raw
+
+                self.show_in_text_report(
+                    "Динамические данные успешно вставлены из буфера."
+                )
+
+                self.enable_static_controls()
+                self.disable_load_controls()
+
+            except Exception as e:
+
+                QMessageBox.warning(
+                    self,
+                    "Ошибка данных",
+                    format_pydantic_error(e)
+                )
     def load_dynamic_data_from_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
