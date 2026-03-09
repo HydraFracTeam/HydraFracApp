@@ -737,7 +737,7 @@
        </size>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>0</number>
       </property>
       <widget class="QWidget" name="timeseries_tab">
        <attribute name="title">
@@ -924,7 +924,7 @@
                </property>
                <layout class="QVBoxLayout" name="verticalLayout_5">
                 <item>
-                 <widget class="QCheckBox" name="cb_dim_pD">
+                 <widget class="QCheckBox" name="cb_burde_curve">
                   <property name="text">
                    <string>Производная Бурде (dP/dt)</string>
                   </property>
@@ -933,7 +933,7 @@
                 <item>
                  <widget class="QCheckBox" name="cb_calc_XY">
                   <property name="text">
-                   <string>Текущие X-Y</string>
+                   <string>Калькулированные X-Y</string>
                   </property>
                  </widget>
                 </item>

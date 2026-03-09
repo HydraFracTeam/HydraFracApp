@@ -17,8 +17,11 @@ from ui import (
     clear_data_table,
     plot_pressure, 
     plot_debit,
+    plot_xy,
+    plot_burde,
     clear_plot,
     )
+import pyqtgraph as pg
 from core.app_state import AppState
 from storage.reference_repository import ReferenceCurveDBManager
 from config import settings
@@ -34,6 +37,7 @@ from helpers import (
     calculate_L_value, 
     calculate_k_value,
     calculate_dP,
+    calculate_burde,
     normalize_Q_by_n,
     )
 from utils import get_file_suffix, get_filename
@@ -50,7 +54,7 @@ class MyApp(QMainWindow):
         self.ui.setupUi(self)
         self.app_state = AppState()
         self.ref_curve_db = ReferenceCurveDBManager(db_path=settings.REF_DATABASE_PATH)
-        
+
         self._load_controls: List[QWidget] = [
             self.ui.load_file_button,
             self.ui.insert_data_from_buffer_button,
@@ -85,6 +89,7 @@ class MyApp(QMainWindow):
         self.setup_load_dynamic_data_menu()
         self.setup_static_data_menu()
         self.setup_threshold_menu()
+        self.connect_graphic_checkboxes()
         # Создаем  интерфейс с вкладками
         setup_add_interface(self)
 
@@ -137,7 +142,6 @@ class MyApp(QMainWindow):
 
     def setup_static_data_menu(self):
         self.ui.insert_static_params_button.clicked.connect(self.get_static_params)
-
 
     def read_static_from_ui(self):
         static_dict = {
@@ -278,10 +282,25 @@ class MyApp(QMainWindow):
         for elem in self._calculation_controls:
             elem.setEnabled(False)
     
-    # ОБНОВЛЕНИЯ ДАННЫХ, ГРАФИКОВ
+    # ОБНОВЛЕНИЕ ГРАФИКОВ, ТАБЛИЦ
+    def connect_graphic_checkboxes(self):
+        self.ui.cb_calc_XY.stateChanged.connect(self.update_dimensionless_plot)
+        self.ui.cb_burde_curve.stateChanged.connect(self.update_dimensionless_plot)
+    
     def refresh_ui(self):
         self.update_data_table()
         self.update_dim_plots()
+    
+
+    def update_data_table(self):
+        update_data_table_view(
+            table_view=self.ui.data_table,
+            processing=self.app_state.processing_dynamic_data,
+            dimensionless=self.app_state.dimensionless,
+        )
+        
+    def reset_data_table(self):
+        clear_data_table(self.ui.data_table)
     
     def update_dim_plots(self):
         plot_pressure(
@@ -298,18 +317,37 @@ class MyApp(QMainWindow):
     def reset_dim_plots(self):
         clear_plot(self.ui.p_graphic)
         clear_plot(self.ui.q_graphic)
-        
-    def update_data_table(self):
-        update_data_table_view(
-            self.ui.data_table,
-            processing=self.app_state.processing_dynamic_data,
-            dimensionless=self.app_state.dimensionless,
-        )
-        
-    def reset_data_table(self):
-        clear_data_table(self.ui.data_table)
     
-    ## Вызов расчетов
+    def update_dimensionless_plot(self):
+
+        plot: pg.PlotItem = self.ui.dim_plot
+        plot.clear()
+
+        if self.ui.cb_calc_XY.isChecked():
+            if not self.app_state.dimensionless:
+                return
+
+            plot_xy(
+                plot,
+                self.app_state.dimensionless.X,
+                self.app_state.dimensionless.Y,
+                label="Калькулированные XY параметры",
+                color=(50,120,220),
+            )
+
+        if self.ui.cb_burde_curve.isChecked():
+            if not self.app_state.processing_dynamic_data:
+                return
+
+            plot_burde(
+                plot,
+                self.app_state.processing_dynamic_data.t,
+                self.app_state.processing_dynamic_data.burde,
+                label="Производная Бурде",
+                color=(200,80,60),
+            )
+    
+    ## ВЫЗОВ РАСЧЕТОВ
     def compute_dimensionless(self):
         dyn = self.app_state.processing_dynamic_data
         static = self.app_state.static_params
@@ -339,26 +377,42 @@ class MyApp(QMainWindow):
         )
         
     def build_processing_dynamic(self):
+
         raw = self.app_state.raw_dynamic_data
         static = self.app_state.static_params
+        current = self.app_state.processing_dynamic_data
 
-        normalized_Q = normalize_Q_by_n(
-            Q_total=raw.Q,
-            N=static.N
-        )
+        # источник данных
+        if current is None:
+            t = raw.t
+            P = raw.P
+            Q = raw.Q
+            Q_is_normalized = False
+        else:
+            t = current.t
+            P = current.P
+            Q = current.Q
+            Q_is_normalized = current.is_Q_normalized
 
-        dP = calculate_dP(
-            P=raw.P,
-            P0=static.P0
-        )
+        # нормализация дебита
+        if not Q_is_normalized:
+            Q = normalize_Q_by_n(Q_total=Q, N=static.N)
+            Q_is_normalized = True
+
+        # dP
+        dP = calculate_dP(P=P, P0=static.P0)
+
+        # Bourdet
+        burde = calculate_burde(t=t, dP=dP)
 
         self.app_state.processing_dynamic_data = ProcessingDynamicData(
-            t=raw.t,
-            P=raw.P,
-            Q=normalized_Q,
-            dP=dP
+            t=t,
+            P=P,
+            Q=Q,
+            dP=dP,
+            burde=burde,
+            is_Q_normalized=Q_is_normalized
         )
-        
         
     ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
     def reset_all_data(self):

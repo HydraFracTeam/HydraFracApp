@@ -22,6 +22,10 @@ class ProcessingDynamicData: # храним как данные, с которы
     Q: np.ndarray
     dP: np.ndarray
     
+    is_Q_normalized: bool = False
+    
+    burde: Optional[np.ndarray] = None
+    
     P_interpolated: Optional[np.ndarray] = None
 
     # экстраполяция

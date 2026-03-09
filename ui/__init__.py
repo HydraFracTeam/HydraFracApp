@@ -3,3 +3,5 @@ from .plot_debit import plot_debit
 from .clear_plot import clear_plot
 from .plot_pressure import plot_pressure
 from .ui_setup import setup_add_interface
+from .plot_xy import plot_xy
+from .plot_burde import plot_burde

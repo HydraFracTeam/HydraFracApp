@@ -623,10 +623,10 @@ class Ui_MainWindow(object):
         self.groupBox.setFlat(False)
         self.verticalLayout_5 = QVBoxLayout(self.groupBox)
         self.verticalLayout_5.setObjectName(u"verticalLayout_5")
-        self.cb_dim_pD = QCheckBox(self.groupBox)
-        self.cb_dim_pD.setObjectName(u"cb_dim_pD")
+        self.cb_burde_curve = QCheckBox(self.groupBox)
+        self.cb_burde_curve.setObjectName(u"cb_burde_curve")
 
-        self.verticalLayout_5.addWidget(self.cb_dim_pD)
+        self.verticalLayout_5.addWidget(self.cb_burde_curve)
 
         self.cb_calc_XY = QCheckBox(self.groupBox)
         self.cb_calc_XY.setObjectName(u"cb_calc_XY")
@@ -707,7 +707,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.tab_widget.setCurrentIndex(1)
+        self.tab_widget.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -759,8 +759,8 @@ class Ui_MainWindow(object):
         self.groupBox_2.setTitle(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0438 \u0434\u0435\u0431\u0438\u0442\u0430", None))
         self.dimensionless_gbox.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0441\u0447\u0435\u0442\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.groupBox.setTitle(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u041b\u043e\u0433\u0430\u0440\u0438\u0444\u043c\u0438\u0447\u0435\u0441\u043a\u0438\u0435", None))
-        self.cb_dim_pD.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u043d\u0430\u044f \u0411\u0443\u0440\u0434\u0435 (dP/dt)", None))
-        self.cb_calc_XY.setText(QCoreApplication.translate("MainWindow", u"\u0422\u0435\u043a\u0443\u0449\u0438\u0435 X-Y", None))
+        self.cb_burde_curve.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u043d\u0430\u044f \u0411\u0443\u0440\u0434\u0435 (dP/dt)", None))
+        self.cb_calc_XY.setText(QCoreApplication.translate("MainWindow", u"\u041a\u0430\u043b\u044c\u043a\u0443\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435 X-Y", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.timeseries_tab), QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.data_tab), QCoreApplication.translate("MainWindow", u"\u0422\u0430\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.type_curves_tab), QCoreApplication.translate("MainWindow", u"\u042d\u0442\u0430\u043b\u043e\u043d\u043d\u044b\u0435 \u043a\u0440\u0438\u0432\u044b\u0435", None))
