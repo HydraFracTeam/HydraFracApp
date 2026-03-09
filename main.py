@@ -20,6 +20,8 @@ from ui import (
     clear_plot,
     )
 from core.app_state import AppState
+from storage.reference_repository import ReferenceCurveDBManager
+from config import settings
 
 # pydantic
 from schemas.static_params import StaticParams
@@ -47,6 +49,7 @@ class MyApp(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.app_state = AppState()
+        self.ref_curve_db = ReferenceCurveDBManager(db_path=settings.REF_DATABASE_PATH)
         
         self._load_controls: List[QWidget] = [
             self.ui.load_file_button,

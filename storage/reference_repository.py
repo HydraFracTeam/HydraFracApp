@@ -1,159 +1,141 @@
-"""
-Reference repository module for HydraFracApp.
-Handles access to reference curves stored in SQLite database.
-Does not use pandas, returns numpy arrays, and does not contain solver logic.
-"""
-
 import sqlite3
 import numpy as np
-from typing import List, Tuple, Dict
+from typing import List
+
+from config import settings
+from core.models import ReferenceCurve, RawDynamicData, DimensionlessData
+from schemas.static_params import StaticParams
 
 
-class ReferenceRepository:
+class ReferenceCurveDBManager:
     """
-    Class for accessing reference curves from SQLite database.
-    Stores pre-calculated dimensionless curves parameterized by skin factor and geometry.
+    Минимальный менеджер доступа к эталонным кривым в SQLite.
+
+    Используется только для чтения reference curves.
+    Никакой solver-логики внутри нет.
     """
 
     def __init__(self, db_path: str):
-        """
-        Initialize the repository with database connection.
-        
-        Args:
-            db_path: Path to SQLite database file
-        """
         self.db_path = db_path
-        self.connection = None
+        self.conn: sqlite3.Connection | None = None
 
     def connect(self):
-        """Establish connection to the database."""
-        self.connection = sqlite3.connect(self.db_path)
-        self.connection.row_factory = sqlite3.Row  # Enable column access by name
+        if self.conn is None:
+            self.conn = sqlite3.connect(self.db_path)
+            self.conn.row_factory = sqlite3.Row
 
-    def disconnect(self):
-        """Close the database connection."""
-        if self.connection:
-            self.connection.close()
-            self.connection = None
+    def close(self):
+        if self.conn:
+            self.conn.close()
+            self.conn = None
 
-    def get_available_skins(self) -> List[float]:
+    # --------------------------------------------------
+    # CURVE IDS
+    # --------------------------------------------------
+
+    def get_curve_ids_by_skin(self, skin: float) -> List[int]:
         """
-        Get list of available skin factor values in the database.
-        
-        Returns:
-            List of available skin values, sorted in ascending order
+        Возвращает список curve_id для заданного skin.
         """
-        if not self.connection:
-            self.connect()
-        
-        cursor = self.connection.cursor()
-        cursor.execute("SELECT DISTINCT Skin FROM static ORDER BY Skin")
+
+        self.connect()
+
+        cursor = self.conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT curve_id
+            FROM statics
+            WHERE Skin = ?
+            """,
+            (skin,)
+        )
+
         rows = cursor.fetchall()
-        
-        skins = [row[0] for row in rows]
-        return skins
 
-    def get_curves_by_skin(self, skin: float, tolerance: float = 0.05) -> List[int]:
-        """
-        Get list of curve IDs that match the specified skin factor.
-        
-        Args:
-            skin: Target skin factor value
-            tolerance: Tolerance for skin value matching
-            
-        Returns:
-            List of curve IDs matching the skin factor
-        """
-        if not self.connection:
-            self.connect()
-        
-        cursor = self.connection.cursor()
-        # Find curves with skin value within tolerance
-        cursor.execute("""
-            SELECT curve_id 
-            FROM static 
-            WHERE ABS(Skin - ?) <= ?
-            ORDER BY ABS(Skin - ?)
-        """, (skin, tolerance, skin))
-        
-        rows = cursor.fetchall()
-        curve_ids = [row[0] for row in rows]
-        
-        return curve_ids
+        return [row["curve_id"] for row in rows]
 
-    def get_reference_curve(self, curve_id: int) -> Tuple[np.ndarray, np.ndarray]:
+    # --------------------------------------------------
+    # SINGLE CURVE
+    # --------------------------------------------------
+
+    def load_reference_curve(self, curve_id: int) -> ReferenceCurve:
         """
-        Retrieve reference X and Y values for a specific curve ID.
-        
-        Args:
-            curve_id: ID of the reference curve to retrieve
-            
-        Returns:
-            Tuple of (X array, Y array) as numpy arrays
+        Загружает одну эталонную кривую.
         """
-        if not self.connection:
-            self.connect()
-        
-        cursor = self.connection.cursor()
-        cursor.execute("""
-            SELECT X, Y 
-            FROM dynamic 
+
+        self.connect()
+        cursor = self.conn.cursor()
+
+        # dynamic
+        cursor.execute(
+            """
+            SELECT X, Y
+            FROM dynamics
             WHERE curve_id = ?
             ORDER BY elemIdx
-        """, (curve_id,))
-        
+            """,
+            (curve_id,)
+        )
+
         rows = cursor.fetchall()
-        
-        if not rows:
-            raise ValueError(f"No reference curve found with curve_id {curve_id}")
-        
-        # Extract X and Y values
-        x_values = []
-        y_values = []
-        for row in rows:
-            x_values.append(row['X'])
-            y_values.append(row['Y'])
-        
-        x_array = np.array(x_values)
-        y_array = np.array(y_values)
-        
-        return x_array, y_array
 
-    def get_static_metadata(self, curve_id: int) -> Dict:
-        """
-        Retrieve static metadata for a specific curve ID.
-        
-        Args:
-            curve_id: ID of the curve to retrieve metadata for
-            
-        Returns:
-            Dictionary containing static parameters for the curve
-        """
-        if not self.connection:
-            self.connect()
-        
-        cursor = self.connection.cursor()
-        cursor.execute("""
-            SELECT Skin, h, N, W, L, aL, Q
-            FROM static
+        X = np.array([r["X"] for r in rows], dtype=float)
+        Y = np.array([r["Y"] for r in rows], dtype=float)
+
+        # metadata
+        cursor.execute(
+            """
+            SELECT Skin, h, N, W, L, Q
+            FROM statics
             WHERE curve_id = ?
-        """, (curve_id,))
-        
-        row = cursor.fetchone()
-        
-        if not row:
-            raise ValueError(f"No metadata found for curve_id {curve_id}")
-        
-        # Convert Row object to dictionary
-        metadata = dict(row)
-        
-        return metadata
+            """,
+            (curve_id,)
+        )
 
-    def __enter__(self):
-        """Context manager entry."""
-        self.connect()
-        return self
+        meta = cursor.fetchone()
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.disconnect()
+        static_params = StaticParams(
+            Skin=meta["Skin"],
+            W=meta["W"],
+            h=meta["h"],
+            Q_constant=meta["Q"],
+            N=meta["N"],
+            mu=settings.REF_mu,
+            phi=settings.REF_phi,
+            B=settings.REF_B,
+            ct=settings.REF_ct,
+            P0=settings.REF_P0,
+        )
+
+        return ReferenceCurve(
+            dynamic_data=RawDynamicData(
+                t=np.zeros_like(X),
+                P=np.zeros_like(X),
+                Q=np.zeros_like(X),
+                is_Q_in_dynamic_input=True,
+            ),
+            dimensionless=DimensionlessData(
+                X=X,
+                Y=Y
+            ),
+            static_params=static_params
+        )
+
+    # --------------------------------------------------
+    # MULTIPLE CURVES
+    # --------------------------------------------------
+
+    def get_reference_curves_by_skin(self, skin: float) -> List[ReferenceCurve]:
+        """
+        Возвращает все эталонные кривые для заданного skin.
+        """
+        curve_ids = self.get_curve_ids_by_skin(skin)
+
+        curves: List[ReferenceCurve] = []
+
+        for cid in curve_ids:
+            curve = self.load_reference_curve(cid)
+            curves.append(curve)
+
+        return curves

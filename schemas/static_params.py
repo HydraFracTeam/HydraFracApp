@@ -13,6 +13,7 @@ class StaticParams(BaseModel):
     N: int
     P0: float
 
+    Skin: Optional[float] = None
     Q_constant: Optional[float] = None
 
     @field_validator("W")
@@ -80,5 +81,16 @@ class StaticParams(BaseModel):
 
         if v < 0:
             raise ValueError("Дебит должен быть неотрицательным")
+
+        return v
+    
+    @field_validator("Skin")
+    @classmethod
+    def validate_Skin(cls, v):
+        if v is None:
+            return v
+
+        if v < 0:
+            raise ValueError("Скин-фактор должен быть неотрицательным")
 
         return v
