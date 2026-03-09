@@ -17,9 +17,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QMainWindow,
-    QPushButton, QSizePolicy, QSpinBox, QStatusBar,
-    QTabWidget, QTableView, QTextEdit, QVBoxLayout,
-    QWidget)
+    QPushButton, QRadioButton, QScrollArea, QSizePolicy,
+    QSpinBox, QStatusBar, QTabWidget, QTableView,
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -44,9 +44,17 @@ class Ui_MainWindow(object):
         sizePolicy1.setHeightForWidth(self.left_panel.sizePolicy().hasHeightForWidth())
         self.left_panel.setSizePolicy(sizePolicy1)
         self.left_panel.setMinimumSize(QSize(0, 0))
-        self.verticalLayout_3 = QVBoxLayout(self.left_panel)
+        self.verticalLayout_14 = QVBoxLayout(self.left_panel)
+        self.verticalLayout_14.setObjectName(u"verticalLayout_14")
+        self.scrollArea = QScrollArea(self.left_panel)
+        self.scrollArea.setObjectName(u"scrollArea")
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollAreaWidgetContents_2 = QWidget()
+        self.scrollAreaWidgetContents_2.setObjectName(u"scrollAreaWidgetContents_2")
+        self.scrollAreaWidgetContents_2.setGeometry(QRect(0, -195, 462, 1281))
+        self.verticalLayout_3 = QVBoxLayout(self.scrollAreaWidgetContents_2)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.groupBox_3 = QGroupBox(self.left_panel)
+        self.groupBox_3 = QGroupBox(self.scrollAreaWidgetContents_2)
         self.groupBox_3.setObjectName(u"groupBox_3")
         self.verticalLayout_11 = QVBoxLayout(self.groupBox_3)
         self.verticalLayout_11.setObjectName(u"verticalLayout_11")
@@ -94,7 +102,7 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_3.addWidget(self.groupBox_3)
 
-        self.static_params_group = QGroupBox(self.left_panel)
+        self.static_params_group = QGroupBox(self.scrollAreaWidgetContents_2)
         self.static_params_group.setObjectName(u"static_params_group")
         sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         sizePolicy3.setHorizontalStretch(0)
@@ -329,7 +337,7 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_3.addWidget(self.static_params_group)
 
-        self.optimize_params_block = QGroupBox(self.left_panel)
+        self.optimize_params_block = QGroupBox(self.scrollAreaWidgetContents_2)
         self.optimize_params_block.setObjectName(u"optimize_params_block")
         self.verticalLayout_12 = QVBoxLayout(self.optimize_params_block)
         self.verticalLayout_12.setObjectName(u"verticalLayout_12")
@@ -412,11 +420,62 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_3.addWidget(self.optimize_params_block)
 
-        self.calculate_block = QGroupBox(self.left_panel)
+        self.calculate_block = QGroupBox(self.scrollAreaWidgetContents_2)
         self.calculate_block.setObjectName(u"calculate_block")
         self.calculate_block.setMinimumSize(QSize(0, 0))
         self.verticalLayout_10 = QVBoxLayout(self.calculate_block)
         self.verticalLayout_10.setObjectName(u"verticalLayout_10")
+        self.groupBox_7 = QGroupBox(self.calculate_block)
+        self.groupBox_7.setObjectName(u"groupBox_7")
+        self.verticalLayout_15 = QVBoxLayout(self.groupBox_7)
+        self.verticalLayout_15.setObjectName(u"verticalLayout_15")
+        self.groupBox_8 = QGroupBox(self.groupBox_7)
+        self.groupBox_8.setObjectName(u"groupBox_8")
+        self.horizontalLayout_27 = QHBoxLayout(self.groupBox_8)
+        self.horizontalLayout_27.setObjectName(u"horizontalLayout_27")
+        self.l1_norm_radioButton = QRadioButton(self.groupBox_8)
+        self.l1_norm_radioButton.setObjectName(u"l1_norm_radioButton")
+
+        self.horizontalLayout_27.addWidget(self.l1_norm_radioButton)
+
+        self.l2_norm_radioButton = QRadioButton(self.groupBox_8)
+        self.l2_norm_radioButton.setObjectName(u"l2_norm_radioButton")
+
+        self.horizontalLayout_27.addWidget(self.l2_norm_radioButton)
+
+        self.integral_norm_radioButton = QRadioButton(self.groupBox_8)
+        self.integral_norm_radioButton.setObjectName(u"integral_norm_radioButton")
+
+        self.horizontalLayout_27.addWidget(self.integral_norm_radioButton)
+
+
+        self.verticalLayout_15.addWidget(self.groupBox_8)
+
+        self.groupBox_9 = QGroupBox(self.groupBox_7)
+        self.groupBox_9.setObjectName(u"groupBox_9")
+        self.horizontalLayout_28 = QHBoxLayout(self.groupBox_9)
+        self.horizontalLayout_28.setObjectName(u"horizontalLayout_28")
+        self.lin_XY_radioButton = QRadioButton(self.groupBox_9)
+        self.lin_XY_radioButton.setObjectName(u"lin_XY_radioButton")
+
+        self.horizontalLayout_28.addWidget(self.lin_XY_radioButton)
+
+        self.log_XY_radioButton = QRadioButton(self.groupBox_9)
+        self.log_XY_radioButton.setObjectName(u"log_XY_radioButton")
+
+        self.horizontalLayout_28.addWidget(self.log_XY_radioButton)
+
+        self.dP_dt_radio_button = QRadioButton(self.groupBox_9)
+        self.dP_dt_radio_button.setObjectName(u"dP_dt_radio_button")
+
+        self.horizontalLayout_28.addWidget(self.dP_dt_radio_button)
+
+
+        self.verticalLayout_15.addWidget(self.groupBox_9)
+
+
+        self.verticalLayout_10.addWidget(self.groupBox_7)
+
         self.calculate_opt_parameters_button = QPushButton(self.calculate_block)
         self.calculate_opt_parameters_button.setObjectName(u"calculate_opt_parameters_button")
         self.calculate_opt_parameters_button.setEnabled(False)
@@ -490,13 +549,14 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_3.addWidget(self.calculate_block)
 
-        self.report_group = QGroupBox(self.left_panel)
+        self.report_group = QGroupBox(self.scrollAreaWidgetContents_2)
         self.report_group.setObjectName(u"report_group")
         sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sizePolicy5.setHorizontalStretch(0)
         sizePolicy5.setVerticalStretch(0)
         sizePolicy5.setHeightForWidth(self.report_group.sizePolicy().hasHeightForWidth())
         self.report_group.setSizePolicy(sizePolicy5)
+        self.report_group.setMinimumSize(QSize(0, 200))
         self.verticalLayout_6 = QVBoxLayout(self.report_group)
         self.verticalLayout_6.setObjectName(u"verticalLayout_6")
         self.text_report = QTextEdit(self.report_group)
@@ -511,6 +571,10 @@ class Ui_MainWindow(object):
 
 
         self.verticalLayout_3.addWidget(self.report_group)
+
+        self.scrollArea.setWidget(self.scrollAreaWidgetContents_2)
+
+        self.verticalLayout_14.addWidget(self.scrollArea)
 
 
         self.horizontalLayout_5.addWidget(self.left_panel)
@@ -743,6 +807,15 @@ class Ui_MainWindow(object):
         self.permeability_max_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0430\u043a\u0441. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
         self.insert_thresholds_button.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0432\u0435\u0441\u0442\u0438 \u0433\u0440\u0430\u043d\u0438\u0446\u044b \u043e\u043f\u0442\u0438\u043c\u0438\u0437\u0430\u0446\u0438\u0438", None))
         self.calculate_block.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u044f \u0440\u0430\u0441\u0447\u0435\u0442\u0430", None))
+        self.groupBox_7.setTitle(QCoreApplication.translate("MainWindow", u"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 \u0438\u043d\u0442\u0435\u0440\u043f\u0440\u0435\u0442\u0430\u0446\u0438\u0438", None))
+        self.groupBox_8.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0441\u0447\u0435\u0442 \u043d\u0435\u0432\u044f\u0437\u043a\u0438 \u043f\u043e:", None))
+        self.l1_norm_radioButton.setText(QCoreApplication.translate("MainWindow", u"L1-\u043d\u043e\u0440\u043c\u0430", None))
+        self.l2_norm_radioButton.setText(QCoreApplication.translate("MainWindow", u"L2-\u043d\u043e\u0440\u043c\u0430", None))
+        self.integral_norm_radioButton.setText(QCoreApplication.translate("MainWindow", u"\u0418\u043d\u0442\u0435\u0433\u0440\u0430\u043b \u0440\u0430\u0437\u043d\u0438\u0446\u044b", None))
+        self.groupBox_9.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0434\u0431\u043e\u0440 \u043a\u0440\u0438\u0432\u044b\u0445 \u043f\u043e:", None))
+        self.lin_XY_radioButton.setText(QCoreApplication.translate("MainWindow", u"Lin X - Lin Y", None))
+        self.log_XY_radioButton.setText(QCoreApplication.translate("MainWindow", u"Log X - Log Y", None))
+        self.dP_dt_radio_button.setText(QCoreApplication.translate("MainWindow", u"dP - dt", None))
         self.calculate_opt_parameters_button.setText(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0441\u0447\u0438\u0442\u0430\u0442\u044c \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
         self.groupBox_6.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u0443\u0447\u0435\u043d\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
         self.skin_result_label.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043a\u0438\u043d-\u0444\u0430\u043a\u0442\u043e\u0440", None))

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import numpy as np
-from typing import Optional
+from typing import Optional, Literal
 
 
 from schemas.static_params import StaticParams
@@ -42,6 +42,9 @@ class DimensionlessData:
 
 @dataclass
 class SolverState:
+    
+    norm: Literal["l1", "l2", "integral"]
+    compare_by: Literal['linXY', "logXY", 'dP/dt']
 
     k_current: float
     L_current: float

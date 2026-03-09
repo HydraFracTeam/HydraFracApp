@@ -428,16 +428,46 @@ class MyApp(QMainWindow):
             
     def show_in_text_report(self, text: str) -> None:
         self.ui.text_report.append(text)
+        
+    
+    def _read_solver_options(self):
+        # выбор нормы
+        if self.ui.l1_norm_radioButton.isChecked():
+            norm = "l1"
+        elif self.ui.l2_norm_radioButton.isChecked():
+            norm = "l2"
+        elif self.ui.integral_norm_radioButton.isChecked():
+            norm = "integral"
+        else:
+            raise ValueError("Норма не выбрана")
+
+        # выбор типа сравнения
+        if self.ui.lin_XY_radioButton.isChecked():
+            compare_by = "linXY"
+        elif self.ui.log_XY_radioButton.isChecked():
+            compare_by = "logXY"
+        elif self.ui.dP_dt_radio_button.isChecked():
+            compare_by = "dP/dt"
+        else:
+            raise ValueError("Тип сравнения не выбран")
+
+        return norm, compare_by
     
     def _init_solver_state(self):
+
         th = self.app_state.optimize_thresholds
 
+        norm, compare_by = self._read_solver_options()
+
         self.app_state.solver_state = SolverState(
+            norm=norm,
+            compare_by=compare_by,
             k_current=calculate_k_value(th.k_min, th.k_max),
             L_current=calculate_L_value(th.L_min, th.L_max),
             skin_current=-1,
             residual=-1
         )
+        
     
             
 
