@@ -379,7 +379,6 @@ class MyApp(QMainWindow):
         solver = self.app_state.solver_state
 
         self.app_state.dimensionless = DimensionlessData(
-
             X=calculate_x(
                 delta_p=dyn.dP,
                 k=solver.k_current,

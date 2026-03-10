@@ -19,11 +19,10 @@ def plot_burde(
     if clear:
         plot.clear()
 
-    plot.setLogMode(True, True)
-
     plot.setLabel("bottom", "t")
     plot.setLabel("left", "dP/dln(t)")
     plot.showGrid(x=True, y=True)
+    plot.setLogMode(True, True)
 
     if plot.legend is None:
         plot.addLegend()
