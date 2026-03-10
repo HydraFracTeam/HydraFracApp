@@ -42,14 +42,15 @@ class DimensionlessData:
 
 @dataclass
 class SolverState:
-    
-    norm: Literal["l1", "l2", "integral"]
-    compare_by: Literal['linXY', "logXY", 'dP/dt']
-
     k_current: float
     L_current: float
     skin_current: float
     residual: float
+    
+    norm: Literal["l1", "l2", "integral"] = "l1"
+    compare_by: Literal['linXY', "logXY", 'dP/dt'] = "linXY"
+
+
 
 
 @dataclass

@@ -435,11 +435,13 @@ class Ui_MainWindow(object):
         self.horizontalLayout_27.setObjectName(u"horizontalLayout_27")
         self.l1_norm_radioButton = QRadioButton(self.groupBox_8)
         self.l1_norm_radioButton.setObjectName(u"l1_norm_radioButton")
+        self.l1_norm_radioButton.setChecked(True)
 
         self.horizontalLayout_27.addWidget(self.l1_norm_radioButton)
 
         self.l2_norm_radioButton = QRadioButton(self.groupBox_8)
         self.l2_norm_radioButton.setObjectName(u"l2_norm_radioButton")
+        self.l2_norm_radioButton.setChecked(False)
 
         self.horizontalLayout_27.addWidget(self.l2_norm_radioButton)
 
@@ -457,6 +459,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_28.setObjectName(u"horizontalLayout_28")
         self.lin_XY_radioButton = QRadioButton(self.groupBox_9)
         self.lin_XY_radioButton.setObjectName(u"lin_XY_radioButton")
+        self.lin_XY_radioButton.setChecked(True)
 
         self.horizontalLayout_28.addWidget(self.lin_XY_radioButton)
 
