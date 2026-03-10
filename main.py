@@ -45,6 +45,7 @@ from utils import get_file_suffix, get_filename
 from utils import format_pydantic_error
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
+from processing.interpolate_pressure import interpolate_pressure
 
 
 
@@ -91,6 +92,7 @@ class MyApp(QMainWindow):
         self.setup_static_data_menu()
         self.setup_threshold_menu()
         self.connect_graphic_checkboxes()
+        self.setup_preprocessing_controls()
         # Создаем  интерфейс с вкладками
         setup_add_interface(self)
 
@@ -268,6 +270,15 @@ class MyApp(QMainWindow):
         
         self.disable_threshold_controls()
         self.enable_calculation_controls()
+        
+    ## Предобработка данных через UI
+    def setup_preprocessing_controls(self):
+        self.ui.interp_btn.clicked.connect(self.interpolate_processing_dynamic_data)
+        
+    def interpolate_processing_dynamic_data(self):
+        self.app_state.processing_dynamic_data = interpolate_pressure(self.app_state.processing_dynamic_data)
+        self.update_dim_plots()
+        self.update_data_table()
     
     ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
     def enable_load_controls(self) -> None:
@@ -332,6 +343,8 @@ class MyApp(QMainWindow):
             plot = self.ui.p_graphic,
             t = self.app_state.processing_dynamic_data.t,
             P = self.app_state.processing_dynamic_data.P,
+            P_interpolated_mask=self.app_state.processing_dynamic_data.P_interpolated_mask,
+            P_extrapolated_mask=self.app_state.processing_dynamic_data.P_extrapolated_mask,
         )
         plot_debit(
             plot = self.ui.q_graphic,
