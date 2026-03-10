@@ -28,14 +28,18 @@ class ProcessingDynamicData: # храним как данные, с которы
     
     # интерполяция
     P_interpolated_mask: Optional[np.ndarray] = None
+    is_P_interpolated: bool = False
+    
     Q_interpolated_mask: Optional[np.ndarray] = None
-    is_interpolated: bool = False
+    is_Q_interpolated: bool = False
 
     # экстраполяция
     t_extrapolated_mask: Optional[np.ndarray] = None
     P_extrapolated_mask: Optional[np.ndarray] = None
+    is_P_extrapolated: bool = False
+    
     Q_extrapolated_mask: Optional[np.ndarray] = None
-    is_extrapolated: bool = False
+    is_Q_extrapolated: bool = False
     
 @dataclass
 class DimensionlessData:

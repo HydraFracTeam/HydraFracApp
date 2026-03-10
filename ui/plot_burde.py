@@ -7,9 +7,6 @@ def plot_burde(
     plot: PlotItem,
     t: np.ndarray,
     burde: np.ndarray,
-    label: str = "Бурде",
-    color=(200, 80, 60),
-    width: int = 2,
     clear: bool = False,
 ):
     """
@@ -35,6 +32,6 @@ def plot_burde(
     plot.plot(
         t[mask],
         burde[mask],
-        pen=pg.mkPen(color=color, width=width),
-        name=label,
+        pen=pg.mkPen(color=(200, 80, 60), width=2),
+        name="Бурде",
     )

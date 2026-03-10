@@ -45,8 +45,7 @@ from utils import get_file_suffix, get_filename
 from utils import format_pydantic_error
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
-from processing.interpolate_pressure import interpolate_pressure
-
+from processing import interpolate_pressure, interpolate_debit
 
 
 class MyApp(QMainWindow):
@@ -277,6 +276,7 @@ class MyApp(QMainWindow):
         
     def interpolate_processing_dynamic_data(self):
         self.app_state.processing_dynamic_data = interpolate_pressure(self.app_state.processing_dynamic_data)
+        self.app_state.processing_dynamic_data = interpolate_debit(self.app_state.processing_dynamic_data)
         self.update_dim_plots()
         self.update_data_table()
     
@@ -350,7 +350,10 @@ class MyApp(QMainWindow):
             plot = self.ui.q_graphic,
             t = self.app_state.processing_dynamic_data.t,
             Q = self.app_state.processing_dynamic_data.Q,
+            Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
+            Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
         )
+
     
     def reset_dim_plots(self):
         clear_plot(self.ui.p_graphic)

@@ -7,7 +7,7 @@ from core.app_state import ProcessingDynamicData
 def _validate_input(data: ProcessingDynamicData) -> None:
     
 
-    if data.is_interpolated:
+    if data.is_P_interpolated:
         raise RuntimeError("Интерполяция уже выполнена")
 
     if data.t is None or data.P is None:
