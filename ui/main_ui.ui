@@ -34,8 +34,8 @@
       </property>
       <property name="minimumSize">
        <size>
-        <width>0</width>
-        <height>0</height>
+        <width>500</width>
+        <height>1</height>
        </size>
       </property>
       <property name="title">
@@ -51,7 +51,7 @@
           <property name="geometry">
            <rect>
             <x>0</x>
-            <y>-195</y>
+            <y>0</y>
             <width>462</width>
             <height>1281</height>
            </rect>
@@ -849,7 +849,7 @@
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>275</height>
+            <height>360</height>
            </size>
           </property>
           <property name="maximumSize">
