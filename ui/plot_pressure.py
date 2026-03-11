@@ -48,7 +48,7 @@ def plot_pressure(
             P[interp_mask],
             pen=None,
             symbol="o",
-            symbolSize=8,
+            symbolSize=2,
             symbolBrush=(255, 165, 0),
             name="Интерполировано",
         )
@@ -62,8 +62,8 @@ def plot_pressure(
             t[extra_mask],
             P[extra_mask],
             pen=None,
-            symbol="t",
-            symbolSize=9,
+            symbol="o",
+            symbolSize=2,
             symbolBrush=(80, 120, 255),
             name="Экстраполировано",
         )

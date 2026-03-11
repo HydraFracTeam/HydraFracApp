@@ -13,7 +13,10 @@ def extrapolate_time(
 
     extend_fraction = 0.5 → добавляется 50% новых точек.
     """
-
+    
+    if data is None:
+        raise ValueError("Динамические данные для предобработки еще не сформированы.")         
+    
     if data.is_t_extrapolated:
         raise RuntimeError("Время уже экстраполировано.")
 

@@ -1,157 +1,169 @@
-# import numpy as np
-# from core.app_state import ProcessingDynamicData
+import numpy as np
+from sklearn.metrics import mean_squared_error
+
+from core.models import ProcessingDynamicData
 
 
-# def _rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-#     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+# --------------------------------------------------
+# метрика
+# --------------------------------------------------
+
+def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 
-# def _poly_predict(t_train, P_train, t_pred, degree):
+# --------------------------------------------------
+# выбор модели в log-времени
+# --------------------------------------------------
+def select_log_model(t: np.ndarray, P: np.ndarray):
 
-#     coeffs = np.polyfit(t_train, P_train, degree)
-#     poly = np.poly1d(coeffs)
+    positive = t[t > 0]
 
-#     return poly(t_pred)
+    if len(positive) == 0:
+        raise ValueError("Time array contains no positive values")
 
+    eps = np.min(np.diff(positive)) if len(positive) > 1 else positive[0] * 1e-3
 
-# def _log_predict(t_train, P_train, t_pred):
+    x = np.log(t + eps)
 
-#     log_t = np.log(t_train)
-#     coeffs = np.polyfit(log_t, P_train, 1)
-#     a, b = coeffs
+    n = len(x)
+    holdout = max(int(n * 0.2), 3)
 
-#     return a * np.log(t_pred) + b
+    x_train = x[:-holdout]
+    P_train = P[:-holdout]
 
+    x_test = x[-holdout:]
+    P_test = P[-holdout:]
 
-# def _evaluate_models(t, P):
+    scores = {}
 
-#     n = len(t)
+    # polynomial models
+    for deg in (1, 2, 3):
 
-#     holdout = max(int(n * 0.2), 3)
+        try:
 
-#     train_t = t[:-holdout]
-#     train_P = P[:-holdout]
+            poly = np.poly1d(np.polyfit(x_train, P_train, deg))
 
-#     test_t = t[-holdout:]
-#     test_P = P[-holdout:]
+            pred = poly(x_test)
 
-#     models = {}
+            scores[("poly", deg)] = rmse(P_test, pred)
 
-#     # polynomial models
-#     for deg in (3,):
+        except Exception:
+            continue
 
-#         pred = _poly_predict(train_t, train_P, test_t, deg)
+    # log-linear model
+    try:
 
-#         models[f"poly{deg}"] = _rmse(test_P, pred)
+        log_model = np.poly1d(np.polyfit(x_train, P_train, 1))
 
-#     # log model
-#     if np.all(train_t > 0):
+        pred = log_model(x_test)
 
-#         pred = _log_predict(train_t, train_P, test_t)
+        scores[("log", 1)] = rmse(P_test, pred)
 
-#         models["log"] = _rmse(test_P, pred)
+    except Exception:
+        pass
 
-#     best_model = min(models, key=models.get)
-#     print(best_model)
+    if not scores:
+        raise RuntimeError("No valid model could be fitted")
 
-#     return best_model
+    return min(scores, key=scores.get)
 
+## линейная логарифмическая модель 
+def fit_log_linear_model(t: np.ndarray, P: np.ndarray):
 
-# def _fit_predict_full(t, P, t_new, model_name):
+    positive = t[t > 0]
 
-#     if model_name.startswith("poly"):
+    eps = np.min(np.diff(positive)) if len(positive) > 1 else positive[0] * 1e-3
 
-#         deg = int(model_name[-1])
+    x = np.log(t + eps)
 
-#         coeffs = np.polyfit(t, P, deg)
-#         poly = np.poly1d(coeffs)
+    coeff = np.polyfit(x, P, 1)
 
-#         return poly(t_new)
+    return np.poly1d(coeff), eps
+# --------------------------------------------------
+# построение модели
+# --------------------------------------------------
 
-#     elif model_name == "log":
+def fit_log_model(t: np.ndarray, P: np.ndarray, degree: int):
 
-#         log_t = np.log(t)
-#         coeffs = np.polyfit(log_t, P, 1)
-#         a, b = coeffs
+    positive = t[t > 0]
 
-#         return a * np.log(t_new) + b
+    eps = np.min(np.diff(positive)) if len(positive) > 1 else positive[0] * 1e-3
 
-#     else:
+    x = np.log(t + eps)
 
-#         raise ValueError("Unknown model")
+    coeff = np.polyfit(x, P, degree)
 
+    return np.poly1d(coeff), eps
 
-# def extrapolate_pressure(
-#     data: ProcessingDynamicData,
-#     extend_fraction: float = 0.5,
-# ) -> ProcessingDynamicData:
+# --------------------------------------------------
+# экстраполяция
+# --------------------------------------------------
 
-#     if data.is_P_extrapolated:
-#         raise RuntimeError("Extrapolation already performed")
+def extrapolate_pressure(
+    data: ProcessingDynamicData,
+) -> ProcessingDynamicData:
 
-#     if not data.is_P_interpolated:
-#         raise RuntimeError("Interpolation must be performed before extrapolation")
+    if data.is_P_extrapolated:
+        raise RuntimeError("Pressure already extrapolated")
 
-#     t = data.t
-#     P = data.P
+    if not data.is_t_extrapolated:
+        raise RuntimeError("Time must be extrapolated first")
 
-#     if np.isnan(P).any():
-#         raise ValueError("Pressure still contains NaN values")
+    t = data.t
+    P = data.P
 
-#     if len(t) < 6:
-#         raise ValueError("Not enough points for extrapolation")
+    if np.isnan(P).any():
+        raise ValueError("Pressure contains NaN")
 
-#     # выбор модели
-#     best_model = _evaluate_models(t, P)
+    # если время уже расширено — расширяем P
+    if len(P) < len(t):
 
-#     # количество новых точек
-#     n = len(t)
-#     n_new = max(int(n * extend_fraction), 1)
+        P_ext = np.full(len(t), np.nan)
+        P_ext[:len(P)] = P
 
-#     dt = np.average(np.diff(t))
+        P = P_ext
 
-#     t_last = t[-1]
+    n_original = np.sum(~data.t_extrapolated_mask)
 
-#     t_new = t_last + dt * np.arange(1, n_new + 1)
-
-#     # прогноз
-#     P_new = _fit_predict_full(t, P, t_new, best_model)
-
-#     # объединяем массивы
-#     t_ext = np.concatenate([t, t_new])
-#     P_ext = np.concatenate([P, P_new])
+    t_train = t[:n_original]
+    P_train = P[:n_original]
     
-#     old_len = len(P)
-#     new_len = len(P_ext)
+    tail_fraction = 0.4
+    start = int(len(t_train) * (1 - tail_fraction))
 
-#     # расширяем маску интерполяции
-#     if data.P_interpolated_mask is not None:
+    t_train = t_train[start:]
+    P_train = P_train[start:]
 
-#         interp_mask = np.zeros(new_len, dtype=bool)
-#         interp_mask[:old_len] = data.P_interpolated_mask
+    model_type, degree = select_log_model(t_train, P_train)
 
-#         data.P_interpolated_mask = interp_mask
+    if model_type == "poly":
 
-#     # создаем маску экстраполяции
-#     extra_mask = np.zeros(new_len, dtype=bool)
-#     extra_mask[old_len:] = True
+        model, eps = fit_log_model(t_train, P_train, degree)
 
-#     data.P_extrapolated_mask = extra_mask
+    elif model_type == "log":
 
-#     # маска для времени
-#     t_mask = np.zeros(new_len, dtype=bool)
-#     t_mask[old_len:] = True
+        model, eps = fit_log_linear_model(t_train, P_train)
 
-#     data.t_extrapolated_mask = t_mask
+    t_future = t[data.t_extrapolated_mask]
+    
+    P_future = model(np.log(t_future + eps))
+    # новые точки времени
 
-#     # маска экстраполяции
-#     mask = np.zeros_like(P_ext, dtype=bool)
-#     mask[-n_new:] = True
 
-#     # запись результата
-#     data.t = t_ext
-#     data.P = P_ext
-#     data.P_extrapolated_mask = mask
-#     data.is_P_extrapolated = True
+    # физическое ограничение: давление не должно расти
+    P_future = np.minimum.accumulate(P_future)
 
-#     return data
+    # объединяем массив
+    P_ext = P.copy()
+    P_ext[data.t_extrapolated_mask] = P_future
+
+    # маска
+    mask = data.t_extrapolated_mask.copy()
+
+    # запись
+    data.P = P_ext
+    data.P_extrapolated_mask = mask
+    data.is_P_extrapolated = True
+
+    return data

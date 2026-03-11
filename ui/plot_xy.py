@@ -7,9 +7,6 @@ def plot_xy(
     plot: PlotItem,
     X: np.ndarray,
     Y: np.ndarray,
-    label: str = "XY",
-    color=(50, 120, 220),
-    width: int = 2,
     clear: bool = False,
 ):
     """
@@ -41,6 +38,6 @@ def plot_xy(
     plot.plot(
         X[mask],
         Y[mask],
-        pen=pg.mkPen(color=color, width=width),
-        name=label,
+        pen=pg.mkPen(color=(50, 120, 220), width=2),
+        name="Калькулированные XY",
     )

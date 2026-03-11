@@ -24,9 +24,9 @@ def _validate_input(data: ProcessingDynamicData) -> None:
 
 
 def interpolate_pressure(data: ProcessingDynamicData) -> ProcessingDynamicData:
-    if not data:
-        return
-    
+    if data is None:
+        raise ValueError("ProcessingDynamicData is None")\
+            
     _validate_input(data)
 
     t = data.t

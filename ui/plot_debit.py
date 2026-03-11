@@ -48,7 +48,7 @@ def plot_debit(
             Q[interp_mask],
             pen=None,
             symbol="o",
-            symbolSize=8,
+            symbolSize=2,
             symbolBrush=(255, 165, 0),
             name="Интерполировано",
         )
@@ -62,8 +62,8 @@ def plot_debit(
             t[extra_mask],
             Q[extra_mask],
             pen=None,
-            symbol="t",
-            symbolSize=9,
+            symbol="o",
+            symbolSize=2,
             symbolBrush=(80, 120, 255),
             name="Экстраполировано",
         )

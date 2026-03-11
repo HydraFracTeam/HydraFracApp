@@ -43,11 +43,13 @@ from utils import format_pydantic_error
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
 from processing import (
+    rebuild_processing_dynamic,
     interpolate_pressure,
     interpolate_debit,
-    # extrapolate_pressure,
-    rebuild_processing_dynamic,
+    extrapolate_pressure,
     extrapolate_time,
+    extrapolate_debit,
+    extend_masks_to_time_grid,
     )
 
 
@@ -279,7 +281,9 @@ class MyApp(QMainWindow):
         self.ui.extrapolate_btn.clicked.connect(self.extrapolate_processing_dynamic_data)
         
     def interpolate_processing_dynamic_data(self):
-        processing = self.app_state.processing_dynamic_data
+        from copy import deepcopy
+        processing = deepcopy(self.app_state.processing_dynamic_data)
+        processing = extend_masks_to_time_grid(processing)
         processing = interpolate_pressure(processing)
         processing = interpolate_debit(processing)
         
@@ -289,14 +293,17 @@ class MyApp(QMainWindow):
         self.refresh_ui()
     
     def extrapolate_processing_dynamic_data(self):
-        processing = self.app_state.processing_dynamic_data
-        print(len(processing.t))
+        from copy import deepcopy
+        processing = deepcopy(self.app_state.processing_dynamic_data)
         processing = extrapolate_time(processing)
-        print(len(processing.t))
+        processing = extend_masks_to_time_grid(processing)
+        processing = extrapolate_pressure(processing)
+        processing = extrapolate_debit(processing)
+        
         self.app_state.processing_dynamic_data = processing
         self.recalculate_processing_dynamic_data()
-        # self.compute_dimensionless()
-        self.update_dim_plots()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
     
     ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
     def enable_load_controls(self) -> None:
@@ -364,13 +371,13 @@ class MyApp(QMainWindow):
             P_interpolated_mask=self.app_state.processing_dynamic_data.P_interpolated_mask,
             P_extrapolated_mask=self.app_state.processing_dynamic_data.P_extrapolated_mask,
         )
-        # plot_debit(
-        #     plot = self.ui.q_graphic,
-        #     t = self.app_state.processing_dynamic_data.t,
-        #     Q = self.app_state.processing_dynamic_data.Q,
-        #     Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
-        #     Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
-        # )
+        plot_debit(
+            plot = self.ui.q_graphic,
+            t = self.app_state.processing_dynamic_data.t,
+            Q = self.app_state.processing_dynamic_data.Q,
+            Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
+            Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
+        )
 
     
     def reset_dim_plots(self):
@@ -387,11 +394,9 @@ class MyApp(QMainWindow):
                 return
 
             plot_xy(
-                plot,
-                self.app_state.dimensionless.X,
-                self.app_state.dimensionless.Y,
-                label="Калькулированные XY параметры",
-                color=(50,120,220),
+                plot=plot,
+                X=self.app_state.dimensionless.X,
+                Y=self.app_state.dimensionless.Y,
             )
 
         if self.ui.cb_burde_curve.isChecked():
@@ -399,11 +404,9 @@ class MyApp(QMainWindow):
                 return
 
             plot_burde(
-                plot,
-                self.app_state.processing_dynamic_data.t,
-                self.app_state.processing_dynamic_data.burde,
-                label="Производная Бурде",
-                color=(200,80,60),
+                plot=plot,
+                t=self.app_state.processing_dynamic_data.t,
+                burde=self.app_state.processing_dynamic_data.burde,
             )
     
     ## ВЫЗОВ РАСЧЕТОВ
@@ -436,8 +439,8 @@ class MyApp(QMainWindow):
         
     def recalculate_processing_dynamic_data(self):
         raw = self.app_state.raw_dynamic_data
-        dyn = self.app_state.processing_dynamic_data
         static = self.app_state.static_params
+        dyn = self.app_state.processing_dynamic_data
         
         self.app_state.processing_dynamic_data = rebuild_processing_dynamic(
             raw_data=raw,
