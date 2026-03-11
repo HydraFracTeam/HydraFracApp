@@ -55,6 +55,6 @@ def interpolate_pressure(data: ProcessingDynamicData) -> ProcessingDynamicData:
     # запись результатов
     data.P = P_full
     data.P_interpolated_mask = mask_missing
-    data.is_interpolated = True
+    data.is_P_interpolated = True
 
     return data

@@ -35,6 +35,8 @@ class ProcessingDynamicData: # храним как данные, с которы
 
     # экстраполяция
     t_extrapolated_mask: Optional[np.ndarray] = None
+    is_t_extrapolated: bool = False
+    
     P_extrapolated_mask: Optional[np.ndarray] = None
     is_P_extrapolated: bool = False
     

@@ -28,24 +28,26 @@ from storage.reference_repository import ReferenceCurveDBManager
 from config import settings
 
 # pydantic
-from schemas.static_params import StaticParams
+from schemas import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
 # модельки
-from core.models import ProcessingDynamicData, DimensionlessData, SolverState
+from core.models import DimensionlessData, SolverState
 # хелперы, расчеты
 from core.dimensionless import calculate_x, calculate_y
 from helpers import (
     calculate_L_value, 
     calculate_k_value,
-    calculate_dP,
-    calculate_burde,
-    normalize_Q_by_n,
     )
 from utils import get_file_suffix, get_filename
 from utils import format_pydantic_error
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
-from processing import interpolate_pressure, interpolate_debit
+from processing import (
+    interpolate_pressure,
+    interpolate_debit,
+    # extrapolate_pressure,
+    rebuild_processing_dynamic,
+    )
 
 
 class MyApp(QMainWindow):
@@ -257,10 +259,10 @@ class MyApp(QMainWindow):
         self._init_solver_state()
         
         # сохраняем динамические данные для работы
-        self.build_processing_dynamic()
+        self.recalculate_processing_dynamic_data()
         
         # расчитаем промежуточные XY после ввода
-        self.compute_dimensionless()
+        self.recalculate_dimensionless()
         
         self.show_in_text_report("Границы оптимизации успешно заданы.")
         self.update_data_table() # обновление таблицы
@@ -273,12 +275,20 @@ class MyApp(QMainWindow):
     ## Предобработка данных через UI
     def setup_preprocessing_controls(self):
         self.ui.interp_btn.clicked.connect(self.interpolate_processing_dynamic_data)
+        self.ui.extrapolate_btn.clicked.connect(self.extrapolate_processing_dynamic_data)
         
     def interpolate_processing_dynamic_data(self):
         self.app_state.processing_dynamic_data = interpolate_pressure(self.app_state.processing_dynamic_data)
         self.app_state.processing_dynamic_data = interpolate_debit(self.app_state.processing_dynamic_data)
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
+    
+    def extrapolate_processing_dynamic_data(self):
+        # self.app_state.processing_dynamic_data = extrapolate_pressure(self.app_state.processing_dynamic_data)
+        self.recalculate_processing_dynamic_data()
+        # self.compute_dimensionless()
         self.update_dim_plots()
-        self.update_data_table()
     
     ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
     def enable_load_controls(self) -> None:
@@ -346,13 +356,13 @@ class MyApp(QMainWindow):
             P_interpolated_mask=self.app_state.processing_dynamic_data.P_interpolated_mask,
             P_extrapolated_mask=self.app_state.processing_dynamic_data.P_extrapolated_mask,
         )
-        plot_debit(
-            plot = self.ui.q_graphic,
-            t = self.app_state.processing_dynamic_data.t,
-            Q = self.app_state.processing_dynamic_data.Q,
-            Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
-            Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
-        )
+        # plot_debit(
+        #     plot = self.ui.q_graphic,
+        #     t = self.app_state.processing_dynamic_data.t,
+        #     Q = self.app_state.processing_dynamic_data.Q,
+        #     Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
+        #     Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
+        # )
 
     
     def reset_dim_plots(self):
@@ -389,7 +399,7 @@ class MyApp(QMainWindow):
             )
     
     ## ВЫЗОВ РАСЧЕТОВ
-    def compute_dimensionless(self):
+    def recalculate_dimensionless(self):
         dyn = self.app_state.processing_dynamic_data
         static = self.app_state.static_params
         solver = self.app_state.solver_state
@@ -416,43 +426,18 @@ class MyApp(QMainWindow):
             )
         )
         
-    def build_processing_dynamic(self):
-
+    def recalculate_processing_dynamic_data(self):
         raw = self.app_state.raw_dynamic_data
+        dyn = self.app_state.processing_dynamic_data
         static = self.app_state.static_params
-        current = self.app_state.processing_dynamic_data
-
-        # источник данных
-        if current is None:
-            t = raw.t
-            P = raw.P
-            Q = raw.Q
-            Q_is_normalized = False
-        else:
-            t = current.t
-            P = current.P
-            Q = current.Q
-            Q_is_normalized = current.is_Q_normalized
-
-        # нормализация дебита
-        if not Q_is_normalized:
-            Q = normalize_Q_by_n(Q_total=Q, N=static.N)
-            Q_is_normalized = True
-
-        # dP
-        dP = calculate_dP(P=P, P0=static.P0)
-
-        # Bourdet
-        burde = calculate_burde(t=t, dP=dP)
-
-        self.app_state.processing_dynamic_data = ProcessingDynamicData(
-            t=t,
-            P=P,
-            Q=Q,
-            dP=dP,
-            burde=burde,
-            is_Q_normalized=Q_is_normalized
+        
+        self.app_state.processing_dynamic_data = rebuild_processing_dynamic(
+            raw_data=raw,
+            static_data=static,
+            current_processing_data=dyn,
         )
+    
+        
         
     ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
     def reset_all_data(self):

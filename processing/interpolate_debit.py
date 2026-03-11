@@ -56,5 +56,6 @@ def interpolate_debit(data: ProcessingDynamicData) -> ProcessingDynamicData:
 
     # обновить ряд
     data.Q = Q
+    data.is_Q_interpolated = True
 
     return data
