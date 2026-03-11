@@ -32,7 +32,7 @@ def rebuild_processing_dynamic(
             is_Q_interpolated = False
 
             t_extrapolated_mask = None
-            is_t_extrapolated = None
+            is_t_extrapolated = False
             
             P_extrapolated_mask = None
             is_P_extrapolated = False

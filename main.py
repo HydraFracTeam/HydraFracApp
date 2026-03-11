@@ -47,6 +47,7 @@ from processing import (
     interpolate_debit,
     # extrapolate_pressure,
     rebuild_processing_dynamic,
+    extrapolate_time,
     )
 
 
@@ -278,14 +279,21 @@ class MyApp(QMainWindow):
         self.ui.extrapolate_btn.clicked.connect(self.extrapolate_processing_dynamic_data)
         
     def interpolate_processing_dynamic_data(self):
-        self.app_state.processing_dynamic_data = interpolate_pressure(self.app_state.processing_dynamic_data)
-        self.app_state.processing_dynamic_data = interpolate_debit(self.app_state.processing_dynamic_data)
+        processing = self.app_state.processing_dynamic_data
+        processing = interpolate_pressure(processing)
+        processing = interpolate_debit(processing)
+        
+        self.app_state.processing_dynamic_data = processing
         self.recalculate_processing_dynamic_data()
         self.recalculate_dimensionless()
         self.refresh_ui()
     
     def extrapolate_processing_dynamic_data(self):
-        # self.app_state.processing_dynamic_data = extrapolate_pressure(self.app_state.processing_dynamic_data)
+        processing = self.app_state.processing_dynamic_data
+        print(len(processing.t))
+        processing = extrapolate_time(processing)
+        print(len(processing.t))
+        self.app_state.processing_dynamic_data = processing
         self.recalculate_processing_dynamic_data()
         # self.compute_dimensionless()
         self.update_dim_plots()
