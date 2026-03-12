@@ -28,6 +28,7 @@ def select_log_model(t: np.ndarray, P: np.ndarray):
 
     n = len(x)
     holdout = max(int(n * 0.2), 3)
+    print(holdout)
 
     x_train = x[:-holdout]
     P_train = P[:-holdout]
@@ -50,18 +51,6 @@ def select_log_model(t: np.ndarray, P: np.ndarray):
 
         except Exception:
             continue
-
-    # log-linear model
-    try:
-
-        log_model = np.poly1d(np.polyfit(x_train, P_train, 1))
-
-        pred = log_model(x_test)
-
-        scores[("log", 1)] = rmse(P_test, pred)
-
-    except Exception:
-        pass
 
     if not scores:
         raise RuntimeError("No valid model could be fitted")
@@ -136,14 +125,11 @@ def extrapolate_pressure(
     P_train = P_train[start:]
 
     model_type, degree = select_log_model(t_train, P_train)
+    print(model_type, degree)
 
     if model_type == "poly":
 
         model, eps = fit_log_model(t_train, P_train, degree)
-
-    elif model_type == "log":
-
-        model, eps = fit_log_linear_model(t_train, P_train)
 
     t_future = t[data.t_extrapolated_mask]
     
