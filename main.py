@@ -6,9 +6,18 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 import sys
+import logging
 import numpy as np
 from typing import List, Dict, Tuple
 
+# Configure logging to show solver progress
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 from ui.ui import Ui_MainWindow
 from ui import ( 
@@ -26,6 +35,9 @@ import pyqtgraph as pg
 from core.app_state import AppState
 from storage.reference_repository import ReferenceCurveDBManager
 from config import settings
+from core.solver import Solver
+from core.dimensionless import calculate_x, calculate_y
+from utils import format_pydantic_error
 
 # pydantic
 from schemas.static_params import StaticParams
@@ -42,9 +54,10 @@ from helpers import (
     normalize_Q_by_n,
     )
 from utils import get_file_suffix, get_filename
-from utils import format_pydantic_error
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
+from processing.autosplitter import detect_split_point, get_split_info, split_data
+from ui.autosplit_dialog import AutosplitDialog
 
 
 
@@ -55,7 +68,9 @@ class MyApp(QMainWindow):
         self.ui.setupUi(self)
         self.app_state = AppState()
         self.ref_curve_db = ReferenceCurveDBManager(db_path=settings.REF_DATABASE_PATH)
-
+        self.logger = logging.getLogger(__name__)
+        self._autosplit_info = None  # Информация о разделении КСД/КВД
+        
         self._load_controls: List[QWidget] = [
             self.ui.load_file_button,
             self.ui.insert_data_from_buffer_button,
@@ -109,8 +124,61 @@ class MyApp(QMainWindow):
 
             try:
                 raw = dialog.get_data()
+                
+                # Проверка на автосплиттер
+                try:
+                    split_info = get_split_info(raw.t, raw.P)
+                except Exception as e:
+                    self.logger.warning(f"Ошибка автосплиттера: {e}")
+                    split_info = None
+                
+                if split_info is not None:
+                    try:
+                        # Показываем диалог выбора
+                        mode = AutosplitDialog.show_dialog(self, split_info)
+                        
+                        if mode == AutosplitDialog.MODE_KSD:
+                            split_idx = split_info.get('index', len(raw.t) // 2)
+                            raw.t = raw.t[:split_idx]
+                            raw.P = raw.P[:split_idx]
+                            # Проверяем Q перед срезом
+                            if hasattr(raw, 'Q') and raw.Q is not None:
+                                raw.Q = raw.Q[:split_idx]
+                            self.show_in_text_report(
+                                f"Выбран режим КСД: использованы точки 0-{split_idx}"
+                            )
+                        elif mode == AutosplitDialog.MODE_KVD:
+                            split_idx = split_info.get('index', len(raw.t) // 2)
+                            raw.t = raw.t[split_idx:]
+                            raw.P = raw.P[split_idx:]
+                            # Проверяем Q перед срезом
+                            if hasattr(raw, 'Q') and raw.Q is not None:
+                                raw.Q = raw.Q[split_idx:]
+                            self.show_in_text_report(
+                                f"Выбран режим КВД: использованы точки {split_idx}-end"
+                            )
+                        elif mode == AutosplitDialog.MODE_BOTH:
+                            self.show_in_text_report(
+                                f"⚠ Использованы все данные (КСД + КВД). "
+                                f"Подбор может быть некорректным!"
+                            )
+                            self._autosplit_info = split_info
+                        elif mode == AutosplitDialog.MODE_IGNORE:
+                            self.show_in_text_report("Автосплиттер отключен.")
+                            self._autosplit_info = None
+                        else:
+                            self._autosplit_info = None
+                    except Exception as e:
+                        self.logger.error(f"Ошибка в диалоге автосплиттера: {e}")
+                        self._autosplit_info = None
+                else:
+                    self._autosplit_info = None
 
                 self.app_state.raw_dynamic_data = raw
+                
+                # Отображаем линию разделения если есть
+                if self._autosplit_info is not None:
+                    self._draw_autosplit_line()
 
                 self.show_in_text_report(
                     "Динамические данные успешно вставлены из буфера."
@@ -148,11 +216,80 @@ class MyApp(QMainWindow):
             else:
                 raise ValueError("Загружать можно только .csv или .las файлы.")
         
+            # Проверка на автосплиттер
+            try:
+                split_info = get_split_info(raw_data.t, raw_data.P)
+            except Exception as e:
+                self.logger.warning(f"Ошибка автосплиттера: {e}")
+                split_info = None
+            
+            if split_info is not None:
+                try:
+                    # Показываем диалог выбора
+                    mode = AutosplitDialog.show_dialog(self, split_info)
+                    
+                    if mode == AutosplitDialog.MODE_KSD:
+                        # Оставляем только КСД (до точки разделения)
+                        split_idx = split_info.get('index', len(raw_data.t) // 2)
+                        raw_data.t = raw_data.t[:split_idx]
+                        raw_data.P = raw_data.P[:split_idx]
+                        # Проверяем Q перед срезом
+                        if hasattr(raw_data, 'Q') and raw_data.Q is not None:
+                            raw_data.Q = raw_data.Q[:split_idx]
+                        self.show_in_text_report(
+                            f"Выбран режим КСД: использованы точки 0-{split_idx} "
+                            f"(t < {split_info.get('time', 0):.2f})"
+                        )
+                        
+                    elif mode == AutosplitDialog.MODE_KVD:
+                        # Оставляем только КВД (после точки разделения)
+                        split_idx = split_info.get('index', len(raw_data.t) // 2)
+                        raw_data.t = raw_data.t[split_idx:]
+                        raw_data.P = raw_data.P[split_idx:]
+                        # Проверяем Q перед срезом
+                        if hasattr(raw_data, 'Q') and raw_data.Q is not None:
+                            raw_data.Q = raw_data.Q[split_idx:]
+                        self.show_in_text_report(
+                            f"Выбран режим КВД: использованы точки {split_idx}-{len(raw_data.t) + split_idx} "
+                            f"(t >= {split_info.get('time', 0):.2f})"
+                        )
+                        
+                    elif mode == AutosplitDialog.MODE_BOTH:
+                        # Оставляем все, но показываем предупреждение
+                        self.show_in_text_report(
+                            f"⚠ Предупреждение: использованы все данные (КСД + КВД). "
+                            f"Точка разделения: t = {split_info.get('time', 0):.2f}. "
+                            f"Подбор параметров может быть некорректным!"
+                        )
+                        # Сохраняем инфо о разделении для визуализации
+                        self._autosplit_info = split_info
+                        
+                    elif mode == AutosplitDialog.MODE_IGNORE:
+                        # Игнорируем разделение
+                        self.show_in_text_report("Автосплиттер отключен. Использованы все данные.")
+                        self._autosplit_info = None
+                        
+                    else:
+                        # Диалог закрыт без выбора - используем все данные
+                        self.show_in_text_report("Выбор отменен. Использованы все данные.")
+                        self._autosplit_info = None
+                except Exception as e:
+                    self.logger.error(f"Ошибка в диалоге автосплиттера: {e}", exc_info=True)
+                    self.show_in_text_report(f"Ошибка обработки разделения: {e}. Использованы все данные.")
+                    self._autosplit_info = None
+            else:
+                self._autosplit_info = None
+            
             self.app_state.raw_dynamic_data = raw_data
             
             file_name = get_filename(file_path=file_path)
             self.ui.load_file_label.setText(file_name)
             self.show_in_text_report(f"Динамические данные успешны загружены из файла {file_name}.")
+            
+            # Отображаем линию разделения на графике если есть
+            if hasattr(self, '_autosplit_info') and self._autosplit_info is not None:
+                self._draw_autosplit_line()
+            
             self.enable_static_controls()
             self.disable_load_controls()
         except Exception as e:
@@ -219,9 +356,9 @@ class MyApp(QMainWindow):
     ## РАЗДЕЛ ГРАНИЦ ОПТИМИЗАЦИИ
     def setup_threshold_menu(self):
         self.ui.insert_thresholds_button.clicked.connect(self.get_thresholds)
+        self.ui.calculate_opt_parameters_button.clicked.connect(self.calculate_optimal_parameters)
         
     def read_thresholds_from_ui(self) -> OptimizeThresholds:
-
         optimize_dict = {
             "L_min": self.ui.frac_length_min_border_doubleSpinBox.value(),
             "L_max": self.ui.frac_length_max_border_doubleSpinBox.value(),
@@ -268,6 +405,121 @@ class MyApp(QMainWindow):
         
         self.disable_threshold_controls()
         self.enable_calculation_controls()
+    
+    ## РАЗДЕЛ РАСЧЁТА ОПТИМАЛЬНЫХ ПАРАМЕТРОВ
+    def calculate_optimal_parameters(self):
+        """Execute the solver to find optimal S, k, L parameters."""
+        # Проверяем наличие всех необходимых данных
+        if self.app_state.processing_dynamic_data is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала загрузите и обработайте динамические данные.")
+            return
+        
+        if self.app_state.static_params is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала введите статические параметры.")
+            return
+            
+        if self.app_state.optimize_thresholds is None:
+            QMessageBox.warning(self, "Ошибка", "Сначала задайте границы оптимизации.")
+            return
+        
+        try:
+            # Get data from app state
+            dynamic_data = self.app_state.processing_dynamic_data
+            static_params = self.app_state.static_params
+            thresholds = self.app_state.optimize_thresholds
+            
+            # Calculate dimensionless X, Y from field data
+            # Compute pressure drop
+            initial_pressure = np.max(dynamic_data.P)
+            delta_p = initial_pressure - dynamic_data.P
+            
+            # Normalize flow rate by number of fractures
+            q_per_fracture = dynamic_data.Q / static_params.N
+            
+            # Calculate dimensionless parameters
+            # We need to estimate initial k and L for X, Y calculation
+            # Use middle of bounds as initial estimate
+            k_init = (thresholds.k_min + thresholds.k_max) / 2
+            L_init = (thresholds.L_min + thresholds.L_max) / 2
+            
+            x_fact = calculate_x(
+                k=k_init,
+                h=static_params.h,
+                delta_p=delta_p,
+                mu=static_params.mu,
+                B=static_params.B,
+                Q=q_per_fracture
+            )
+            
+            y_fact = calculate_y(
+                Q=q_per_fracture,
+                B=static_params.B,
+                t=dynamic_data.t,
+                phi=static_params.phi,
+                ct=static_params.ct,
+                h=static_params.h,
+                delta_p=delta_p,
+                L=L_init
+            )
+            
+            # Ensure positive values for log-scale processing
+            mask = (x_fact > 0) & (y_fact > 0)
+            x_fact = x_fact[mask]
+            y_fact = y_fact[mask]
+            
+            if len(x_fact) < 10:
+                QMessageBox.warning(
+                    self, 
+                    "Ошибка", 
+                    "Недостаточно данных для расчёта. Проверьте входные данные."
+                )
+                return
+            
+            # Store dimensionless data in app state
+            from core.models import DimensionlessData
+            self.app_state.dimensionless = DimensionlessData(X=x_fact, Y=y_fact)
+            
+            # Run solver
+            self.show_in_text_report("Запуск оптимизации...")
+            solver = Solver()
+            
+            result = solver.solve_from_dimensionless(
+                x_fact=x_fact,
+                y_fact=y_fact,
+                k_bounds=(thresholds.k_min, thresholds.k_max),
+                L_bounds=(thresholds.L_min, thresholds.L_max),
+                beam_width=3
+            )
+            
+            # Update UI with results
+            self.ui.skin_result_spinbox.setValue(result.S_opt)
+            self.ui.permeability_result_spinbox.setValue(result.k_opt)
+            self.ui.frac_length_result_spinbox.setValue(result.L_opt)
+            
+            # Store result in app state
+            from core.models import SolverState
+            self.app_state.solver_state = SolverState(
+                k_current=result.k_opt,
+                L_current=result.L_opt,
+                skin_current=result.S_opt,
+                residual=result.error_value
+            )
+            
+            self.show_in_text_report(
+                f"Оптимизация завершена:\n"
+                f"  Скин-фактор S = {result.S_opt:.4f}\n"
+                f"  Проницаемость k = {result.k_opt:.6f} мД\n"
+                f"  Полудлина трещины L = {result.L_opt:.4f} м\n"
+                f"  Ошибка подбора = {result.error_value:.6f}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Ошибка расчёта",
+                f"Ошибка при оптимизации параметров:\n{str(e)}"
+            )
+            self.logger.error(f"Solver error: {e}", exc_info=True)
     
     ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
     def enable_load_controls(self) -> None:
@@ -371,6 +623,53 @@ class MyApp(QMainWindow):
                 label="Производная Бурде",
                 color=(200,80,60),
             )
+    
+    # АВТОСПЛИТТЕР
+    def _draw_autosplit_line(self):
+        """Отрисовка линии разделения КСД/КВД на графике давления."""
+        if not hasattr(self, '_autosplit_info') or self._autosplit_info is None:
+            return
+        
+        try:
+            split_time = self._autosplit_info.get('time')
+            split_pressure = self._autosplit_info.get('pressure')
+            
+            if split_time is None or split_pressure is None:
+                return
+            
+            # Получаем график давления
+            plot = self.ui.p_graphic
+            if plot is None:
+                return
+            
+            # Добавляем вертикальную линию (yellow dashed)
+            line = pg.InfiniteLine(
+                pos=split_time,
+                angle=90,
+                pen=pg.mkPen(color='yellow', width=2, style=Qt.DashLine),
+                label='AUTO SPLIT',
+                labelOpts={
+                    'position': 0.95,
+                    'color': 'yellow',
+                    'fill': (0, 0, 0, 100)
+                }
+            )
+            plot.addItem(line)
+            
+            # Добавляем точку на кривой
+            scatter = pg.ScatterPlotItem(
+                x=[split_time],
+                y=[split_pressure],
+                pen=pg.mkPen(color='yellow', width=2),
+                brush=pg.mkBrush(color='yellow'),
+                size=10,
+                symbol='o'
+            )
+            plot.addItem(scatter)
+            
+            self.logger.info(f"Отображена линия AUTO SPLIT: t={split_time:.2f}, P={split_pressure:.2f}")
+        except Exception as e:
+            self.logger.warning(f"Не удалось отрисовать линию разделения: {e}")
     
     ## ВЫЗОВ РАСЧЕТОВ
     def compute_dimensionless(self):

@@ -9,6 +9,8 @@ kiwisolver==1.4.9
 lasio==0.32
 matplotlib==3.10.8
 numpy==2.4.2
+optuna==4.2.1
+SQLAlchemy==2.0.38
 packaging==26.0
 pandas==3.0.1
 pillow==12.1.1

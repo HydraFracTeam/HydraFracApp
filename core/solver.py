@@ -1,272 +1,189 @@
 """
 Solver module for HydraFracApp.
 Implements the optimization algorithm for determining S (skin), k (permeability), and L (fracture length).
-Uses a hybrid approach with external S iteration and internal k-L optimization.
+Uses a hybrid approach with beam search for discrete parameters and Bayesian optimization for continuous.
 """
 
 import numpy as np
-from scipy.optimize import minimize
-from typing import Tuple, List
+from typing import Tuple, List, Optional, Dict
 import logging
 
-from .models import StaticParams, DynamicParams, SolverResult
-from .dimensionless import compute_x, compute_y
-from .w_scaling import scale_reference_by_w
-from .objective import l1_error, l2_error
+# Import from new solver module
+from solver import ReservoirSolver
+from solver.library import build_skin_library
+from core.reference_repo import ReferenceRepository
+
+logger = logging.getLogger(__name__)
+
+
+class SolverResult:
+    """Result of the optimization process."""
+    
+    def __init__(
+        self,
+        S_opt: float,
+        k_opt: float,
+        L_opt: float,
+        error_value: float,
+        N_opt: Optional[float] = None,
+        W_scale_factor: float = 1.0
+    ):
+        self.S_opt = S_opt
+        self.k_opt = k_opt
+        self.L_opt = L_opt
+        self.error_value = error_value
+        self.N_opt = N_opt
+        self.W_scale_factor = W_scale_factor
+    
+    def __repr__(self):
+        return (f"SolverResult(S={self.S_opt:.4f}, k={self.k_opt:.6f}, "
+                f"L={self.L_opt:.4f}, error={self.error_value:.6f})")
 
 
 class Solver:
     """
-    Main solver class implementing the hybrid optimization approach:
-    - External loop: iterate through skin factor values
-    - Internal optimization: optimize k and L using L-BFGS-B
+    Main solver class implementing the optimization approach:
+    - Step 1: Select best skin using beam search
+    - Step 2: Select best N (number of fractures) from candidates
+    - Step 3: Optimize k and L using Bayesian optimization
     """
     
-    def __init__(self):
-        """Initialize the solver with default settings."""
+    def __init__(self, db_path: str = None):
+        """Initialize the solver with reference repository."""
         self.logger = logging.getLogger(__name__)
+        self.reference_repo = ReferenceRepository(db_path)
+        self._reservoir_solver: Optional[ReservoirSolver] = None
         
+    def _ensure_library_loaded(self):
+        """Lazy load the skin library."""
+        if self._reservoir_solver is None:
+            skin_library = self.reference_repo.get_skin_library()
+            if not skin_library:
+                raise ValueError("No reference curves available in database")
+            self._reservoir_solver = ReservoirSolver(skin_library)
+    
     def run(
         self,
         pressure_data: np.ndarray,
         time_data: np.ndarray,
         flow_rate_data: np.ndarray,
-        static_params: StaticParams,
-        dynamic_params: DynamicParams,
-        reference_repo,
+        static_params,
+        dynamic_params,
+        reference_repo=None,  # Kept for compatibility, not used
         skin_grid: List[float] = None
     ) -> SolverResult:
         """
         Execute the main optimization routine.
         
         Args:
-            pressure_data: Array of pressure measurements
-            time_data: Array of time measurements
-            flow_rate_data: Array of flow rate measurements
-            static_params: Static reservoir and well parameters
-            dynamic_params: Optimization bounds for k and L
-            reference_repo: Repository for accessing reference curves
-            skin_grid: Grid of skin factor values to test (default: 0 to 5 with step 0.5)
+            pressure_data: Array of pressure measurements (not used directly, X/Y are used)
+            time_data: Array of time measurements (not used directly)
+            flow_rate_data: Array of flow rate measurements (not used directly)
+            static_params: Static reservoir and well parameters (schemas.StaticParams)
+            dynamic_params: Optimization bounds for k and L (schemas.OptimizeThresholds)
+            reference_repo: Kept for compatibility, ignored
+            skin_grid: Grid of skin factor values to test (not used in new solver)
             
         Returns:
             SolverResult: Contains optimized parameters and metrics
         """
-        # Set default skin grid if not provided
-        if skin_grid is None:
-            skin_grid = [i * 0.5 for i in range(11)]  # 0, 0.5, 1.0, ..., 5.0
+        self._ensure_library_loaded()
         
-        best_result = None
-        best_error = float('inf')
+        # Build X, Y from dimensionless data (expected to be precomputed)
+        # For now, we expect fact_data to have dimensionless data available
+        # This should be computed by preprocessing before calling solver
         
-        # External loop: iterate through skin factor values
-        for s in skin_grid:
-            self.logger.info(f"Testing Skin={s}")
-            
-            # Get reference curve for this skin value (with interpolation if needed)
-            # TODO: Implement interpolation between reference curves for intermediate S values
-            ref_curve_ids = reference_repo.get_curves_by_skin(s)
-            
-            if not ref_curve_ids:
-                # Try to find closest skins for interpolation
-                available_skins = reference_repo.get_available_skins()
-                if not available_skins:
-                    raise ValueError("No reference curves available")
-                
-                # Find closest skin values for interpolation
-                closest_skins = self._find_closest_skins(s, available_skins)
-                
-                if len(closest_skins) == 1:
-                    # Direct match or closest available
-                    ref_curve_ids = reference_repo.get_curves_by_skin(closest_skins[0])
-                elif len(closest_skins) >= 2:
-                    # Interpolate between two closest values
-                    ref_x, ref_y = self._interpolate_reference_curve(
-                        reference_repo, s, closest_skins[0], closest_skins[1]
-                    )
-                else:
-                    continue
-            else:
-                # Get reference curve directly
-                curve_id = ref_curve_ids[0]  # Take first available
-                ref_x, ref_y = reference_repo.get_reference_curve(curve_id)
-                
-                # Get reference metadata to access W for scaling
-                ref_metadata = reference_repo.get_static_metadata(curve_id)
-                ref_w = ref_metadata.get('W', static_params.W)  # Default to user's W if not available
-                
-                # Scale reference Y by W factor
-                ref_y = scale_reference_by_w(ref_y, ref_w, static_params.W)
-            
-            # Perform inner optimization for k and L
-            current_result = self._optimize_k_and_l(
-                s, pressure_data, time_data, flow_rate_data, 
-                static_params, dynamic_params, ref_x, ref_y
-            )
-            
-            if current_result.error_value < best_error:
-                best_error = current_result.error_value
-                best_result = current_result
-                self.logger.info(f"Best result updated: S={best_result.S_opt}, "
-                               f"k={best_result.k_opt}, L={best_result.L_opt}, "
-                               f"error={best_result.error_value:.6f}")
+        # The new solver works with X, Y arrays directly
+        # We need to get them from the app state (fact_data.dimensionless)
+        # For compatibility, we'll compute them here if not provided
         
-        if best_result is None:
-            raise RuntimeError("No valid solution found during optimization")
-        
-        return best_result
+        raise NotImplementedError(
+            "Use solve_from_dimensionless() method with pre-computed X, Y arrays. "
+            "The run() method is kept for backward compatibility only."
+        )
     
-    def _find_closest_skins(self, target_skin: float, available_skins: List[float]) -> List[float]:
-        """
-        Find the closest available skin values for interpolation.
-        
-        Args:
-            target_skin: Target skin value
-            available_skins: Available skin values in the reference database
-            
-        Returns:
-            List of closest skin values (typically 1 or 2 values)
-        """
-        sorted_skins = sorted(available_skins)
-        
-        # If exact match exists
-        if target_skin in sorted_skins:
-            return [target_skin]
-        
-        # Find two closest values
-        lower_skins = [s for s in sorted_skins if s < target_skin]
-        upper_skins = [s for s in sorted_skins if s > target_skin]
-        
-        closest_skins = []
-        if lower_skins:
-            closest_skins.append(lower_skins[-1])
-        if upper_skins:
-            closest_skins.append(upper_skins[0])
-        
-        return closest_skins
-    
-    def _interpolate_reference_curve(self, reference_repo, target_skin: float, 
-                                   skin1: float, skin2: float) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Linearly interpolate between two reference curves for different skin values.
-        
-        Args:
-            reference_repo: Reference repository
-            target_skin: Target skin value for interpolation
-            skin1: First skin value (lower)
-            skin2: Second skin value (upper)
-            
-        Returns:
-            Interpolated X and Y arrays
-        """
-        # Get curves for both skin values
-        ids1 = reference_repo.get_curves_by_skin(skin1)
-        ids2 = reference_repo.get_curves_by_skin(skin2)
-        
-        if not ids1 or not ids2:
-            raise ValueError(f"Could not find reference curves for skins {skin1} and/or {skin2}")
-        
-        curve1_id = ids1[0]
-        curve2_id = ids2[0]
-        
-        x1, y1 = reference_repo.get_reference_curve(curve1_id)
-        x2, y2 = reference_repo.get_reference_curve(curve2_id)
-        
-        # For now, assume x values are the same for both curves
-        # In practice, you might need to align or interpolate x values as well
-        if not np.allclose(x1, x2, rtol=1e-5):
-            # TODO: Handle case where x values are different between curves
-            # This would require interpolation onto common x grid
-            pass
-        
-        # Linear interpolation of y values
-        weight = (target_skin - skin1) / (skin2 - skin1)
-        interpolated_y = y1 * (1 - weight) + y2 * weight
-        
-        return x1, interpolated_y
-    
-    def _optimize_k_and_l(
+    def solve_from_dimensionless(
         self,
-        s: float,
-        pressure_data: np.ndarray,
-        time_data: np.ndarray,
-        flow_rate_data: np.ndarray,
-        static_params: StaticParams,
-        dynamic_params: DynamicParams,
-        ref_x: np.ndarray,
-        ref_y: np.ndarray
+        x_fact: np.ndarray,
+        y_fact: np.ndarray,
+        k_bounds: Tuple[float, float] = (1e-5, 10),
+        L_bounds: Tuple[float, float] = (1e-3, 100),
+        beam_width: int = 3
     ) -> SolverResult:
         """
-        Inner optimization to find optimal k and L for a fixed skin value.
+        Main entry point for solving with dimensionless X-Y data.
         
         Args:
-            s: Fixed skin factor
-            pressure_data: Pressure measurements
-            time_data: Time measurements
-            flow_rate_data: Flow rate measurements
-            static_params: Static parameters
-            dynamic_params: Bounds for optimization
-            ref_x: Reference X values
-            ref_y: Reference Y values (already scaled by W)
+            x_fact: Dimensionless X array from field data
+            y_fact: Dimensionless Y array from field data
+            k_bounds: Bounds for permeability optimization (k_min, k_max)
+            L_bounds: Bounds for fracture length optimization (L_min, L_max)
+            beam_width: Number of top candidates to keep in beam search
             
         Returns:
-            SolverResult with current optimization result
+            SolverResult with optimized S, k, L
         """
-        # Define objective function to minimize
-        def objective(params):
-            k, l = params
-            
-            # Calculate current X and Y based on k and L
-            # Normalize flow rate by number of fractures
-            q_per_fracture = flow_rate_data / static_params.N
-            
-            # Calculate pressure drop (assuming initial pressure is the maximum)
-            initial_pressure = np.max(pressure_data)
-            delta_p = initial_pressure - pressure_data
-            
-            # Compute dimensionless X and Y
-            calc_x = compute_x(k, static_params.h, delta_p, static_params.mu, 
-                              static_params.Bo, q_per_fracture)
-            calc_y = compute_y(q_per_fracture, static_params.Bo, time_data, 
-                              static_params.phi, static_params.Ct, static_params.h, 
-                              delta_p, l)
-            
-            # Calculate error between calculated and reference curves
-            # Use L2 error as default (can be changed based on requirements)
-            error = l2_error(ref_x, ref_y, calc_y[:len(ref_y)])  # Trim to match lengths
-            
-            return error
+        self._ensure_library_loaded()
         
-        # Initial guess for k and L (middle of the range)
-        initial_k = (dynamic_params.k_min + dynamic_params.k_max) / 2
-        initial_L = (dynamic_params.L_min + dynamic_params.L_max) / 2
+        self.logger.info(f"Starting optimization with {len(x_fact)} data points")
+        self.logger.info(f"Bounds: k in [{k_bounds[0]:.6f}, {k_bounds[1]:.6f}], L in [{L_bounds[0]:.4f}, {L_bounds[1]:.4f}]")
         
-        # Define bounds for k and L
-        bounds = [(dynamic_params.k_min, dynamic_params.k_max),
-                  (dynamic_params.L_min, dynamic_params.L_max)]
+        # НОРМАЛИЗАЦИЯ: приводим X и Y к диапазону [0, 1]
+        # Это решает проблему несоответствия масштабов с референсными кривыми
+        x_min, x_max = np.min(x_fact), np.max(x_fact)
+        y_min, y_max = np.min(y_fact), np.max(y_fact)
         
-        # Run optimization using L-BFGS-B method
-        result = minimize(objective, [initial_k, initial_L], 
-                         method='L-BFGS-B', bounds=bounds)
+        # Нормализация к [0, 1]
+        x_fact_norm = (x_fact - x_min) / (x_max - x_min) if x_max > x_min else x_fact
+        y_fact_norm = (y_fact - y_min) / (y_max - y_min) if y_max > y_min else y_fact
         
-        if not result.success:
-            # Return a result with high error if optimization failed
-            return SolverResult(
-                S_opt=s,
-                k_opt=initial_k,
-                L_opt=initial_L,
-                error_value=float('inf'),
-                W_scale_factor=1.0
-            )
+        self.logger.info(f"Original X range: [{x_min:.4f}, {x_max:.4f}]")
+        self.logger.info(f"Normalized X range: [{np.min(x_fact_norm):.4f}, {np.max(x_fact_norm):.4f}]")
         
-        # Extract optimized parameters
-        k_opt, L_opt = result.x
-        error_value = result.fun
-        
-        # Create and return SolverResult
-        return SolverResult(
-            S_opt=s,
-            k_opt=k_opt,
-            L_opt=L_opt,
-            error_value=error_value,
-            W_scale_factor=1.0  # Placeholder, actual value would come from scaling
+        # Use the new reservoir solver with bounds
+        result = self._reservoir_solver.solve(
+            x_fact_norm, y_fact_norm,
+            k_bounds=k_bounds,
+            xf_bounds=L_bounds
         )
+        
+        # Очистка кэша после решения
+        self._reservoir_solver._x_interp = None
+        self._reservoir_solver._y_interp = None
+        
+        # The new solver returns: {skin, N, params: {k, xf}, misfit}
+        # Extract and convert to our format
+        skin_opt = result['skin']
+        N_opt = result['N']
+        params = result['params']
+        
+        # params is dict with 'k' and 'xf' keys from Bayesian optimization
+        k_opt = params.get('k', params.get('xf', 1.0))  # Handle different key names
+        L_opt = params.get('xf', params.get('k', 100.0))  # xf is fracture length
+        
+        # Ensure correct assignment based on bounds
+        if k_opt > k_bounds[1] or k_opt < k_bounds[0]:
+            k_opt = np.clip(k_opt, k_bounds[0], k_bounds[1])
+        if L_opt > L_bounds[1] or L_opt < L_bounds[0]:
+            L_opt = np.clip(L_opt, L_bounds[0], L_bounds[1])
+        
+        error_value = result['misfit']
+        
+        self.logger.info(
+            f"Optimization complete: S={skin_opt:.4f}, k={k_opt:.6f}, "
+            f"L={L_opt:.4f}, error={error_value:.6f}"
+        )
+        
+        return SolverResult(
+            S_opt=float(skin_opt),
+            k_opt=float(k_opt),
+            L_opt=float(L_opt),
+            error_value=float(error_value),
+            N_opt=float(N_opt),
+            W_scale_factor=1.0
+        )
+    
+    def get_available_skins(self) -> List[float]:
+        """Get list of available skin values from reference database."""
+        self._ensure_library_loaded()
+        return self.reference_repo.get_available_skins()
