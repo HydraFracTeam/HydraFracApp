@@ -50,6 +50,7 @@ from processing import (
     extrapolate_time,
     extrapolate_debit,
     extend_masks_to_time_grid,
+    smooth_pressure,
     )
 
 
@@ -268,8 +269,7 @@ class MyApp(QMainWindow):
         self.recalculate_dimensionless()
         
         self.show_in_text_report("Границы оптимизации успешно заданы.")
-        self.update_data_table() # обновление таблицы
-        self.update_dim_plots() # обновление размерных графиков 
+        self.refresh_ui() # обновление таблицы
         self.show_in_text_report("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
         
         self.disable_threshold_controls()
@@ -279,6 +279,7 @@ class MyApp(QMainWindow):
     def setup_preprocessing_controls(self):
         self.ui.interp_btn.clicked.connect(self.interpolate_processing_dynamic_data)
         self.ui.extrapolate_btn.clicked.connect(self.extrapolate_processing_dynamic_data)
+        self.ui.ml_filter_btn.clicked.connect(self.smooth_processing_dynamic_data)
         
     def interpolate_processing_dynamic_data(self):
         from copy import deepcopy
@@ -301,6 +302,17 @@ class MyApp(QMainWindow):
         processing = extrapolate_debit(processing)
         
         self.app_state.processing_dynamic_data = processing
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
+    
+    def smooth_processing_dynamic_data(self):
+        from copy import deepcopy
+        processing = deepcopy(self.app_state.processing_dynamic_data)
+        processing = smooth_pressure(processing)
+        
+        self.app_state.processing_dynamic_data = processing
+        
         self.recalculate_processing_dynamic_data()
         self.recalculate_dimensionless()
         self.refresh_ui()
@@ -351,6 +363,7 @@ class MyApp(QMainWindow):
     def refresh_ui(self):
         self.update_data_table()
         self.update_dim_plots()
+        self.update_dimensionless_plot()
     
 
     def update_data_table(self):

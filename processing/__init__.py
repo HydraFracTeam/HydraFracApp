@@ -5,3 +5,4 @@ from .extrapolate_debit import  extrapolate_debit
 from .rebuild_processing_dynamic import rebuild_processing_dynamic
 from .extrapolate_time import extrapolate_time
 from .extend_masks_to_time_grid import extend_masks_to_time_grid
+from .smooth_pressure import smooth_pressure

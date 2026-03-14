@@ -17,7 +17,7 @@ def calculate_burde(t: np.ndarray, dP: np.ndarray) -> np.ndarray:
 
     ln_t = np.log(t, where=(t > 0), out=np.full_like(t, np.nan))
 
-    delta_dP = np.diff(dP)
+    delta_dP = abs(np.diff(dP))
     delta_ln_t = np.diff(ln_t)
 
     burde = np.full_like(t, np.nan)

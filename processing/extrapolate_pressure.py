@@ -15,7 +15,7 @@ def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 # --------------------------------------------------
 # выбор модели в log-времени
 # --------------------------------------------------
-def select_log_model(t: np.ndarray, P: np.ndarray):
+def select_degree_model(t: np.ndarray, P: np.ndarray) -> int:
 
     positive = t[t > 0]
 
@@ -28,7 +28,6 @@ def select_log_model(t: np.ndarray, P: np.ndarray):
 
     n = len(x)
     holdout = max(int(n * 0.2), 3)
-    print(holdout)
 
     x_train = x[:-holdout]
     P_train = P[:-holdout]
@@ -55,7 +54,7 @@ def select_log_model(t: np.ndarray, P: np.ndarray):
     if not scores:
         raise RuntimeError("No valid model could be fitted")
 
-    return min(scores, key=scores.get)
+    return min(scores, key=scores.get)[1]
 
 ## линейная логарифмическая модель 
 def fit_log_linear_model(t: np.ndarray, P: np.ndarray):
@@ -124,12 +123,10 @@ def extrapolate_pressure(
     t_train = t_train[start:]
     P_train = P_train[start:]
 
-    model_type, degree = select_log_model(t_train, P_train)
-    print(model_type, degree)
+    degree = select_degree_model(t_train, P_train)
 
-    if model_type == "poly":
 
-        model, eps = fit_log_model(t_train, P_train, degree)
+    model, eps = fit_log_model(t_train, P_train, degree)
 
     t_future = t[data.t_extrapolated_mask]
     
