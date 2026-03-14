@@ -50,6 +50,7 @@ from processing import (
     extrapolate_time,
     extrapolate_debit,
     extend_masks_to_time_grid,
+    remove_pressure_outliers,
     smooth_pressure,
     )
 
@@ -280,6 +281,7 @@ class MyApp(QMainWindow):
         self.ui.interp_btn.clicked.connect(self.interpolate_processing_dynamic_data)
         self.ui.extrapolate_btn.clicked.connect(self.extrapolate_processing_dynamic_data)
         self.ui.ml_filter_btn.clicked.connect(self.smooth_processing_dynamic_data)
+        self.ui.outlier_btn.clicked.connect(self.remove_outliers_in_processing_dynamic_data)
         
     def interpolate_processing_dynamic_data(self):
         from copy import deepcopy
@@ -310,6 +312,17 @@ class MyApp(QMainWindow):
         from copy import deepcopy
         processing = deepcopy(self.app_state.processing_dynamic_data)
         processing = smooth_pressure(processing)
+        
+        self.app_state.processing_dynamic_data = processing
+        
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
+    
+    def remove_outliers_in_processing_dynamic_data(self):
+        from copy import deepcopy
+        processing = deepcopy(self.app_state.processing_dynamic_data)
+        processing = remove_pressure_outliers(processing)
         
         self.app_state.processing_dynamic_data = processing
         
