@@ -52,6 +52,7 @@ from processing import (
     extend_masks_to_time_grid,
     remove_pressure_outliers,
     smooth_pressure,
+    raw_to_processing,
     )
 
 
@@ -282,6 +283,7 @@ class MyApp(QMainWindow):
         self.ui.extrapolate_btn.clicked.connect(self.extrapolate_processing_dynamic_data)
         self.ui.ml_filter_btn.clicked.connect(self.smooth_processing_dynamic_data)
         self.ui.outlier_btn.clicked.connect(self.remove_outliers_in_processing_dynamic_data)
+        self.ui.reset_plots_btn.clicked.connect(self.reset_preprocessing_dynamic_data)
         
     def interpolate_processing_dynamic_data(self):
         from copy import deepcopy
@@ -326,6 +328,12 @@ class MyApp(QMainWindow):
         
         self.app_state.processing_dynamic_data = processing
         
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
+    
+    def reset_preprocessing_dynamic_data(self):
+        self.app_state.processing_dynamic_data = raw_to_processing(self.app_state.raw_dynamic_data)
         self.recalculate_processing_dynamic_data()
         self.recalculate_dimensionless()
         self.refresh_ui()
@@ -378,6 +386,9 @@ class MyApp(QMainWindow):
         self.update_dim_plots()
         self.update_dimensionless_plot()
     
+    def reset_ui(self):
+        self.reset_plots()
+        self.reset_data_table()
 
     def update_data_table(self):
         update_data_table_view(
@@ -388,6 +399,11 @@ class MyApp(QMainWindow):
         
     def reset_data_table(self):
         clear_data_table(self.ui.data_table)
+    
+    def reset_plots(self):
+        clear_plot(self.ui.p_graphic)
+        clear_plot(self.ui.q_graphic)
+        clear_plot(self.ui.dim_plot)
     
     def update_dim_plots(self):
         plot_pressure(
@@ -404,11 +420,6 @@ class MyApp(QMainWindow):
             Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
             Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
         )
-
-    
-    def reset_dim_plots(self):
-        clear_plot(self.ui.p_graphic)
-        clear_plot(self.ui.q_graphic)
     
     def update_dimensionless_plot(self):
 
@@ -477,7 +488,7 @@ class MyApp(QMainWindow):
         
         
     ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
-    def reset_all_data(self):
+    def reset_all_data(self): # сброс всех данных
         self.app_state = AppState()
         self.enable_load_controls()
         self.disable_static_controls()
@@ -485,9 +496,9 @@ class MyApp(QMainWindow):
         self.disable_calculation_controls()
         self.ui.text_report.clear()
         self.reset_data_table()
-        self.reset_dim_plots()
+        self.reset_plots()
         self.ui.load_file_label.setText("Файл не загружен")
-            
+        
     def show_in_text_report(self, text: str) -> None:
         self.ui.text_report.append(text)
     
