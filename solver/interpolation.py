@@ -4,6 +4,20 @@ from scipy.interpolate import interp1d
 
 def interpolate_input_curve(x_fact, y_fact, x_ref):
     """
+    Интерполяция пользовательской кривой на сетку эталонной кривой.
+    
+    Args:
+        x_fact (np.ndarray): X координаты входной кривой
+        y_fact (np.ndarray): Y координаты входной кривой
+        x_ref (np.ndarray): Целевая сетка X
+        
+    Returns:
+        np.ndarray: Интерполированные значения Y
+        
+    Raises:
+        ValueError: Если входная кривая почти не пересекается с сеткой
+    """
+    """
     Интерполирует пользовательскую кривую на сетку библиотеки.
 
     Parameters

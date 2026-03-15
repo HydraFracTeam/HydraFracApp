@@ -12,6 +12,16 @@ logger = logging.getLogger(__name__)
 class ReservoirSolver:
 
     def __init__(self, skin_library, progress_callback=None):
+        """
+        Конструктор ReservoirSolver.
+        
+        Args:
+            skin_library (Dict): Библиотека эталонных кривых, сгруппированная по Skin:
+                {skin_value: [samples]}, где sample содержит:
+                    - 'dynamic': DataFrame с X, Y
+                    - 'h', 'N', 'W', 'L', 'a/L': параметры
+            progress_callback (callable, optional): Функция обратного вызова для прогресса
+        """
 
         self.skin_library = skin_library
         self.progress_callback = progress_callback
@@ -33,7 +43,21 @@ class ReservoirSolver:
         """
         Однократная подготовка входной кривой.
         
-        Интерполирует входную кривую на стандартную сетку (логарифмическую).
+        Интерполирует входную кривую на сетку (логарифмическую по умолчанию).
+        Результат сохраняется для повторного использования (кэширование).
+        
+        Args:
+            x_fact (np.ndarray): X координаты входной кривой
+            y_fact (np.ndarray): Y координаты входной кривой
+            target_grid (np.ndarray, optional): Целевая сетка. Если None, создается логарифмическая (200 точек)
+            
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: (x_grid, y_interp) - интерполированная кривая
+        """
+        """
+        Однократная подготовка входной кривой.
+        
+        Интерполирует входную кривую на сетку референсных кривых.
         Результат сохраняется для повторного использования.
         
         Args:
@@ -54,13 +78,14 @@ class ReservoirSolver:
             logger.debug("Используем кэшированную интерполяцию")
             return self._x_interp, self._y_interp
         
-        # Создаем стандартную логарифмическую сетку
-        if target_grid is None:
+        # Если передана целевая сетка - используем её
+        if target_grid is not None:
+            x_grid = target_grid
+        else:
+            # Создаем стандартную логарифмическую сетку
             x_min = np.max([np.min(x_fact), 1e-10])  # Избегаем нуля
             x_max = np.max(x_fact)
             x_grid = np.logspace(np.log10(x_min), np.log10(x_max), 200)
-        else:
-            x_grid = target_grid
         
         # Интерполируем входную кривую на сетку
         try:
@@ -100,23 +125,31 @@ class ReservoirSolver:
         
         Использует предварительно интерполированную входную кривую (self._x_interp, self._y_interp).
         Референсная кривая интерполируется на ту же сетку.
+        
+        БЕЗ НОРМАЛИЗАЦИИ - только приведение к общей сетке.
+        
+        Args:
+            x_ref (np.ndarray): X координаты референсной кривой
+            y_ref (np.ndarray): Y координаты референсной кривой
+            
+        Returns:
+            float: Медианное значение ошибки по всем метрикам и производным
         """
         if self._x_interp is None or self._y_interp is None:
             raise ValueError("Входная кривая не подготовлена. Вызовите _prepare_input_curve()")
         
         scores = []
         
-        # НОРМАЛИЗАЦИЯ: приводим обе кривые к диапазону [0, 1]
-        # Это решает проблему несоответствия масштабов X-Y между фактом и референсом
-        x_interp_norm = (self._x_interp - np.min(self._x_interp)) / (np.max(self._x_interp) - np.min(self._x_interp))
-        y_interp_norm = (self._y_interp - np.min(self._y_interp)) / (np.max(self._y_interp) - np.min(self._y_interp))
+        # Приводим входную кривую к сетке референса (self._x_interp уже на нужной сетке)
+        # Но для честного сравнения - интерполируем обе на общую сетку
         
-        x_ref_norm = (x_ref - np.min(x_ref)) / (np.max(x_ref) - np.min(x_ref))
-        y_ref_norm = (y_ref - np.min(y_ref)) / (np.max(y_ref) - np.min(y_ref))
+        # Используем сетку входной кривой
+        x_common = self._x_interp
+        y_fact_common = self._y_interp
         
-        # Интерполируем нормализованный референс на сетку нормализованной входной кривой
+        # Интерполируем референс на сетку входной кривой
         try:
-            y_ref_interp = interpolate_input_curve(x_ref_norm, y_ref_norm, x_interp_norm)
+            y_ref_interp = interpolate_input_curve(x_ref, y_ref, x_common)
             
             # Фильтруем nan
             valid_mask = ~np.isnan(y_ref_interp)
@@ -124,8 +157,8 @@ class ReservoirSolver:
                 logger.debug(f"  Мало точек после интерполяции референса: {np.sum(valid_mask)}")
                 return np.inf
             
-            x_common = x_interp_norm[valid_mask]
-            y_fact_common = y_interp_norm[valid_mask]
+            x_common = x_common[valid_mask]
+            y_fact_common = y_fact_common[valid_mask]
             y_ref_common = y_ref_interp[valid_mask]
             
         except ValueError as e:
@@ -151,7 +184,18 @@ class ReservoirSolver:
     # -----------------------------
 
     def select_skin(self, beam=3):
-
+        """
+        Выбор лучших Skin-факторов методом Beam Search.
+        
+        Args:
+            beam (int): Количество лучших кандидатов для отбора (по умолчанию 3)
+            
+        Returns:
+            Tuple[List[float], Dict[float, float]]: 
+                - список top-k Skin значений
+                - словарь {skin: ошибка}
+        """
+        
         scores = {}
 
         for skin, samples in self.skin_library.items():
@@ -176,7 +220,18 @@ class ReservoirSolver:
     # -----------------------------
 
     def select_N(self, skins):
-
+        """
+        Выбор оптимального N для выбранных Skin-кандидатов.
+        
+        Args:
+            skins (List[float]): Список Skin-кандидатов из этапа 1
+            
+        Returns:
+            Tuple[Tuple[float, int], Dict[Tuple[float, int], float]]:
+                - (best_skin, best_N)
+                - словарь ошибок {(skin, N): ошибка}
+        """
+        
         scores = {}
 
         for skin in skins:
@@ -201,27 +256,34 @@ class ReservoirSolver:
     # -----------------------------
 
     def optimize_continuous(self, sample, k_bounds=(1e-5, 10), xf_bounds=(1e-3, 100)):
+        """
+        Байесовская оптимизация непрерывных параметров k и xf.
+        
+        Args:
+            sample (Dict): Выбранная эталонная кривая из библиотеки
+            k_bounds (Tuple[float, float]): Границы проницаемости (мин, макс) в мД
+            xf_bounds (Tuple[float, float]): Границы полудлины трещины (мин, макс) в м
+            
+        Returns:
+            Tuple[Dict[str, float], float]: 
+                - params с ключами 'k' и 'xf'
+                - best_score - лучшее значение ошибки
+        """
 
         x_ref = sample["dynamic"]["X"].values
         y_ref = sample["dynamic"]["Y"].values
         
         logger.info(f"  Оптимизация непрерывных параметров:")
         logger.info(f"    Границы: k in [{k_bounds[0]:.6f}, {k_bounds[1]:.6f}], xf in [{xf_bounds[0]:.4f}, {xf_bounds[1]:.4f}]")
-        
-        # Нормализуем референс для сравнения (масштаб [0, 1])
-        x_ref_norm = (x_ref - np.min(x_ref)) / (np.max(x_ref) - np.min(x_ref))
-        y_ref_norm = (y_ref - np.min(y_ref)) / (np.max(y_ref) - np.min(y_ref))
 
         def objective(params):
             k, xf = params
 
-            # Масштабируем референсную кривую по Y с помощью k
-            # xf используется для дополнительного масштабирования формы кривой
-            # Применяем нелинейное преобразование для учета влияния xf
-            y_mod = y_ref_norm * k * (1 + 0.1 * np.log10(xf + 1))
+            # Модифицируем эталонную кривую: масштабируем по Y с помощью k
+            y_mod = y_ref * k * (1 + 0.1 * np.log10(xf + 1))
 
-            # Считаем ошибку с модифицированной кривой
-            error = self.ensemble_misfit(x_ref_norm, y_mod)
+            # Считаем ошибку напрямую - без нормализации
+            error = self.ensemble_misfit(x_ref, y_mod)
             
             return error
 
@@ -251,6 +313,28 @@ class ReservoirSolver:
     # -----------------------------
 
     def solve(self, x_fact, y_fact, k_bounds=(1e-5, 10), xf_bounds=(1e-3, 100)):
+        """
+        Главный метод запуска оптимизации.
+        
+        Выполняет полный цикл оптимизации:
+        1. Подготовка входной кривой
+        2. Выбор Skin-фактора (Beam Search)
+        3. Выбор N (количество трещин)
+        4. Байесовская оптимизация k и xf
+        
+        Args:
+            x_fact (np.ndarray): X координаты входных данных (фактические)
+            y_fact (np.ndarray): Y координаты входных данных (фактические)
+            k_bounds (Tuple[float, float]): Границы проницаемости (мин, макс) в мД
+            xf_bounds (Tuple[float, float]): Границы полудлины трещины (мин, макс) в м
+            
+        Returns:
+            Dict: Результат оптимизации с ключами:
+                - 'skin': оптимальный Skin-фактор
+                - 'N': оптимальное количество трещин
+                - 'params': {'k': ..., 'xf': ...}
+                - 'misfit': значение ошибки
+        """
         
         logger.info("=" * 60)
         logger.info("НАЧАЛО ОПТИМИЗАЦИИ")
