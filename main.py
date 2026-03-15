@@ -28,24 +28,32 @@ from storage.reference_repository import ReferenceCurveDBManager
 from config import settings
 
 # pydantic
-from schemas.static_params import StaticParams
+from schemas import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
 # модельки
-from core.models import ProcessingDynamicData, DimensionlessData, SolverState
+from core.models import DimensionlessData, SolverState
 # хелперы, расчеты
 from core.dimensionless import calculate_x, calculate_y
 from helpers import (
     calculate_L_value, 
     calculate_k_value,
-    calculate_dP,
-    calculate_burde,
-    normalize_Q_by_n,
     )
 from utils import get_file_suffix, get_filename
 from utils import format_pydantic_error
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
-
+from processing import (
+    rebuild_processing_dynamic,
+    interpolate_pressure,
+    interpolate_debit,
+    extrapolate_pressure,
+    extrapolate_time,
+    extrapolate_debit,
+    extend_masks_to_time_grid,
+    remove_pressure_outliers,
+    smooth_pressure,
+    raw_to_processing,
+    )
 
 
 class MyApp(QMainWindow):
@@ -91,6 +99,7 @@ class MyApp(QMainWindow):
         self.setup_static_data_menu()
         self.setup_threshold_menu()
         self.connect_graphic_checkboxes()
+        self.setup_preprocessing_controls()
         # Создаем  интерфейс с вкладками
         setup_add_interface(self)
 
@@ -256,18 +265,78 @@ class MyApp(QMainWindow):
         self._init_solver_state()
         
         # сохраняем динамические данные для работы
-        self.build_processing_dynamic()
+        self.recalculate_processing_dynamic_data()
         
         # расчитаем промежуточные XY после ввода
-        self.compute_dimensionless()
+        self.recalculate_dimensionless()
         
         self.show_in_text_report("Границы оптимизации успешно заданы.")
-        self.update_data_table() # обновление таблицы
-        self.update_dim_plots() # обновление размерных графиков 
+        self.refresh_ui() # обновление таблицы
         self.show_in_text_report("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
         
         self.disable_threshold_controls()
         self.enable_calculation_controls()
+        
+    ## Предобработка данных через UI
+    def setup_preprocessing_controls(self):
+        self.ui.interp_btn.clicked.connect(self.interpolate_processing_dynamic_data)
+        self.ui.extrapolate_btn.clicked.connect(self.extrapolate_processing_dynamic_data)
+        self.ui.ml_filter_btn.clicked.connect(self.smooth_processing_dynamic_data)
+        self.ui.outlier_btn.clicked.connect(self.remove_outliers_in_processing_dynamic_data)
+        self.ui.reset_plots_btn.clicked.connect(self.reset_preprocessing_dynamic_data)
+        
+    def interpolate_processing_dynamic_data(self):
+        from copy import deepcopy
+        processing = deepcopy(self.app_state.processing_dynamic_data)
+        processing = extend_masks_to_time_grid(processing)
+        processing = interpolate_pressure(processing)
+        processing = interpolate_debit(processing)
+        
+        self.app_state.processing_dynamic_data = processing
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
+    
+    def extrapolate_processing_dynamic_data(self):
+        from copy import deepcopy
+        processing = deepcopy(self.app_state.processing_dynamic_data)
+        processing = extrapolate_time(processing)
+        processing = extend_masks_to_time_grid(processing)
+        processing = extrapolate_pressure(processing)
+        processing = extrapolate_debit(processing)
+        
+        self.app_state.processing_dynamic_data = processing
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
+    
+    def smooth_processing_dynamic_data(self):
+        from copy import deepcopy
+        processing = deepcopy(self.app_state.processing_dynamic_data)
+        processing = smooth_pressure(processing)
+        
+        self.app_state.processing_dynamic_data = processing
+        
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
+    
+    def remove_outliers_in_processing_dynamic_data(self):
+        from copy import deepcopy
+        processing = deepcopy(self.app_state.processing_dynamic_data)
+        processing = remove_pressure_outliers(processing)
+        
+        self.app_state.processing_dynamic_data = processing
+        
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
+    
+    def reset_preprocessing_dynamic_data(self):
+        self.app_state.processing_dynamic_data = raw_to_processing(self.app_state.raw_dynamic_data)
+        self.recalculate_processing_dynamic_data()
+        self.recalculate_dimensionless()
+        self.refresh_ui()
     
     ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
     def enable_load_controls(self) -> None:
@@ -315,7 +384,11 @@ class MyApp(QMainWindow):
     def refresh_ui(self):
         self.update_data_table()
         self.update_dim_plots()
+        self.update_dimensionless_plot()
     
+    def reset_ui(self):
+        self.reset_plots()
+        self.reset_data_table()
 
     def update_data_table(self):
         update_data_table_view(
@@ -327,21 +400,26 @@ class MyApp(QMainWindow):
     def reset_data_table(self):
         clear_data_table(self.ui.data_table)
     
+    def reset_plots(self):
+        clear_plot(self.ui.p_graphic)
+        clear_plot(self.ui.q_graphic)
+        clear_plot(self.ui.dim_plot)
+    
     def update_dim_plots(self):
         plot_pressure(
             plot = self.ui.p_graphic,
             t = self.app_state.processing_dynamic_data.t,
             P = self.app_state.processing_dynamic_data.P,
+            P_interpolated_mask=self.app_state.processing_dynamic_data.P_interpolated_mask,
+            P_extrapolated_mask=self.app_state.processing_dynamic_data.P_extrapolated_mask,
         )
         plot_debit(
             plot = self.ui.q_graphic,
             t = self.app_state.processing_dynamic_data.t,
             Q = self.app_state.processing_dynamic_data.Q,
+            Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
+            Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
         )
-    
-    def reset_dim_plots(self):
-        clear_plot(self.ui.p_graphic)
-        clear_plot(self.ui.q_graphic)
     
     def update_dimensionless_plot(self):
 
@@ -353,11 +431,9 @@ class MyApp(QMainWindow):
                 return
 
             plot_xy(
-                plot,
-                self.app_state.dimensionless.X,
-                self.app_state.dimensionless.Y,
-                label="Калькулированные XY параметры",
-                color=(50,120,220),
+                plot=plot,
+                X=self.app_state.dimensionless.X,
+                Y=self.app_state.dimensionless.Y,
             )
 
         if self.ui.cb_burde_curve.isChecked():
@@ -365,15 +441,13 @@ class MyApp(QMainWindow):
                 return
 
             plot_burde(
-                plot,
-                self.app_state.processing_dynamic_data.t,
-                self.app_state.processing_dynamic_data.burde,
-                label="Производная Бурде",
-                color=(200,80,60),
+                plot=plot,
+                t=self.app_state.processing_dynamic_data.t,
+                burde=self.app_state.processing_dynamic_data.burde,
             )
     
     ## ВЫЗОВ РАСЧЕТОВ
-    def compute_dimensionless(self):
+    def recalculate_dimensionless(self):
         dyn = self.app_state.processing_dynamic_data
         static = self.app_state.static_params
         solver = self.app_state.solver_state
@@ -400,46 +474,21 @@ class MyApp(QMainWindow):
             )
         )
         
-    def build_processing_dynamic(self):
-
+    def recalculate_processing_dynamic_data(self):
         raw = self.app_state.raw_dynamic_data
         static = self.app_state.static_params
-        current = self.app_state.processing_dynamic_data
-
-        # источник данных
-        if current is None:
-            t = raw.t
-            P = raw.P
-            Q = raw.Q
-            Q_is_normalized = False
-        else:
-            t = current.t
-            P = current.P
-            Q = current.Q
-            Q_is_normalized = current.is_Q_normalized
-
-        # нормализация дебита
-        if not Q_is_normalized:
-            Q = normalize_Q_by_n(Q_total=Q, N=static.N)
-            Q_is_normalized = True
-
-        # dP
-        dP = calculate_dP(P=P, P0=static.P0)
-
-        # Bourdet
-        burde = calculate_burde(t=t, dP=dP)
-
-        self.app_state.processing_dynamic_data = ProcessingDynamicData(
-            t=t,
-            P=P,
-            Q=Q,
-            dP=dP,
-            burde=burde,
-            is_Q_normalized=Q_is_normalized
+        dyn = self.app_state.processing_dynamic_data
+        
+        self.app_state.processing_dynamic_data = rebuild_processing_dynamic(
+            raw_data=raw,
+            static_data=static,
+            current_processing_data=dyn,
         )
+    
+        
         
     ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
-    def reset_all_data(self):
+    def reset_all_data(self): # сброс всех данных
         self.app_state = AppState()
         self.enable_load_controls()
         self.disable_static_controls()
@@ -447,9 +496,9 @@ class MyApp(QMainWindow):
         self.disable_calculation_controls()
         self.ui.text_report.clear()
         self.reset_data_table()
-        self.reset_dim_plots()
+        self.reset_plots()
         self.ui.load_file_label.setText("Файл не загружен")
-            
+        
     def show_in_text_report(self, text: str) -> None:
         self.ui.text_report.append(text)
     
