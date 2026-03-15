@@ -220,8 +220,8 @@ class ReservoirSolver:
             # Применяем нелинейное преобразование для учета влияния xf
             y_mod = y_ref_norm * k * (1 + 0.1 * np.log10(xf + 1))
 
-            # Считаем ошибку (ensemble_misfit теперь использует внутреннюю нормализацию)
-            error = self.ensemble_misfit(x_ref, y_ref)
+            # Считаем ошибку с модифицированной кривой
+            error = self.ensemble_misfit(x_ref_norm, y_mod)
             
             return error
 
