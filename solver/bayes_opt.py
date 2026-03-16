@@ -13,6 +13,18 @@ def bayesian_fit(objective, bounds, n_trials=50, progress_callback=None):
     Bayesian optimization using Optuna.
     
     Args:
+        objective: Функция для минимизации
+        bounds (Dict): Словарь границ параметров {name: (low, high)}
+        n_trials (int): Количество итераций оптимизации
+        progress_callback: Функция обратного вызова для отображения прогресса
+        
+    Returns:
+        Tuple[Dict, float]: (best_params, best_value)
+    """
+    """
+    Bayesian optimization using Optuna.
+    
+    Args:
         objective: Function to minimize
         bounds: Dictionary of parameter bounds {name: (low, high)}
         n_trials: Number of optimization trials
