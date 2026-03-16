@@ -17,10 +17,8 @@ def update_data_table_view(table_view: QTableView, processing: ProcessingDynamic
         "P": processing.P,
         "dP": processing.dP,
         "Q": processing.Q,
+        'dP/dt': processing.burde,
     }
-
-    if processing.P_interpolated is not None:
-        data["P_interpolated"] = processing.P_interpolated
 
     if dimensionless is not None:
         data["X"] = dimensionless.X
