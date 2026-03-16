@@ -94,7 +94,7 @@ class AutosplitDialog(QDialog):
         
         # Предупреждение
         warning_frame = QFrame()
-        warning_frame.setStyleSheet("background-color: #FFF3CD; border: 1px solid #FFEAA7; padding: 10px;")
+        warning_frame.setStyleSheet("border: 1px solid #FFEAA7; padding: 10px;")
         warning_layout = QVBoxLayout(warning_frame)
         warning_label = QLabel(
             "<b>⚠ Внимание:</b><br>"

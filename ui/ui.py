@@ -274,7 +274,7 @@ class Ui_MainWindow(object):
         self.reservoir_pressure_spinbox.setEnabled(False)
         self.reservoir_pressure_spinbox.setReadOnly(False)
         self.reservoir_pressure_spinbox.setMaximum(100000.000000000000000)
-        self.reservoir_pressure_spinbox.setValue(100.000000000000000)
+        self.reservoir_pressure_spinbox.setValue(300.000000000000000)
 
         self.horizontalLayout_25.addWidget(self.reservoir_pressure_spinbox)
 
@@ -444,6 +444,7 @@ class Ui_MainWindow(object):
         self.skin_result_spinbox.setObjectName(u"skin_result_spinbox")
         self.skin_result_spinbox.setEnabled(False)
         self.skin_result_spinbox.setReadOnly(True)
+        self.skin_result_spinbox.setMaximum(30.000000000000000)
 
         self.horizontalLayout_24.addWidget(self.skin_result_spinbox)
 
@@ -461,6 +462,8 @@ class Ui_MainWindow(object):
         self.permeability_result_spinbox.setObjectName(u"permeability_result_spinbox")
         self.permeability_result_spinbox.setEnabled(False)
         self.permeability_result_spinbox.setReadOnly(True)
+        self.permeability_result_spinbox.setDecimals(4)
+        self.permeability_result_spinbox.setMaximum(1000.000000000000000)
 
         self.horizontalLayout_23.addWidget(self.permeability_result_spinbox)
 
@@ -478,6 +481,8 @@ class Ui_MainWindow(object):
         self.frac_length_result_spinbox.setObjectName(u"frac_length_result_spinbox")
         self.frac_length_result_spinbox.setEnabled(False)
         self.frac_length_result_spinbox.setReadOnly(True)
+        self.frac_length_result_spinbox.setDecimals(2)
+        self.frac_length_result_spinbox.setMaximum(100000.000000000000000)
 
         self.horizontalLayout_22.addWidget(self.frac_length_result_spinbox)
 

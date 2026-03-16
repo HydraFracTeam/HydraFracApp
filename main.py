@@ -29,6 +29,7 @@ from ui import (
     plot_xy,
     plot_burde,
     clear_plot,
+    plot_autosplit_line,
     PasteDataDialog,
     )
 import pyqtgraph as pg
@@ -499,14 +500,6 @@ class MyApp(QMainWindow):
             static_params = self.app_state.static_params
             thresholds = self.app_state.optimize_thresholds
             
-            # Calculate dimensionless X, Y from field data
-            # Compute pressure drop
-            initial_pressure = np.max(dynamic_data.P)
-            delta_p = initial_pressure - dynamic_data.P
-            
-            # Normalize flow rate by number of fractures
-            q_per_fracture = dynamic_data.Q / static_params.N
-            
             # Calculate dimensionless parameters
             # We need to estimate initial k and L for X, Y calculation
             # Use middle of bounds as initial estimate
@@ -516,23 +509,23 @@ class MyApp(QMainWindow):
             x_fact = calculate_x(
                 k=k_init,
                 h=static_params.h,
-                delta_p=delta_p,
+                delta_p=dynamic_data.dP,
                 mu=static_params.mu,
                 B=static_params.B,
-                Q=q_per_fracture
+                Q=dynamic_data.Q,
             )
             
             y_fact = calculate_y(
-                Q=q_per_fracture,
+                Q=dynamic_data.Q,
                 B=static_params.B,
                 t=dynamic_data.t,
                 phi=static_params.phi,
                 ct=static_params.ct,
                 h=static_params.h,
-                delta_p=delta_p,
-                L=L_init
+                delta_p=dynamic_data.dP,
+                L=L_init,
             )
-            
+
             # Ensure positive values for log-scale processing
             mask = (x_fact > 0) & (y_fact > 0)
             x_fact = x_fact[mask]
@@ -718,30 +711,11 @@ class MyApp(QMainWindow):
             if plot is None:
                 return
             
-            # Добавляем вертикальную линию (yellow dashed)
-            line = pg.InfiniteLine(
-                pos=split_time,
-                angle=90,
-                pen=pg.mkPen(color='yellow', width=2, style=Qt.DashLine),
-                label='AUTO SPLIT',
-                labelOpts={
-                    'position': 0.95,
-                    'color': 'yellow',
-                    'fill': (0, 0, 0, 100)
-                }
+            plot_autosplit_line(
+                plot=self.ui.p_graphic,
+                split_time=split_time,
+                split_pressure=split_pressure,
             )
-            plot.addItem(line)
-            
-            # Добавляем точку на кривой
-            scatter = pg.ScatterPlotItem(
-                x=[split_time],
-                y=[split_pressure],
-                pen=pg.mkPen(color='yellow', width=2),
-                brush=pg.mkBrush(color='yellow'),
-                size=10,
-                symbol='o'
-            )
-            plot.addItem(scatter)
             
             self.logger.info(f"Отображена линия AUTO SPLIT: t={split_time:.2f}, P={split_pressure:.2f}")
         except Exception as e:
