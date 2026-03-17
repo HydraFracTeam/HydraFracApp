@@ -125,7 +125,7 @@
               <item>
                <widget class="QLabel" name="well_length_label">
                 <property name="text">
-                 <string>Длина пласта, м</string>
+                 <string>Длина скважины, м</string>
                 </property>
                </widget>
               </item>
@@ -155,7 +155,7 @@
               <item>
                <widget class="QLabel" name="well_height_label">
                 <property name="text">
-                 <string>Толщина пласта, м</string>
+                 <string>Толщина скважины, м</string>
                 </property>
                </widget>
               </item>

@@ -66,7 +66,7 @@ from processing import (
     smooth_pressure,
     raw_to_processing,
     )
-from processing.autosplitter import detect_split_point, get_split_info, split_data
+from processing.autosplitter import get_split_info
 from ui.autosplit_dialog import AutosplitDialog
 
 

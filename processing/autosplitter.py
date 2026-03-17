@@ -20,23 +20,6 @@ logger = logging.getLogger(__name__)
 MIN_POINTS = 50
 MIN_PRESSURE_RANGE = 1.0  # Минимальный размах давления для активации
 
-
-def calculate_pressure_derivative(t: np.ndarray, p: np.ndarray) -> np.ndarray:
-    """
-    Расчёт производной давления по времени dp/dt.
-    
-    Args:
-        t: Время
-        p: Давление
-        
-    Returns:
-        np.ndarray: Производная dp/dt
-    """
-    # Используем numpy.gradient для численного дифференцирования
-    dpdt = np.gradient(p, t)
-    return dpdt
-
-
 # Пороговое значение времени для разделения КСД/КВД
 # t ≤ 50000 - КСД (кривая стабилизации давления)
 # t > 50000.01 - КВД (кривая восстановления давления)
