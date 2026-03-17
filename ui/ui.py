@@ -570,13 +570,6 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_4.addWidget(self.outlier_btn)
 
-        self.export_btn = QPushButton(self.control_gbox)
-        self.export_btn.setObjectName(u"export_btn")
-        sizePolicy6.setHeightForWidth(self.export_btn.sizePolicy().hasHeightForWidth())
-        self.export_btn.setSizePolicy(sizePolicy6)
-
-        self.verticalLayout_4.addWidget(self.export_btn)
-
         self.reset_plots_btn = QPushButton(self.control_gbox)
         self.reset_plots_btn.setObjectName(u"reset_plots_btn")
         sizePolicy6.setHeightForWidth(self.reset_plots_btn.sizePolicy().hasHeightForWidth())
@@ -637,6 +630,16 @@ class Ui_MainWindow(object):
         self.cb_calc_XY.setObjectName(u"cb_calc_XY")
 
         self.verticalLayout_5.addWidget(self.cb_calc_XY)
+
+        self.cb_main_ref_XY = QCheckBox(self.groupBox)
+        self.cb_main_ref_XY.setObjectName(u"cb_main_ref_XY")
+
+        self.verticalLayout_5.addWidget(self.cb_main_ref_XY)
+
+        self.cb_neighbours_ref_XY = QCheckBox(self.groupBox)
+        self.cb_neighbours_ref_XY.setObjectName(u"cb_neighbours_ref_XY")
+
+        self.verticalLayout_5.addWidget(self.cb_neighbours_ref_XY)
 
 
         self.verticalLayout_7.addWidget(self.groupBox)
@@ -759,13 +762,14 @@ class Ui_MainWindow(object):
         self.extrapolate_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u0442\u0440\u0430\u043f\u043e\u043b\u0438\u0440\u043e\u0432\u0430\u0442\u044c", None))
         self.ml_filter_btn.setText(QCoreApplication.translate("MainWindow", u"ML \u0444\u0438\u043b\u044c\u0442\u0440\u0430\u0446\u0438\u044f", None))
         self.outlier_btn.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0438\u0442\u044c \u0432\u044b\u0431\u0440\u043e\u0441\u044b", None))
-        self.export_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.reset_plots_btn.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
         self.groupBox_2.setTitle(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0438 \u0434\u0435\u0431\u0438\u0442\u0430", None))
         self.dimensionless_gbox.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0441\u0447\u0435\u0442\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.groupBox.setTitle(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u041b\u043e\u0433\u0430\u0440\u0438\u0444\u043c\u0438\u0447\u0435\u0441\u043a\u0438\u0435", None))
         self.cb_burde_curve.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u043d\u0430\u044f \u0411\u0443\u0440\u0434\u0435 (dP/dt)", None))
-        self.cb_calc_XY.setText(QCoreApplication.translate("MainWindow", u"\u041a\u0430\u043b\u044c\u043a\u0443\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435 X-Y", None))
+        self.cb_calc_XY.setText(QCoreApplication.translate("MainWindow", u"\u041a\u0430\u043b\u044c\u043a\u0443\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435 \u0432\u0445\u043e\u0434\u043d\u044b\u0435 X-Y", None))
+        self.cb_main_ref_XY.setText(QCoreApplication.translate("MainWindow", u"\u041a\u0430\u043b\u044c\u043a\u0443\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435 \u044d\u0442\u0430\u043b\u043e\u043d\u043d\u044b\u0435 X-Y", None))
+        self.cb_neighbours_ref_XY.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043e\u0441\u0435\u0434\u0438 \u0434\u043b\u044f \u044d\u0442\u0430\u043b\u043e\u043d\u043d\u044b\u0445 X-Y", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.timeseries_tab), QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.data_tab), QCoreApplication.translate("MainWindow", u"\u0422\u0430\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.type_curves_tab), QCoreApplication.translate("MainWindow", u"\u042d\u0442\u0430\u043b\u043e\u043d\u043d\u044b\u0435 \u043a\u0440\u0438\u0432\u044b\u0435", None))
