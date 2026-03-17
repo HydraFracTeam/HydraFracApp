@@ -27,7 +27,8 @@ class ReservoirSolver:
         self.progress_callback = progress_callback
 
         self.derivative_modes = ["linear", "loglog"]
-        self.metric_types = ["L2", "L1", "integral"]
+        # По умолчанию используем только интегральную метрику
+        self.metric_types = ["integral"]
         
         # Кэш для интерполированной входной кривой
         self._x_interp = None
@@ -180,15 +181,21 @@ class ReservoirSolver:
         return np.median(scores)
 
     # -----------------------------
-    # STEP 1 — SKIN
+    # STEP 1 — SKIN (с учётом фиксированного N)
     # -----------------------------
 
-    def select_skin(self, beam=3):
+    def select_skin(self, beam=3, N_fixed=None):
         """
         Выбор лучших Skin-факторов методом Beam Search.
         
+        Алгоритм:
+        1. Если задан N_fixed - сначала фильтруем по N
+        2. Для каждого Skin берём медианные значения других параметров (h, W, L, a/L)
+        3. Из кривых с медианными параметрами выбираем лучшую для каждого Skin
+        
         Args:
             beam (int): Количество лучших кандидатов для отбора (по умолчанию 3)
+            N_fixed (int, optional): Фиксированное количество трещин для фильтрации
             
         Returns:
             Tuple[List[float], Dict[float, float]]: 
@@ -199,32 +206,65 @@ class ReservoirSolver:
         scores = {}
 
         for skin, samples in self.skin_library.items():
-
-            best = np.inf
-
-            for sample in samples:
-
-                x_ref = sample["dynamic"]["X"].values
-                y_ref = sample["dynamic"]["Y"].values
+            
+            # ШАГ 1: Фильтрация по N если задан
+            if N_fixed is not None:
+                filtered_samples = [s for s in samples if s["N"] == N_fixed]
+                if not filtered_samples:
+                    # Если точного N нет - ищем ближайший
+                    available_N = list(set(s["N"] for s in samples))
+                    closest_N = min(available_N, key=lambda n: abs(n - N_fixed))
+                    filtered_samples = [s for s in samples if s["N"] == closest_N]
+            else:
+                filtered_samples = samples
+            
+            if not filtered_samples:
+                continue
+            
+            # ШАГ 2: Находим медианные значения параметров (h, W, L, a/L)
+            h_vals = [s["h"] for s in filtered_samples]
+            w_vals = [s["W"] for s in filtered_samples]
+            l_vals = [s["L"] for s in filtered_samples]
+            al_vals = [s["a/L"] for s in filtered_samples]
+            
+            h_median = np.median(h_vals)
+            w_median = np.median(w_vals)
+            l_median = np.median(l_vals)
+            al_median = np.median(al_vals)
+            
+            # ШАГ 3: Находим образец ближайший к медиане
+            best_sample = None
+            best_diff = np.inf
+            
+            for sample in filtered_samples:
+                diff = (abs(sample["h"] - h_median) + 
+                        abs(sample["W"] - w_median) + 
+                        abs(sample["L"] - l_median) + 
+                        abs(sample["a/L"] - al_median))
+                if diff < best_diff:
+                    best_diff = diff
+                    best_sample = sample
+            
+            if best_sample is not None:
+                x_ref = best_sample["dynamic"]["X"].values
+                y_ref = best_sample["dynamic"]["Y"].values
 
                 F = self.ensemble_misfit(x_ref, y_ref)
-
-                best = min(best, F)
-
-            scores[skin] = best
+                scores[skin] = F
 
         return select_top_k(scores, beam), scores
 
     # -----------------------------
-    # STEP 2 — N
+    # STEP 2 — N (количество трещин)
     # -----------------------------
 
-    def select_N(self, skins):
+    def select_N(self, skins, N_fixed=None):
         """
         Выбор оптимального N для выбранных Skin-кандидатов.
         
         Args:
             skins (List[float]): Список Skin-кандидатов из этапа 1
+            N_fixed (int, optional): Фиксированное значение N. Если указано, используется оно.
             
         Returns:
             Tuple[Tuple[float, int], Dict[Tuple[float, int], float]]:
@@ -232,6 +272,42 @@ class ReservoirSolver:
                 - словарь ошибок {(skin, N): ошибка}
         """
         
+        # Если N задан - используем его напрямую без перебора
+        if N_fixed is not None:
+            scores = {}
+            for skin in skins:
+                # Ищем ближайший N в библиотеке для данного skin
+                available_N = list(set(s["N"] for s in self.skin_library[skin]))
+                if N_fixed in available_N:
+                    # Находим лучший sample с заданным N
+                    for sample in self.skin_library[skin]:
+                        if sample["N"] == N_fixed:
+                            x_ref = sample["dynamic"]["X"].values
+                            y_ref = sample["dynamic"]["Y"].values
+                            F = self.ensemble_misfit(x_ref, y_ref)
+                            scores[(skin, N_fixed)] = F
+                            break
+                else:
+                    # Если N нет в библиотеке - используем ближайший
+                    closest_N = min(available_N, key=lambda n: abs(n - N_fixed))
+                    for sample in self.skin_library[skin]:
+                        if sample["N"] == closest_N:
+                            x_ref = sample["dynamic"]["X"].values
+                            y_ref = sample["dynamic"]["Y"].values
+                            F = self.ensemble_misfit(x_ref, y_ref)
+                            scores[(skin, closest_N)] = F
+                            break
+            
+            if not scores:
+                # Fallback - просто берем первый skin и первый N
+                best_skin = skins[0]
+                best_N = list(set(s["N"] for s in self.skin_library[best_skin]))[0]
+                return (best_skin, best_N), {}
+            
+            best = min(scores, key=scores.get)
+            return best, scores
+        
+        # Оригинальный код - перебор всех N
         scores = {}
 
         for skin in skins:
@@ -312,14 +388,14 @@ class ReservoirSolver:
     # MAIN SOLVER
     # -----------------------------
 
-    def solve(self, x_fact, y_fact, k_bounds=(1e-5, 10), xf_bounds=(1e-3, 100)):
+    def solve(self, x_fact, y_fact, k_bounds=(1e-5, 10), xf_bounds=(1e-3, 100), N_fixed=None):
         """
         Главный метод запуска оптимизации.
         
         Выполняет полный цикл оптимизации:
         1. Подготовка входной кривой
         2. Выбор Skin-фактора (Beam Search)
-        3. Выбор N (количество трещин)
+        3. Выбор N (количество трещин) - если задан, используется фиксированное значение
         4. Байесовская оптимизация k и xf
         
         Args:
@@ -327,6 +403,7 @@ class ReservoirSolver:
             y_fact (np.ndarray): Y координаты входных данных (фактические)
             k_bounds (Tuple[float, float]): Границы проницаемости (мин, макс) в мД
             xf_bounds (Tuple[float, float]): Границы полудлины трещины (мин, макс) в м
+            N_fixed (int, optional): Фиксированное количество трещин. Если None - подбирается автоматически.
             
         Returns:
             Dict: Результат оптимизации с ключами:
@@ -342,14 +419,16 @@ class ReservoirSolver:
         logger.info(f"Входные данные: {len(x_fact)} точек")
         logger.info(f"Диапазон X фактических: [{np.min(x_fact):.6f}, {np.max(x_fact):.6f}]")
         logger.info(f"Диапазон Y фактических: [{np.min(y_fact):.6f}, {np.max(y_fact):.6f}]")
+        if N_fixed is not None:
+            logger.info(f"Фиксированное N: {N_fixed}")
         
         # ШАГ 0: Подготовка входной кривой (однократная интерполяция)
         logger.info("\n--- ШАГ 0: Подготовка входной кривой (интерполяция) ---")
         self._prepare_input_curve(x_fact, y_fact)
 
-        # Step 1: Select Skin
+        # Step 1: Select Skin (with N_fixed filter)
         logger.info("\n--- ШАГ 1: Выбор Skin-фактора (Beam Search) ---")
-        skins, skin_scores = self.select_skin(beam=3)
+        skins, skin_scores = self.select_skin(beam=3, N_fixed=N_fixed)
         logger.info(f"Проверено {len(skin_scores)} значений Skin")
         logger.info(f"Топ-{len(skins)} кандидатов: {skins}")
         
@@ -362,9 +441,9 @@ class ReservoirSolver:
             else:
                 logger.info(f"  Skin={skin:.2f} -> ОШИБКА={score:.6f}")
 
-        # Step 2: Select N
+        # Step 2: Select N (or use fixed N)
         logger.info("\n--- ШАГ 2: Выбор N (количества трещин) ---")
-        (best_skin, best_N), scores_N = self.select_N(skins)
+        (best_skin, best_N), scores_N = self.select_N(skins, N_fixed=N_fixed)
         
         logger.info(f"Выбран Skin={best_skin}, N={best_N}")
         

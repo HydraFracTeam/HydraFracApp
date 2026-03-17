@@ -108,7 +108,8 @@ class Solver:
         y_fact: np.ndarray,
         k_bounds: Tuple[float, float] = (1e-5, 10),
         L_bounds: Tuple[float, float] = (1e-3, 100),
-        beam_width: int = 3
+        beam_width: int = 3,
+        N_fixed: int = None
     ) -> SolverResult:
         """
         Main entry point for solving with dimensionless X-Y data.
@@ -119,6 +120,7 @@ class Solver:
             k_bounds: Bounds for permeability optimization (k_min, k_max)
             L_bounds: Bounds for fracture length optimization (L_min, L_max)
             beam_width: Number of top candidates to keep in beam search
+            N_fixed: Fixed number of fractures. If None - will be selected automatically.
             
         Returns:
             SolverResult with optimized S, k, L
@@ -127,24 +129,21 @@ class Solver:
         
         self.logger.info(f"Starting optimization with {len(x_fact)} data points")
         self.logger.info(f"Bounds: k in [{k_bounds[0]:.6f}, {k_bounds[1]:.6f}], L in [{L_bounds[0]:.4f}, {L_bounds[1]:.4f}]")
+        if N_fixed is not None:
+            self.logger.info(f"Fixed N (number of fractures): {N_fixed}")
         
-        # НОРМАЛИЗАЦИЯ: приводим X и Y к диапазону [0, 1]
-        # Это решает проблему несоответствия масштабов с референсными кривыми
-        x_min, x_max = np.min(x_fact), np.max(x_fact)
-        y_min, y_max = np.min(y_fact), np.max(y_fact)
+        # Масштабирование не требуется - X-Y уже безразмерные
+        # Интерполяция на сетку референсных кривых происходит в solver
         
-        # Нормализация к [0, 1]
-        x_fact_norm = (x_fact - x_min) / (x_max - x_min) if x_max > x_min else x_fact
-        y_fact_norm = (y_fact - y_min) / (y_max - y_min) if y_max > y_min else y_fact
-        
-        self.logger.info(f"Original X range: [{x_min:.4f}, {x_max:.4f}]")
-        self.logger.info(f"Normalized X range: [{np.min(x_fact_norm):.4f}, {np.max(x_fact_norm):.4f}]")
+        self.logger.info(f"Input X range: [{np.min(x_fact):.4f}, {np.max(x_fact):.4f}]")
+        self.logger.info(f"Input Y range: [{np.min(y_fact):.4f}, {np.max(y_fact):.4f}]")
         
         # Use the new reservoir solver with bounds
         result = self._reservoir_solver.solve(
-            x_fact_norm, y_fact_norm,
+            x_fact, y_fact,
             k_bounds=k_bounds,
-            xf_bounds=L_bounds
+            xf_bounds=L_bounds,
+            N_fixed=N_fixed
         )
         
         # Очистка кэша после решения
