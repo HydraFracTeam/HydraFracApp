@@ -125,7 +125,7 @@
               <item>
                <widget class="QLabel" name="well_length_label">
                 <property name="text">
-                 <string>Длина пласта, м</string>
+                 <string>Длина скважины, м</string>
                 </property>
                </widget>
               </item>
@@ -155,7 +155,7 @@
               <item>
                <widget class="QLabel" name="well_height_label">
                 <property name="text">
-                 <string>Толщина пласта, м</string>
+                 <string>Толщина скважины, м</string>
                 </property>
                </widget>
               </item>
@@ -838,19 +838,6 @@
               </widget>
              </item>
              <item>
-              <widget class="QPushButton" name="export_btn">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="text">
-                <string>Экспортировать данные</string>
-               </property>
-              </widget>
-             </item>
-             <item>
               <widget class="QPushButton" name="reset_plots_btn">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
@@ -948,7 +935,21 @@
                 <item>
                  <widget class="QCheckBox" name="cb_calc_XY">
                   <property name="text">
-                   <string>Калькулированные X-Y</string>
+                   <string>Калькулированные входные X-Y</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="cb_main_ref_XY">
+                  <property name="text">
+                   <string>Калькулированные эталонные X-Y</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="cb_neighbours_ref_XY">
+                  <property name="text">
+                   <string>Соседи для эталонных X-Y</string>
                   </property>
                  </widget>
                 </item>
