@@ -7,7 +7,64 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def misfit(x1, y1, x2, y2, derivative_mode, metric_type, n_points):
+def find_best_scale(x_ref, x_fact):
+    """
+    Находит коэффициент масштабирования для приведения диапазона референсной кривой к фактической.
+    
+    Использует отношение медиан для устойчивости к выбросам.
+    
+    Args:
+        x_ref (np.ndarray): X координаты референсной кривой
+        x_fact (np.ndarray): X координаты фактической кривой
+        
+    Returns:
+        float: Коэффициент масштабирования
+    """
+    if np.median(x_ref) == 0:
+        return 1.0
+    return np.median(x_fact) / np.median(x_ref)
+
+
+def get_scale_factors(x_ref, y_ref, x_fact, y_fact):
+    """
+    Возвращает коэффициенты масштабирования для X и Y.
+    
+    Args:
+        x_ref, y_ref: Координаты референсной кривой
+        x_fact, y_fact: Координаты фактической кривой
+        
+    Returns:
+        Tuple[float, float]: (scale_x, scale_y)
+    """
+    scale_x = find_best_scale(x_ref, x_fact)
+    scale_y = find_best_scale(y_ref, y_fact)
+    return scale_x, scale_y
+
+
+def scale_to_match(x_ref, y_ref, x_fact, y_fact):
+    """
+    Масштабирует референсную кривую (X, Y) к диапазону фактической кривой
+    с помощью аффинного преобразования.
+    
+    Args:
+        x_ref, y_ref: Координаты референсной кривой
+        x_fact, y_fact: Координаты фактической кривой
+        
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Масштабированные x_ref, y_ref
+    """
+    # Масштабирование по X
+    scale_x = find_best_scale(x_ref, x_fact)
+    x_ref_scaled = x_ref * scale_x
+    
+    # Масштабирование по Y  
+    scale_y = find_best_scale(y_ref, y_fact)
+    y_ref_scaled = y_ref * scale_y
+    
+    return x_ref_scaled, y_ref_scaled
+
+
+def misfit(x1, y1, x2, y2, derivative_mode, metric_type, n_points, scale_ref=True):
     """
     Вычисление невязки между двумя кривыми.
     
@@ -19,10 +76,15 @@ def misfit(x1, y1, x2, y2, derivative_mode, metric_type, n_points):
         derivative_mode (str): 'linear' или 'loglog'
         metric_type (str): 'L2', 'L1' или 'integral'
         n_points (int): Количество точек на интерполяционной сетке
+        scale_ref (bool): Масштабировать ли референсную кривую к диапазону первой кривой
         
     Returns:
         float: Значение метрики невязки
     """
+
+    # Масштабируем референсную кривую (x2, y2) к диапазону первой кривой (x1, y1)
+    if scale_ref:
+        x2, y2 = scale_to_match(x2, y2, x1, y1)
 
     xmin = max(np.min(x1), np.min(x2))
     xmax = min(np.max(x1), np.max(x2))

@@ -36,7 +36,7 @@ import pyqtgraph as pg
 from core.app_state import AppState
 from storage.reference_repository import ReferenceCurveDBManager
 from config import settings
-from core.solver import Solver
+from solver import Solver
 from core.dimensionless import calculate_x, calculate_y
 from utils import format_pydantic_error
 
