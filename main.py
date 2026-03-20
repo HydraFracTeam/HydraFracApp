@@ -555,7 +555,7 @@ class MyApp(QMainWindow):
                 N_fixed=static_params.N if static_params.N > 0 else None,
                 k_bounds=(thresholds.k_min, thresholds.k_max),
                 L_bounds=(thresholds.L_min, thresholds.L_max),
-                beam_width=3
+                beam_width=3,
             )
             
             # Update UI with results

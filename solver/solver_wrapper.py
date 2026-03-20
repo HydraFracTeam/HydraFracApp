@@ -30,8 +30,9 @@ class SolverResult:
         self.W_scale_factor = W_scale_factor
 
     def __repr__(self):
+        k_str = f"{self.k_opt:.6f}" if self.k_opt is not None else "N/A"
         return (
-            f"SolverResult(S={self.S_opt:.4f}, k={self.k_opt:.6f}, "
+            f"SolverResult(S={self.S_opt:.4f}, k={k_str}, "
             f"L={self.L_opt:.4f}, a/L={self.aL_opt:.4f}, "
             f"N={self.N_opt}, error={self.error_value:.6f})"
         )
@@ -67,28 +68,21 @@ class Solver:
         self,
         x_fact: np.ndarray,
         y_fact: np.ndarray,
-        W_fixed: float,                          # длина скважины
+        W_fixed: float,
         k_bounds: Tuple[float, float] = (1e-5, 10),
         L_bounds: Tuple[float, float] = (1e-3, 100),
-        N_fixed: Optional[int] = None,           # None → подбирается
-        h_known: Optional[float] = None,         # ориентировочная толщина пласта
+        N_fixed: Optional[int] = None,
+        h_known: Optional[float] = None,
         beam_width: int = 3,
     ) -> SolverResult:
         """
-        Основной метод. Принимает безразмерные X-Y, возвращает SolverResult.
+        Подбор параметров трещины по совпадению формы кривой dY/dX.
 
-        Фоллбэк-логика: если W_fixed=0/None или нет референсных кривых с указанным W,
-        то параметр W игнорируется и подбор идёт только по форме кривой.
+        Параметры результата (Skin, N, L, a/L) берутся напрямую из
+        найденной кривой библиотеки — так же как Skin подбирается
+        по форме, так и остальные из совпадения.
 
-        Args:
-            x_fact    : безразмерные X фактической кривой
-            y_fact    : безразмерные Y фактической кривой
-            W_fixed   : длина скважины (если 0 или None — игнорируется, подбор по форме)
-            k_bounds  : допустимый диапазон k для clip результата
-            L_bounds  : допустимый диапазон L для clip результата
-            N_fixed   : число трещин (None = подбирается на шаге 2)
-            h_known   : толщина пласта (мягкий приоритет, ±50%)
-            beam_width: ширина beam search на шагах 1-3
+        k пока не восстанавливается (result.k_opt = None).
         """
         self._ensure_library_loaded()
 
@@ -100,6 +94,8 @@ class Solver:
         # Сброс кэша перед новым решением
         self._reservoir_solver._x_grid = None
         self._reservoir_solver._y_fact = None
+        self._reservoir_solver._x_fact_raw = None
+        self._reservoir_solver._y_fact_raw = None
 
         result = self._reservoir_solver.solve(
             x_fact=np.asarray(x_fact, dtype=float),
@@ -112,26 +108,28 @@ class Solver:
             beam=beam_width,
         )
 
-        # Извлекаем параметры — это параметры найденной кривой, не регрессия
-        skin_opt  = result["skin"]
-        N_opt     = result["N"]
-        L_opt     = float(np.clip(result["L"], L_bounds[0], L_bounds[1]))
-        aL_opt    = result["aL"]
-        k_opt     = float(np.clip(result["params"]["k"], k_bounds[0], k_bounds[1]))
+        # L из найденной кривой библиотеки, clipped по bounds
+        L_opt = float(np.clip(result["L"], L_bounds[0], L_bounds[1]))
+
+        # k пока None — восстановление через Y-сдвиг будет следующим шагом
+        k_raw = result["params"].get("k")
+        k_opt = float(np.clip(k_raw, k_bounds[0], k_bounds[1])) \
+                if k_raw is not None else None
+
         error_val = result["misfit"]
 
         logger.info(
-            f"Результат: S={skin_opt:.4f}, k={k_opt:.6f}, "
-            f"L={L_opt:.4f}, a/L={aL_opt:.4f}, N={N_opt}, "
-            f"error={error_val:.6f}"
+            f"Результат: S={result['skin']:.4f}, k={k_opt}, "
+            f"L={L_opt:.4f}, a/L={result['aL']:.4f}, "
+            f"N={result['N']}, error={result['misfit']:.6f}"
         )
 
         return SolverResult(
-            S_opt=float(skin_opt),
+            S_opt=float(result["skin"]),
             k_opt=k_opt,
             L_opt=L_opt,
-            aL_opt=float(aL_opt),
-            N_opt=float(N_opt) if N_opt is not None else None,
+            aL_opt=float(result["aL"]),
+            N_opt=float(result["N"]) if result["N"] is not None else None,
             error_value=float(error_val),
             W_scale_factor=1.0,
         )

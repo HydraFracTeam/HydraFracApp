@@ -138,7 +138,7 @@ class ReferenceRepository:
         cursor = conn.cursor()
         cursor.execute("SELECT DISTINCT Skin FROM statics ORDER BY Skin")
         skins = [row[0] for row in cursor.fetchall()]
-        self._close_connection()
+        # Не закрываем соединение - оставляем для повторного использования
         return skins
     
     def get_curves_by_skin(self, skin: float) -> List[int]:
@@ -150,7 +150,7 @@ class ReferenceRepository:
             (skin,)
         )
         curve_ids = [row[0] for row in cursor.fetchall()]
-        self._close_connection()
+        # Не закрываем соединение - оставляем для повторного использования
         return curve_ids
     
     def get_reference_curve(self, curve_id: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -162,7 +162,7 @@ class ReferenceRepository:
             (curve_id,)
         )
         rows = cursor.fetchall()
-        self._close_connection()
+        # Не закрываем соединение - оставляем для повторного использования
         
         if not rows:
             raise ValueError(f"No curve found with curve_id {curve_id}")
