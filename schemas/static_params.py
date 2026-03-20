@@ -19,8 +19,9 @@ class StaticParams(BaseModel):
     @field_validator("W")
     @classmethod
     def validate_W(cls, v):
-        if v <= 0:
-            raise ValueError("Длина пласта должна быть положительной")
+        if v < 0:
+            raise ValueError("Длина пласта не может быть отрицательной")
+        # W=0 разрешено — в этом случае подбор идёт по форме кривой (игнорируется W)
         return v
 
     @field_validator("h")
