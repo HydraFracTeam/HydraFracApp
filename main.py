@@ -580,6 +580,9 @@ class MyApp(QMainWindow):
                 f"  Ошибка подбора = {result.error_value:.6f}"
             )
             
+            # Refresh the plot to show reference curves if checkboxes are already checked
+            self.update_dimensionless_plot()
+            
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -630,6 +633,149 @@ class MyApp(QMainWindow):
     def connect_graphic_checkboxes(self):
         self.ui.cb_calc_XY.stateChanged.connect(self.update_dimensionless_plot)
         self.ui.cb_burde_curve.stateChanged.connect(self.update_dimensionless_plot)
+        self.ui.cb_main_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
+        self.ui.cb_neighbours_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
+
+    def _find_best_reference_curve(self, k_opt: float, L_opt: float, skin_opt: float):
+        """
+        Find the best matching reference curve based on optimization results.
+        
+        Args:
+            k_opt: Optimized permeability
+            L_opt: Optimized half-length
+            skin_opt: Optimized skin factor
+            
+        Returns:
+            dict with 'X', 'Y', 'Skin', 'L' keys or None if not found
+        """
+        from core.reference_repo import ReferenceRepository
+        from config import settings
+        
+        try:
+            repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
+            
+            # Get available skins
+            available_skins = repo.get_available_skins()
+            
+            if not available_skins:
+                return None
+            
+            # Find closest skin value
+            closest_skin = min(available_skins, key=lambda x: abs(x - skin_opt))
+            
+            # Get curves for this skin
+            curve_ids = repo.get_curves_by_skin(closest_skin)
+            
+            if not curve_ids:
+                return None
+            
+            # Get all static data to find best match for L
+            conn = repo._get_connection()
+            cursor = conn.cursor()
+            
+            best_curve = None
+            best_diff = float('inf')
+            
+            for curve_id in curve_ids:
+                cursor.execute(
+                    "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",
+                    (curve_id,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    # Calculate difference in L
+                    diff = abs(row['L'] - L_opt)
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_curve = {
+                            'curve_id': curve_id,
+                            'Skin': row['Skin'],
+                            'L': row['L'],
+                            'W': row['W'],
+                            'h': row['h'],
+                            'N': row['N'],
+                        }
+            
+            repo._close_connection()
+            
+            if best_curve:
+                # Get X, Y data
+                X, Y = repo.get_reference_curve(best_curve['curve_id'])
+                best_curve['X'] = X
+                best_curve['Y'] = Y
+                
+            return best_curve
+            
+        except Exception as e:
+            self.logger.error(f"Error finding reference curve: {e}")
+            return None
+
+    def _find_neighbor_reference_curves(self, k_opt: float, L_opt: float, skin_opt: float):
+        """
+        Find neighbor reference curves: 2 with skin-1 and skin-2, and 2 with skin+1 and skin+2.
+        Uses the same k and L parameters.
+        
+        Args:
+            k_opt: Optimized permeability
+            L_opt: Optimized half-length
+            skin_opt: Optimized skin factor
+            
+        Returns:
+            List of dicts with 'X', 'Y', 'Skin', 'L' keys
+        """
+        from core.reference_repo import ReferenceRepository
+        from config import settings
+        
+        neighbors = []
+        
+        try:
+            repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
+            
+            # Get available skins
+            available_skins = repo.get_available_skins()
+            
+            if not available_skins:
+                return neighbors
+            
+            # Find skin values for neighbors: skin-2, skin-1, skin+1, skin+2
+            skin_offsets = [-2, -1, 1, 2]
+            target_skins = [skin_opt + offset for offset in skin_offsets]
+            
+            conn = repo._get_connection()
+            cursor = conn.cursor()
+            
+            for target_skin in target_skins:
+                # Find closest available skin to target
+                closest_skin = min(available_skins, key=lambda x: abs(x - target_skin)) if available_skins else None
+                
+                if closest_skin is not None:
+                    cursor.execute(
+                        "SELECT curve_id, Skin, L, W, h, N FROM statics WHERE ABS(Skin - ?) < 0.001 ORDER BY ABS(L - ?) LIMIT 1",
+                        (closest_skin, L_opt)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        # Check if we already have this skin in neighbors
+                        skin_already_added = any(n['Skin'] == row['Skin'] for n in neighbors)
+                        if not skin_already_added:
+                            X, Y = repo.get_reference_curve(row['curve_id'])
+                            neighbors.append({
+                                'curve_id': row['curve_id'],
+                                'X': X,
+                                'Y': Y,
+                                'Skin': row['Skin'],
+                                'L': row['L'],
+                                'W': row['W'],
+                                'h': row['h'],
+                                'N': row['N'],
+                            })
+            
+            repo._close_connection()
+            
+        except Exception as e:
+            self.logger.error(f"Error finding neighbor curves: {e}")
+        
+        return neighbors
     
     def refresh_ui(self):
         self.update_data_table()
@@ -695,6 +841,88 @@ class MyApp(QMainWindow):
                 t=self.app_state.processing_dynamic_data.t,
                 burde=self.app_state.processing_dynamic_data.burde,
             )
+        
+        # Get optimization results if available
+        solver_state = self.app_state.solver_state
+        k_opt = solver_state.k_current if solver_state else None
+        L_opt = solver_state.L_current if solver_state else None
+        skin_opt = solver_state.skin_current if solver_state else None
+        
+        # Plot main reference curve (if checkbox is checked and we have optimization results)
+        if self.ui.cb_main_ref_XY.isChecked() and k_opt and L_opt and skin_opt:
+            ref_curve = self._find_best_reference_curve(k_opt, L_opt, skin_opt)
+            if ref_curve:
+                self._plot_reference_curve(
+                    plot=plot,
+                    X=ref_curve['X'],
+                    Y=ref_curve['Y'],
+                    skin=ref_curve['Skin'],
+                    L=ref_curve['L'],
+                    color=(255, 0, 0),
+                    name=f"Эталонная кривая (S={ref_curve['Skin']:.1f}, L={ref_curve['L']:.1f})",
+                )
+        
+        # Plot neighbor reference curves (if checkbox is checked and we have optimization results)
+        if self.ui.cb_neighbours_ref_XY.isChecked() and k_opt and L_opt and skin_opt:
+            neighbors = self._find_neighbor_reference_curves(k_opt, L_opt, skin_opt)
+            # Colors for 4 neighbors: Skin-2, Skin-1, Skin+1, Skin+2
+            neighbor_colors = [
+                (0, 150, 0),    # Skin-2 - dark green
+                (0, 200, 100),  # Skin-1 - light green
+                (200, 150, 0),  # Skin+1 - orange
+                (200, 50, 50),  # Skin+2 - red-orange
+            ]
+            for i, neighbor in enumerate(neighbors):
+                if i < len(neighbor_colors):
+                    color = neighbor_colors[i]
+                else:
+                    color = (150, 150, 150)  # gray for additional
+                
+                # Determine name suffix based on skin relative to optimal
+                if neighbor['Skin'] < skin_opt:
+                    skin_diff = int(skin_opt - neighbor['Skin'])
+                    name_suffix = f"(Skin-{skin_diff})"
+                else:
+                    skin_diff = int(neighbor['Skin'] - skin_opt)
+                    name_suffix = f"(Skin+{skin_diff})"
+                    
+                self._plot_reference_curve(
+                    plot=plot,
+                    X=neighbor['X'],
+                    Y=neighbor['Y'],
+                    skin=neighbor['Skin'],
+                    L=neighbor['L'],
+                    color=color,
+                    name=f"Сосед {name_suffix} (S={neighbor['Skin']:.1f}, L={neighbor['L']:.1f})",
+                )
+
+    def _plot_reference_curve(self, plot: pg.PlotItem, X: np.ndarray, Y: np.ndarray, 
+                               skin: float, L: float, color: tuple, name: str):
+        """
+        Plot a reference curve on the dimensionless plot.
+        
+        Args:
+            plot: The plot item to draw on
+            X: X coordinates of the reference curve
+            Y: Y coordinates of the reference curve
+            skin: Skin factor value
+            L: Half-length value
+            color: RGB color tuple
+            name: Name for the legend
+        """
+        import pyqtgraph as pg
+        
+        mask = np.isfinite(X) & np.isfinite(Y)
+        
+        if not mask.any():
+            return
+        
+        plot.plot(
+            X[mask],
+            Y[mask],
+            pen=pg.mkPen(color=color, width=2, style=Qt.PenStyle.DashLine),
+            name=name,
+        )
     
     # АВТОСПЛИТТЕР
     def _draw_autosplit_line(self):
