@@ -550,6 +550,9 @@ class MyApp(QMainWindow):
             result = solver.solve_from_dimensionless(
                 x_fact=x_fact,
                 y_fact=y_fact,
+                W_fixed=static_params.W,
+                h_known=static_params.h,
+                N_fixed=static_params.N if static_params.N > 0 else None,
                 k_bounds=(thresholds.k_min, thresholds.k_max),
                 L_bounds=(thresholds.L_min, thresholds.L_max),
                 beam_width=3

@@ -65,3 +65,29 @@ def interpolate_input_curve(x_fact, y_fact, x_ref):
         )
 
     return y_interp
+
+
+def interpolate_to_grid(x, y, grid):
+    """
+    Интерполяция кривой на заданную сетку.
+    
+    Args:
+        x: X координаты кривой
+        y: Y координаты кривой  
+        grid: Целевая сетка
+    
+    Returns:
+        (grid, y_interp): Отфильтрованная сетка и интерполированные значения
+    """
+    f = interp1d(
+        x,
+        y,
+        bounds_error=False,
+        fill_value=np.nan
+    )
+
+    y_interp = f(grid)
+
+    mask = ~np.isnan(y_interp)
+
+    return grid[mask], y_interp[mask]
