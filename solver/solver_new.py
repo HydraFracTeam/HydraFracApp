@@ -148,18 +148,24 @@ class ReservoirSolver:
         logger.info(f"Подготовка: {len(x_fact)} → {len(self._x_grid)} точек, "
                     f"X=[{self._x_grid[0]:.4f}, {self._x_grid[-1]:.4f}]")
 
-    def _filter_library(self, W_fixed, N_fixed=None):
+    def _filter_library(self, W_fixed, N_fixed=None, ignore_W=False):
         """
         Шаг 0: жёсткая фильтрация по W, опциональная по N.
 
-        Возвращает список образцов (samples) прошедших фильтр.
-        Каждый образец — dict с ключами: dynamic, h, N, W, L, a/L.
+        Args:
+            W_fixed: значение W для фильтрации
+            N_fixed: значение N для фильтрации (None = не фильтровать)
+            ignore_W: если True — игнорировать фильтр по W (использовать все образцы)
+
+        Returns:
+            Список образцов (samples) прошедших фильтр.
+            Каждый образец — dict с ключами: dynamic, h, N, W, L, a/L.
         """
         result = []
         for skin_val, samples in self.skin_library.items():
             for s in samples:
-                # жёсткий фильтр по W
-                if s["W"] != W_fixed:
+                # жёсткий фильтр по W (если не игнорируем)
+                if not ignore_W and s["W"] != W_fixed:
                     continue
                 # опциональный фильтр по N
                 if N_fixed is not None and s["N"] != N_fixed:
@@ -167,7 +173,8 @@ class ReservoirSolver:
                 # добавляем skin в сам образец для удобства
                 result.append({**s, "skin": skin_val})
 
-        logger.info(f"После фильтрации W={W_fixed}"
+        filter_desc = "W=any" if ignore_W else f"W={W_fixed}"
+        logger.info(f"После фильтрации {filter_desc}"
                     + (f", N={N_fixed}" if N_fixed is not None else "")
                     + f": {len(result)} образцов")
         return result
@@ -347,6 +354,14 @@ class ReservoirSolver:
         best_L = sorted_L[0]
         best_F, best_s = L_scores[best_L]
 
+        # Проверяем, что нашли хоть какой-то образец
+        if best_s is None or np.isinf(best_F):
+            logger.warning(
+                f"Не удалось подобрать кривую: все misfit бесконечны. "
+                f"Проверьте диапазон X данных."
+            )
+            return None, None, None, np.inf
+
         logger.info(f"Шаг 4 — L при Skin={skin:.3f}, N={best_s['N']}. "
                     f"Проверено: {len(L_values)} значений L")
         for L in sorted_L[:5]:
@@ -469,9 +484,12 @@ class ReservoirSolver:
         """
         Полный ступенчатый подбор.
 
+        Фоллбэк-логика: если W_fixed=0/None или нет образцов с указанным W,
+        то W игнорируется и подбор идёт только по форме кривой (skin, N, L, a/L).
+
         Args:
             x_fact, y_fact  : безразмерные входные кривые
-            W_fixed         : длина скважины (жёсткий фильтр, обязателен)
+            W_fixed         : длина скважины (если 0 или None — игнорируется)
             N_fixed         : число трещин (если None — подбирается на шаге 2)
             h_known         : толщина пласта (мягкий приоритет, ±50%)
             k_bounds        : границы k для clip результата
@@ -492,12 +510,26 @@ class ReservoirSolver:
         # Шаг 0
         logger.info("\n--- Шаг 0: подготовка + фильтрация ---")
         self._prepare(x_fact, y_fact)
-        samples = self._filter_library(W_fixed, N_fixed)
+        
+        # Определяем, нужно ли игнорировать W:
+        # - если W_fixed = 0 или None → игнорируем W
+        # - если после фильтрации по W нет образцов → fallback без W
+        ignore_W = (W_fixed is None or W_fixed == 0)
+        
+        samples = self._filter_library(W_fixed, N_fixed, ignore_W=ignore_W)
+
+        # Fallback: если нет образцов с указанным W, пробуем без фильтра по W
+        if not samples and not ignore_W:
+            logger.warning(
+                f"Нет образцов с W={W_fixed}. "
+                f"Переход к подбору по форме (игнорируем W)"
+            )
+            samples = self._filter_library(W_fixed, N_fixed, ignore_W=True)
 
         if not samples:
             raise ValueError(
-                f"Библиотека пуста после фильтрации W={W_fixed}, N={N_fixed}. "
-                f"Проверьте параметры."
+                f"Библиотека пуста после всех фильтраций. "
+                f"Проверьте наличие референсных кривых в базе."
             )
 
         # Шаг 1: Skin
@@ -525,8 +557,11 @@ class ReservoirSolver:
             samples, best_skin, best_N, top_aL
         )
 
-        if y_ref_final is None:
-            raise ValueError("Не удалось подобрать L — проверьте библиотеку.")
+        if y_ref_final is None or np.isinf(misfit_final):
+            raise ValueError(
+                f"Не удалось подобрать кривую: все образцы имеют бесконечную ошибку. "
+                f"Возможно, диапазон X данных не перекрывается с референсными кривыми."
+            )
 
         # Шаг 5: k
         logger.info("\n--- Шаг 5: k (аналитика) ---")
