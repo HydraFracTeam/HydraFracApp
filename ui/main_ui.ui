@@ -752,7 +752,7 @@
        </size>
       </property>
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="timeseries_tab">
        <attribute name="title">
@@ -794,7 +794,7 @@
                 </sizepolicy>
                </property>
                <property name="text">
-                <string>Интерполировать пропуски</string>
+                <string>Восстановить пропуски</string>
                </property>
               </widget>
              </item>
@@ -820,7 +820,7 @@
                 </sizepolicy>
                </property>
                <property name="text">
-                <string>ML фильтрация</string>
+                <string>Сгладить</string>
                </property>
               </widget>
              </item>
@@ -833,7 +833,7 @@
                 </sizepolicy>
                </property>
                <property name="text">
-                <string>Обнаружить выбросы</string>
+                <string>Удалить выбросы</string>
                </property>
               </widget>
              </item>
@@ -846,7 +846,7 @@
                 </sizepolicy>
                </property>
                <property name="text">
-                <string>Сбросить графики</string>
+                <string>Отменить изменения</string>
                </property>
               </widget>
              </item>
@@ -980,6 +980,13 @@
        <layout class="QVBoxLayout" name="verticalLayout_8">
         <item>
          <widget class="QTableView" name="data_table"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="export_data_table_btn">
+          <property name="text">
+           <string>Экспортировать данные</string>
+          </property>
+         </widget>
         </item>
        </layout>
       </widget>

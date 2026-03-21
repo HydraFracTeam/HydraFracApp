@@ -667,6 +667,11 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_8.addWidget(self.data_table)
 
+        self.export_data_table_btn = QPushButton(self.data_tab)
+        self.export_data_table_btn.setObjectName(u"export_data_table_btn")
+
+        self.verticalLayout_8.addWidget(self.export_data_table_btn)
+
         self.tab_widget.addTab(self.data_tab, "")
         self.type_curves_tab = QWidget()
         self.type_curves_tab.setObjectName(u"type_curves_tab")
@@ -715,7 +720,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.tab_widget.setCurrentIndex(0)
+        self.tab_widget.setCurrentIndex(1)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -730,8 +735,8 @@ class Ui_MainWindow(object):
         self.insert_data_from_buffer_button.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0441\u0442\u0430\u0432\u043a\u0430 \u0438\u0437 \u0431\u0443\u0444\u0435\u0440\u0430 \u043e\u0431\u043c\u0435\u043d\u0430", None))
         self.reset_data_button.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.static_params_group.setTitle(QCoreApplication.translate("MainWindow", u"\u0421\u0442\u0430\u0442\u0438\u0447\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u043f\u043b\u0430\u0441\u0442\u0430 \u0438 \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b", None))
-        self.well_length_label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u043b\u0438\u043d\u0430 \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b (W), \u043c", None))
-        self.well_height_label.setText(QCoreApplication.translate("MainWindow", u"\u0422\u043e\u043b\u0449\u0438\u043d\u0430 \u043f\u043b\u0430\u0441\u0442\u0430 (h), \u043c", None))
+        self.well_length_label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u043b\u0438\u043d\u0430 \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b, \u043c", None))
+        self.well_height_label.setText(QCoreApplication.translate("MainWindow", u"\u0422\u043e\u043b\u0449\u0438\u043d\u0430 \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b, \u043c", None))
         self.viscosity_label.setText(QCoreApplication.translate("MainWindow", u"\u0412\u044f\u0437\u043a\u043e\u0441\u0442\u044c, \u0441\u041f", None))
         self.volume_coef_label.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0431\u044a\u0435\u043c\u043d\u044b\u0439 \u043a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442", None))
         self.porosity_label.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0440\u0438\u0441\u0442\u043e\u0441\u0442\u044c", None))
@@ -758,11 +763,11 @@ class Ui_MainWindow(object):
         self.frac_length_result_label.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u0443\u0434\u043b\u0438\u043d\u0430 \u0442\u0440\u0435\u0449\u0438\u043d\u044b, \u043c", None))
         self.report_group.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u0447\u0451\u0442", None))
         self.control_gbox.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0437\u043c\u0435\u0440\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435", None))
-        self.interp_btn.setText(QCoreApplication.translate("MainWindow", u"\u0418\u043d\u0442\u0435\u0440\u043f\u043e\u043b\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043f\u0440\u043e\u043f\u0443\u0441\u043a\u0438", None))
+        self.interp_btn.setText(QCoreApplication.translate("MainWindow", u"\u0412\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u043f\u0440\u043e\u043f\u0443\u0441\u043a\u0438", None))
         self.extrapolate_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u0442\u0440\u0430\u043f\u043e\u043b\u0438\u0440\u043e\u0432\u0430\u0442\u044c", None))
-        self.ml_filter_btn.setText(QCoreApplication.translate("MainWindow", u"ML \u0444\u0438\u043b\u044c\u0442\u0440\u0430\u0446\u0438\u044f", None))
-        self.outlier_btn.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0438\u0442\u044c \u0432\u044b\u0431\u0440\u043e\u0441\u044b", None))
-        self.reset_plots_btn.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
+        self.ml_filter_btn.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0433\u043b\u0430\u0434\u0438\u0442\u044c", None))
+        self.outlier_btn.setText(QCoreApplication.translate("MainWindow", u"\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0432\u044b\u0431\u0440\u043e\u0441\u044b", None))
+        self.reset_plots_btn.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f", None))
         self.groupBox_2.setTitle(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0438 \u0434\u0435\u0431\u0438\u0442\u0430", None))
         self.dimensionless_gbox.setTitle(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0441\u0447\u0435\u0442\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.groupBox.setTitle(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u041b\u043e\u0433\u0430\u0440\u0438\u0444\u043c\u0438\u0447\u0435\u0441\u043a\u0438\u0435", None))
@@ -771,6 +776,7 @@ class Ui_MainWindow(object):
         self.cb_main_ref_XY.setText(QCoreApplication.translate("MainWindow", u"\u041a\u0430\u043b\u044c\u043a\u0443\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435 \u044d\u0442\u0430\u043b\u043e\u043d\u043d\u044b\u0435 X-Y", None))
         self.cb_neighbours_ref_XY.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043e\u0441\u0435\u0434\u0438 \u0434\u043b\u044f \u044d\u0442\u0430\u043b\u043e\u043d\u043d\u044b\u0445 X-Y", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.timeseries_tab), QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
+        self.export_data_table_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.data_tab), QCoreApplication.translate("MainWindow", u"\u0422\u0430\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.type_curves_tab), QCoreApplication.translate("MainWindow", u"\u042d\u0442\u0430\u043b\u043e\u043d\u043d\u044b\u0435 \u043a\u0440\u0438\u0432\u044b\u0435", None))
         self.export_report_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442 \u043e\u0442\u0447\u0435\u0442\u0430", None))
