@@ -30,7 +30,6 @@ from ui import (
     plot_burde,
     clear_plot,
     plot_autosplit_line,
-    export_processing_to_csv,
     PasteDataDialog,
     )
 import pyqtgraph as pg
@@ -118,7 +117,6 @@ class MyApp(QMainWindow):
         self.setup_threshold_menu()
         self.connect_graphic_checkboxes()
         self.setup_preprocessing_controls()
-        self.setup_data_table_elements()
         # Создаем  интерфейс с вкладками
         setup_add_interface(self)
 
@@ -791,27 +789,6 @@ class MyApp(QMainWindow):
     def update_data_table(self):
         update_data_table_view(
             table_view=self.ui.data_table,
-            processing=self.app_state.processing_dynamic_data,
-            dimensionless=self.app_state.dimensionless,
-        )
-    
-    def setup_data_table_elements(self):
-        self.ui.export_data_table_btn.clicked.connect(self.export_data_table)
-    
-    def export_data_table(self):
-
-        filepath, _ = QFileDialog.getSaveFileName(
-            self,
-            "Сохранить данные",
-            "",
-            "CSV Files (*.csv)"
-        )
-
-        if not filepath:
-            return
-
-        export_processing_to_csv(
-            filepath=filepath,
             processing=self.app_state.processing_dynamic_data,
             dimensionless=self.app_state.dimensionless,
         )
