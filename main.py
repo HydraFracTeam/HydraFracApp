@@ -557,7 +557,7 @@ class MyApp(QMainWindow):
                 N_fixed=static_params.N if static_params.N > 0 else None,
                 k_bounds=(thresholds.k_min, thresholds.k_max),
                 L_bounds=(thresholds.L_min, thresholds.L_max),
-                beam_width=3,
+                beam_width=5,
             )
             
             # Update UI with results
@@ -638,7 +638,7 @@ class MyApp(QMainWindow):
         self.ui.cb_main_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
         self.ui.cb_neighbours_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
 
-    def _find_best_reference_curve(self, k_opt: float, L_opt: float, skin_opt: float):
+    def _find_best_reference_curve(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
         """
         Find the best matching reference curve based on optimization results.
         
@@ -646,6 +646,8 @@ class MyApp(QMainWindow):
             k_opt: Optimized permeability
             L_opt: Optimized half-length
             skin_opt: Optimized skin factor
+            N_fixed: Number of fractures (optional)
+            W_fixed: Well length (optional)
             
         Returns:
             dict with 'X', 'Y', 'Skin', 'L' keys or None if not found
@@ -678,6 +680,10 @@ class MyApp(QMainWindow):
             best_curve = None
             best_diff = float('inf')
             
+            # Build query with optional N and W filtering
+            query = "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?"
+            params = [curve_id]
+            
             for curve_id in curve_ids:
                 cursor.execute(
                     "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",
@@ -685,6 +691,12 @@ class MyApp(QMainWindow):
                 )
                 row = cursor.fetchone()
                 if row:
+                    # Apply N and W filtering if provided
+                    if N_fixed is not None and row['N'] != N_fixed:
+                        continue
+                    if W_fixed is not None and row['W'] != W_fixed:
+                        continue
+                    
                     # Calculate difference in L
                     diff = abs(row['L'] - L_opt)
                     if diff < best_diff:
@@ -712,7 +724,7 @@ class MyApp(QMainWindow):
             self.logger.error(f"Error finding reference curve: {e}")
             return None
 
-    def _find_neighbor_reference_curves(self, k_opt: float, L_opt: float, skin_opt: float):
+    def _find_neighbor_reference_curves(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
         """
         Find neighbor reference curves: 2 with skin-1 and skin-2, and 2 with skin+1 and skin+2.
         Uses the same k and L parameters.
@@ -721,6 +733,8 @@ class MyApp(QMainWindow):
             k_opt: Optimized permeability
             L_opt: Optimized half-length
             skin_opt: Optimized skin factor
+            N_fixed: Number of fractures (optional)
+            W_fixed: Well length (optional)
             
         Returns:
             List of dicts with 'X', 'Y', 'Skin', 'L' keys
@@ -751,10 +765,21 @@ class MyApp(QMainWindow):
                 closest_skin = min(available_skins, key=lambda x: abs(x - target_skin)) if available_skins else None
                 
                 if closest_skin is not None:
-                    cursor.execute(
-                        "SELECT curve_id, Skin, L, W, h, N FROM statics WHERE ABS(Skin - ?) < 0.001 ORDER BY ABS(L - ?) LIMIT 1",
-                        (closest_skin, L_opt)
-                    )
+                    # Build query with optional N and W filtering
+                    query = "SELECT curve_id, Skin, L, W, h, N FROM statics WHERE ABS(Skin - ?) < 0.001"
+                    params = [target_skin]
+                    
+                    if N_fixed is not None:
+                        query += " AND N = ?"
+                        params.append(N_fixed)
+                    if W_fixed is not None:
+                        query += " AND W = ?"
+                        params.append(W_fixed)
+                    
+                    query += " ORDER BY ABS(L - ?) LIMIT 1"
+                    params.append(L_opt)
+                    
+                    cursor.execute(query, params)
                     row = cursor.fetchone()
                     if row:
                         # Check if we already have this skin in neighbors
@@ -871,9 +896,14 @@ class MyApp(QMainWindow):
         L_opt = solver_state.L_current if solver_state else None
         skin_opt = solver_state.skin_current if solver_state else None
         
+        # Get static params for N and W filtering
+        static_params = self.app_state.static_params
+        N_fixed = static_params.N if static_params else None
+        W_fixed = static_params.W if static_params else None
+        
         # Plot main reference curve (if checkbox is checked and we have optimization results)
         if self.ui.cb_main_ref_XY.isChecked() and k_opt and L_opt and skin_opt:
-            ref_curve = self._find_best_reference_curve(k_opt, L_opt, skin_opt)
+            ref_curve = self._find_best_reference_curve(k_opt, L_opt, skin_opt, N_fixed, W_fixed)
             if ref_curve:
                 self._plot_reference_curve(
                     plot=plot,
@@ -887,7 +917,7 @@ class MyApp(QMainWindow):
         
         # Plot neighbor reference curves (if checkbox is checked and we have optimization results)
         if self.ui.cb_neighbours_ref_XY.isChecked() and k_opt and L_opt and skin_opt:
-            neighbors = self._find_neighbor_reference_curves(k_opt, L_opt, skin_opt)
+            neighbors = self._find_neighbor_reference_curves(k_opt, L_opt, skin_opt, N_fixed, W_fixed)
             # Colors for 4 neighbors: Skin-2, Skin-1, Skin+1, Skin+2
             neighbor_colors = [
                 (0, 150, 0),    # Skin-2 - dark green

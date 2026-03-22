@@ -73,7 +73,7 @@ class Solver:
         L_bounds: Tuple[float, float] = (1e-3, 100),
         N_fixed: Optional[int] = None,
         h_known: Optional[float] = None,
-        beam_width: int = 3,
+        beam_width: int = 5,
     ) -> SolverResult:
         """
         Подбор параметров трещины по совпадению формы кривой dY/dX.
@@ -96,6 +96,7 @@ class Solver:
         self._reservoir_solver._y_fact = None
         self._reservoir_solver._x_fact_raw = None
         self._reservoir_solver._y_fact_raw = None
+        self._reservoir_solver._alpha_fact = None  # сброс предпосчитанной производной
 
         result = self._reservoir_solver.solve(
             x_fact=np.asarray(x_fact, dtype=float),
@@ -111,10 +112,12 @@ class Solver:
         # L из найденной кривой библиотеки, clipped по bounds
         L_opt = float(np.clip(result["L"], L_bounds[0], L_bounds[1]))
 
-        # k пока None — восстановление через Y-сдвиг будет следующим шагом
+        # k пока не восстанавливается — используем значение по умолчанию 5.0
         k_raw = result["params"].get("k")
-        k_opt = float(np.clip(k_raw, k_bounds[0], k_bounds[1])) \
-                if k_raw is not None else None
+        if k_raw is not None:
+            k_opt = float(np.clip(k_raw, k_bounds[0], k_bounds[1]))
+        else:
+            k_opt = 5.0  # Значение по умолчанию пока подбор не производится
 
         error_val = result["misfit"]
 

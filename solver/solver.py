@@ -428,7 +428,7 @@ class ReservoirSolver:
 
         # Step 1: Select Skin (with N_fixed filter)
         logger.info("\n--- ШАГ 1: Выбор Skin-фактора (Beam Search) ---")
-        skins, skin_scores = self.select_skin(beam=3, N_fixed=N_fixed)
+        skins, skin_scores = self.select_skin(beam=5, N_fixed=N_fixed)
         logger.info(f"Проверено {len(skin_scores)} значений Skin")
         logger.info(f"Топ-{len(skins)} кандидатов: {skins}")
         

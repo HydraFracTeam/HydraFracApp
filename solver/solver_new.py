@@ -3,6 +3,7 @@ import logging
 from scipy.interpolate import interp1d
 
 from .misfit import misfit_shape
+from .derivative import compute_derivative
 from .beam_search import select_top_k
 
 logger = logging.getLogger(__name__)
@@ -84,8 +85,7 @@ def _all_ref_x_median(skin_library):
 
 
 def align_fact_to_ref(x_fact, y_fact, x_ref, y_ref,
-                      stretch_max=None,
-                      n_coarse=40):
+                      stretch_max=None):
     """
     Совмещение фактической кривой с референсной.
 
@@ -116,8 +116,6 @@ def align_fact_to_ref(x_fact, y_fact, x_ref, y_ref,
         shift_x    : якорный коэффициент (x_ref[0] / x_fact[0])
         stretch    : оптимальный коэффициент растяжения
     """
-    from scipy.optimize import minimize_scalar
-
     # --- ШАГ 1: якорный сдвиг по первой точке ---
     x_fact_0 = x_fact[x_fact > 0][0]
     x_ref_0  = x_ref[x_ref > 0][0]
@@ -128,44 +126,10 @@ def align_fact_to_ref(x_fact, y_fact, x_ref, y_ref,
     shift_x = x_ref_0 / x_fact_0
     x_anchored = x_fact * shift_x
 
-    # --- ШАГ 2: растяжение ---
-    # Верхняя граница: не тянем дальше stretch_max
-    # Если не задан — только якорный сдвиг (stretch=1.0)
-    if stretch_max is None or stretch_max <= 1.0:
-        return x_anchored, y_fact, shift_x, 1.0
-
-    def objective(stretch):
-        if stretch <= 0:
-            return np.inf
-        x_try = x_anchored * stretch
-        return misfit_shape(x_try, y_fact, x_ref, y_ref)
-
-    # Грубый перебор в (0, stretch_max]
-    stretch_candidates = np.linspace(0.05, stretch_max, n_coarse)
-    coarse_vals = [objective(s) for s in stretch_candidates]
-    finite_idx  = [i for i, v in enumerate(coarse_vals) if np.isfinite(v)]
-
-    if not finite_idx:
-        # Растяжение не помогло — возвращаем якорный сдвиг
-        return x_anchored, y_fact, shift_x, 1.0
-
-    best_i = min(finite_idx, key=lambda i: coarse_vals[i])
-    best_stretch_coarse = stretch_candidates[best_i]
-
-    # Уточнение Nelder-Mead вокруг лучшей грубой точки
-    try:
-        res = minimize_scalar(
-            objective,
-            bounds=(max(0.05, best_stretch_coarse * 0.5),
-                    min(stretch_max, best_stretch_coarse * 2.0)),
-            method='bounded',
-            options={'xatol': 1e-4},
-        )
-        best_stretch = float(res.x) if np.isfinite(res.fun) else best_stretch_coarse
-    except Exception:
-        best_stretch = best_stretch_coarse
-
-    return x_anchored * best_stretch, y_fact, shift_x, best_stretch
+    # --- ШАГ 2: растяжение УБРАНО ---
+    # Оставляем только anchor shift (совмещение первых точек)
+    # stretch = 1.0 (без растяжения/сжатия)
+    return x_anchored, y_fact, shift_x, 1.0
 
 
 # ─────────────────────────────────────────────────────────────
@@ -233,6 +197,12 @@ class ReservoirSolver:
 
         self._x_grid = x_grid[valid]
         self._y_fact = y_interp[valid]
+
+        # Предпосчитываем производную факта один раз — для ускорения
+        _, self._alpha_fact = compute_derivative(
+            self._x_grid, self._y_fact, self.derivative_mode
+        )
+        logger.info(f"Производная факта предпосчитана: {len(self._alpha_fact)} точек")
 
         logger.info(
             f"Подготовка: {len(x_fact)} → {len(self._x_grid)} точек, "
@@ -332,7 +302,7 @@ class ReservoirSolver:
     # Шаги 1–4 (аналогичны предыдущей версии, но с _sample_misfit v2)
     # ------------------------------------------------------------------
 
-    def select_skin(self, samples, h_known=None, beam=3):
+    def select_skin(self, samples, h_known=None, beam=5):
         skin_scores = {}
         skin_scales = {}
 
@@ -347,16 +317,18 @@ class ReservoirSolver:
         top_skins = select_top_k(skin_scores, beam)
         self._skin_scales = skin_scales
 
-        logger.info(f"Шаг 1 — Skin. Проверено: {len(skin_scores)} значений")
-        for sk in top_skins:
+        logger.info(f"Шаг 1 — Skin. Проверено: {len(skin_scores)} значений (ВСЕ кривые)")
+        # Логируем ВСЕ значения Skin (перебор всех кривых по форме)
+        for sk in sorted(skin_scores.keys()):
             sx, sy = skin_scales[sk]
             logger.info(
                 f"  Skin={sk:.3f} → misfit={skin_scores[sk]:.6f}, "
                 f"scale_x={sx:.4f}, scale_y={sy:.4f}"
             )
+        logger.info(f"Топ-{len(top_skins)} для дальнейшего отбора: {top_skins}")
         return top_skins, skin_scores
 
-    def select_N(self, samples, top_skins, beam=3):
+    def select_N(self, samples, top_skins, beam=5):
         relevant = [s for s in samples if s["skin"] in top_skins]
         sn_scores = {}
         sn_scales = {}
@@ -377,7 +349,7 @@ class ReservoirSolver:
             logger.info(f"  Skin={sk:.3f}, N={n} → misfit={f:.6f}")
         return best_skin, best_N, sn_scores
 
-    def select_aL(self, samples, skin, N, beam=3):
+    def select_aL(self, samples, skin, N, beam=5):
         relevant = [s for s in samples
                     if s["skin"] == skin and s["N"] == N]
         al_scores = {}
@@ -532,13 +504,59 @@ class ReservoirSolver:
         return k_real, L_real
 
     # ------------------------------------------------------------------
+    # Шаг 5: восстановление k из горизонтального сдвига по X
+    # ------------------------------------------------------------------
+
+    def recover_k(self, best_sample, k_ref=5.0, k_bounds=(1e-5, 100)):
+        """
+        Восстановление k из соотношения медиан X факта и референса.
+
+        Физика:
+            X = 0.00864 * k * h * |dP| / (mu * B * Q)
+            X ∝ k при фиксированных статических параметрах.
+
+            Библиотека посчитана при k_ref=5:
+                X_ref = 0.00864 * k_ref * h * |dP| / (mu * B * Q)
+                X_fact = 0.00864 * k_real * h * |dP| / (mu * B * Q)
+
+            →  X_fact / X_ref = k_real / k_ref
+            →  k_real = k_ref * median(X_fact) / median(X_ref)
+
+        Медиана робастна к выбросам на краях кривой.
+        """
+        x_ref  = best_sample["dynamic"]["X"].values.astype(float)
+        x_ref  = x_ref[x_ref > 0]
+        x_fact = self._x_fact_raw[self._x_fact_raw > 0]
+
+        if len(x_ref) == 0 or len(x_fact) == 0:
+            logger.warning("recover_k: нет положительных X, возвращаю k_ref")
+            return k_ref
+
+        med_fact = np.median(x_fact)
+        med_ref  = np.median(x_ref)
+
+        if med_ref == 0:
+            logger.warning("recover_k: медиана X_ref = 0, возвращаю k_ref")
+            return k_ref
+
+        k_real = k_ref * (med_fact / med_ref)
+        k_real = float(np.clip(k_real, k_bounds[0], k_bounds[1]))
+
+        logger.info(
+            f"Шаг 5 — k: median(X_fact)={med_fact:.4f}, "
+            f"median(X_ref)={med_ref:.4f}, "
+            f"k_ref={k_ref} → k_real={k_real:.6f} мД"
+        )
+        return k_real
+
+    # ------------------------------------------------------------------
     # Главный метод
     # ------------------------------------------------------------------
 
     def solve(self, x_fact, y_fact,
               W_fixed=None, N_fixed=None, h_known=None,
               k_bounds=(1e-5, 10), xf_bounds=(1e-3, 100),
-              beam=3):
+              beam=5):
         """
         Полный ступенчатый подбор.
         Параметры результата берутся напрямую из найденной кривой библиотеки —
@@ -591,19 +609,64 @@ class ReservoirSolver:
             if x_ref_f is None:
                 raise ValueError("Не удалось подобрать L - нет подходящих образцов в библиотеке.")
 
+        # Шаг 5: k из горизонтального сдвига X
+        logger.info("\n--- Шаг 5: k ---")
+        best_sample_for_k = None
+        for s in samples:
+            if (s.get("skin") == best_skin
+                    and s.get("N") == best_N
+                    and s.get("L") == best_L
+                    and s.get("a/L") == best_aL):
+                best_sample_for_k = s
+                break
+        # Fallback: если точного совпадения нет (был blend), берём ближайший по L
+        if best_sample_for_k is None:
+            candidates = [s for s in samples
+                          if s.get("skin") == best_skin and s.get("N") == best_N]
+            if candidates:
+                best_sample_for_k = min(
+                    candidates,
+                    key=lambda s: abs(s.get("L", 0) - best_L)
+                )
+
+        k_opt = self.recover_k(
+            best_sample_for_k,
+            k_ref=5.0,
+            k_bounds=k_bounds,
+        ) if best_sample_for_k is not None else None
+
+        # Получаем дополнительные параметры из лучшей кривой
+        best_h = None
+        best_W = None
+        for s in samples:
+            if s.get('skin') == best_skin and s.get('N') == best_N:
+                if s.get('L') == best_L and s.get('a/L') == best_aL:
+                    best_h = s.get('h')
+                    best_W = s.get('W')
+                    break
+
         logger.info("\n" + "=" * 60)
         logger.info("РЕЗУЛЬТАТ (параметры найденной кривой):")
-        logger.info(f"  Skin={best_skin:.4f}, N={best_N}, "
-                    f"L={best_L:.4f} м, a/L={best_aL:.4f}, "
-                    f"misfit={misfit_f:.6f}")
+        logger.info(f"  Skin (S)   = {best_skin:.4f}")
+        logger.info(f"  N (число трещин) = {best_N}")
+        logger.info(f"  L (полудлина) = {best_L:.4f} м")
+        logger.info(f"  a/L         = {best_aL:.4f}")
+        logger.info(f"  k           = {k_opt:.6f} мД" if k_opt is not None else "  k           = N/A")
+        if best_h is not None:
+            logger.info(f"  h (толщина пласта) = {best_h:.4f} м")
+        if best_W is not None:
+            logger.info(f"  W (ширина трещины) = {best_W:.4f} м")
+        logger.info(f"  Misfit     = {misfit_f:.6f}")
         logger.info("=" * 60)
 
         return {
             "skin":  best_skin,
             "N":     best_N,
-            "L":     best_L,      # длина из библиотечной кривой напрямую
+            "L":     best_L,
             "aL":    best_aL,
-            "params": {"k": None, "xf": best_L},
+            "h":     best_h,
+            "W":     best_W,
+            "params": {"k": k_opt, "xf": best_L},
             "misfit": misfit_f,
             "x_ref_matched": x_ref_f,
             "y_ref_matched": y_ref_f,
