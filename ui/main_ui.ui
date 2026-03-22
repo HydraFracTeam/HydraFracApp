@@ -752,7 +752,7 @@
        </size>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>0</number>
       </property>
       <widget class="QWidget" name="timeseries_tab">
        <attribute name="title">
@@ -770,7 +770,7 @@
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>275</height>
+            <height>369</height>
            </size>
           </property>
           <property name="maximumSize">

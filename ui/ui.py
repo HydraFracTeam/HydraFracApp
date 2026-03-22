@@ -533,7 +533,7 @@ class Ui_MainWindow(object):
         self.control_gbox.setObjectName(u"control_gbox")
         sizePolicy5.setHeightForWidth(self.control_gbox.sizePolicy().hasHeightForWidth())
         self.control_gbox.setSizePolicy(sizePolicy5)
-        self.control_gbox.setMinimumSize(QSize(0, 275))
+        self.control_gbox.setMinimumSize(QSize(0, 369))
         self.control_gbox.setMaximumSize(QSize(1667, 330))
         self.horizontalLayout = QHBoxLayout(self.control_gbox)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
@@ -720,7 +720,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.tab_widget.setCurrentIndex(1)
+        self.tab_widget.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)

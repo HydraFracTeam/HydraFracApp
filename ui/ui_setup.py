@@ -51,15 +51,9 @@ def attach_pg_to_widget(container: QMainWindow) -> pg.PlotItem:
 
 
 def setup_timeseries_tab(app: Ui_MainWindow) -> None:
-    app.ui.p_graphic = attach_pg_to_widget(
-        app.findChild(QWidget, "p_graphic")
-    )
-    app.ui.q_graphic = attach_pg_to_widget(
-        app.findChild(QWidget, "q_graphic")
-    )
-    app.ui.dim_plot = attach_pg_to_widget(
-        app.findChild(QWidget, "dim_plot")
-    )
+    app.ui.p_graphic = attach_pg_to_widget(app.ui.p_graphic)
+    app.ui.q_graphic = attach_pg_to_widget(app.ui.q_graphic)
+    app.ui.dim_plot = attach_pg_to_widget(app.ui.dim_plot)
 
 
 # ------------------------------------------------------------------
