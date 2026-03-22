@@ -47,6 +47,8 @@ def remove_pressure_outliers(
         if score > threshold:
             outlier_mask[i] = True
 
+    outlier_mask[0] = False # чтобы не съело первую точку давления
+    
     # превращаем выбросы в NaN
     P[outlier_mask] = np.nan
 
