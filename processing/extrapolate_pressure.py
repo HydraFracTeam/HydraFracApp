@@ -56,18 +56,7 @@ def select_degree_model(t: np.ndarray, P: np.ndarray) -> int:
 
     return min(scores, key=scores.get)[1]
 
-## линейная логарифмическая модель 
-def fit_log_linear_model(t: np.ndarray, P: np.ndarray):
 
-    positive = t[t > 0]
-
-    eps = np.min(np.diff(positive)) if len(positive) > 1 else positive[0] * 1e-3
-
-    x = np.log(t + eps)
-
-    coeff = np.polyfit(x, P, 1)
-
-    return np.poly1d(coeff), eps
 # --------------------------------------------------
 # построение модели
 # --------------------------------------------------
