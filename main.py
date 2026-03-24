@@ -680,10 +680,6 @@ class MyApp(QMainWindow):
             best_curve = None
             best_diff = float('inf')
             
-            # Build query with optional N and W filtering
-            query = "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?"
-            params = [curve_id]
-            
             for curve_id in curve_ids:
                 cursor.execute(
                     "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",

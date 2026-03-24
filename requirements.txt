@@ -15,6 +15,7 @@ MarkupSafe==3.0.3
 matplotlib==3.10.8
 numpy==2.4.2
 optuna==4.7.0
+SQLAlchemy==2.0.48
 packaging==26.0
 pandas==3.0.1
 pillow==12.1.1

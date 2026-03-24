@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.interpolate import interp1d
-
 from .derivative import compute_derivative
 from .metrics import compute_metric
 import logging

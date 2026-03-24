@@ -1,19 +1,4 @@
 def build_skin_library(df):
-    """
-    Построение библиотеки эталонных кривых из DataFrame.
-    
-    Args:
-        df (pd.DataFrame): DataFrame с колонками Skin, h, N, W, L, a/L, X, Y
-        
-    Returns:
-        Dict: Словарь {skin_value: [samples]}, где каждый sample содержит:
-            - 'dynamic': DataFrame с колонками X, Y
-            - 'h': эффективная толщина пласта
-            - 'N': количество трещин
-            - 'W': ширина трещины
-            - 'L': полудлина трещины
-            - 'a/L': отношение расстояния до границы к длине
-    """
 
     full_grouped = df.groupby(['Skin', 'h', 'N', 'W', 'L', 'a/L'])
 

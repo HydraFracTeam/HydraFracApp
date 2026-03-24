@@ -1,493 +1,674 @@
 import numpy as np
 import logging
+from scipy.interpolate import interp1d
 
-from .misfit import misfit
+from .misfit import misfit_shape
+from .derivative import compute_derivative
 from .beam_search import select_top_k
-from .bayes_opt import bayesian_fit
-from .interpolation import interpolate_input_curve
 
 logger = logging.getLogger(__name__)
 
 
+# ─────────────────────────────────────────────────────────────
+# Вспомогательные функции
+# ─────────────────────────────────────────────────────────────
+
+def _interp_curve(x, y, x_grid):
+    """Интерполяция (x, y) на x_grid. Возвращает массив с nan вне диапазона."""
+    try:
+        f = interp1d(x, y, bounds_error=False, fill_value=np.nan)
+        return f(x_grid)
+    except Exception:
+        return np.full_like(x_grid, np.nan, dtype=float)
+
+
+def _blend_curves(y1, y2, alpha):
+    """
+    Линейная смесь двух кривых: alpha=0 → y1, alpha=1 → y2.
+    nan-точки одной кривой заполняются из другой.
+    """
+    out = (1.0 - alpha) * y1 + alpha * y2
+    out = np.where(np.isnan(y1), y2, out)
+    out = np.where(np.isnan(y2), y1, out)
+    return out
+
+
+def _choose_alpha(f1, f2):
+    """
+    Коэффициент смешивания по относительной разности ошибок:
+      < 30%  → берём ближайшую (0 или 1)
+      30-40% → линейная интерполяция
+      > 40%  → середина (0.5)
+    """
+    if not (np.isfinite(f1) and np.isfinite(f2)):
+        return 0.0 if np.isfinite(f1) else 1.0
+    denom = max(f1, f2)
+    if denom == 0:
+        return 0.0
+    rel = abs(f1 - f2) / denom
+    if rel < 0.30:
+        return 0.0 if f1 <= f2 else 1.0
+    elif rel > 0.40:
+        return 0.5
+    else:
+        t = (rel - 0.30) / 0.10
+        return t * 0.5
+
+
+def _h_weight(h_sample, h_known):
+    """
+    Мягкий весовой коэффициент по близости h.
+    weight = 1 / (1 + |Δh| / h_known), допуск ±50%.
+    """
+    if h_known is None or h_known <= 0:
+        return 1.0
+    return 1.0 / (1.0 + abs(h_sample - h_known) / h_known)
+
+
+# ─────────────────────────────────────────────────────────────
+# Ключевая функция: выравнивание кривых перед сравнением
+# ─────────────────────────────────────────────────────────────
+
+def _all_ref_x_median(skin_library):
+    """
+    Медиана первых точек X по всей библиотеке.
+    Используется как верхняя граница stretch.
+    Вычисляется один раз и кэшируется в ReservoirSolver.
+    """
+    first_x = []
+    for samples in skin_library.values():
+        for s in samples:
+            x = s["dynamic"]["X"].values
+            if len(x) > 0 and x[0] > 0:
+                first_x.append(x[0])
+    return float(np.median(first_x)) if first_x else 1.0
+
+
+def align_fact_to_ref(x_fact, y_fact, x_ref, y_ref,
+                      stretch_max=None):
+    """
+    Совмещение фактической кривой с референсной.
+
+    ШАГ 1 — якорный сдвиг (без потери формы):
+        Совмещаем первые точки по X:
+            shift_x = x_ref[0] / x_fact[0]
+            x_anchored = x_fact * shift_x
+
+        Первые точки — минимальные X (данные отсортированы по времени/elemIdx).
+        Это эквивалентно сдвигу в log-пространстве — форма не меняется.
+
+    ШАГ 2 — растяжение по X (подгонка масштаба):
+        После якорного сдвига кривые начинаются в одной точке,
+        но могут иметь разный "разбег" по X. Ищем stretch ∈ (0, stretch_max]:
+            x_stretched = x_anchored * stretch
+
+        stretch_max = median(X_ref_first_points всей библиотеки) / x_ref[0]
+        Это естественный предел: не растягиваем факт дальше медианы библиотеки.
+
+        Оптимизация: грубый перебор n_coarse точек → Nelder-Mead уточнение.
+        Целевая функция: misfit_shape(dY/dX) на совмещённых кривых.
+
+    Y не трогаем — только X.
+
+    Returns:
+        x_aligned  : факт после сдвига + растяжения
+        y_aligned  : факт Y без изменений
+        shift_x    : якорный коэффициент (x_ref[0] / x_fact[0])
+        stretch    : оптимальный коэффициент растяжения
+    """
+    # --- ШАГ 1: якорный сдвиг по первой точке ---
+    x_fact_0 = x_fact[x_fact > 0][0]
+    x_ref_0  = x_ref[x_ref > 0][0]
+
+    if x_fact_0 <= 0 or x_ref_0 <= 0:
+        return x_fact, y_fact, 1.0, 1.0
+
+    shift_x = x_ref_0 / x_fact_0
+    x_anchored = x_fact * shift_x
+
+    # --- ШАГ 2: растяжение УБРАНО ---
+    # Оставляем только anchor shift (совмещение первых точек)
+    # stretch = 1.0 (без растяжения/сжатия)
+    return x_anchored, y_fact, shift_x, 1.0
+
+
+# ─────────────────────────────────────────────────────────────
+# ReservoirSolver
+# ─────────────────────────────────────────────────────────────
+
 class ReservoirSolver:
+    """
+    Ступенчатый подбор параметров трещины по совпадению формы dY/dX.
+
+    Выравнивание кривых перед каждым misfit:
+        1. Якорный сдвиг по первой точке X:
+               shift_x = x_ref[0] / x_fact[0]
+           Совмещает начала кривых без изменения формы.
+        2. Растяжение по X в диапазоне (0, stretch_max]:
+               x_aligned = x_fact * shift_x * stretch
+           stretch_max = median(x[0] всей библиотеки) / x_ref[0].
+           Ищется грубым перебором + minimize_scalar.
+           Y не трогаем.
+
+    Шаги:
+        0: фильтрация по W + N
+        1: select_skin   — beam search, h-взвешивание
+        2: select_N      — если N не задан
+        3: select_aL     — перебор a/L
+        4: select_L      — перебор L + интерполяция между соседями
+    """
 
     def __init__(self, skin_library, progress_callback=None):
-        """
-        Конструктор ReservoirSolver.
-        
-        Args:
-            skin_library (Dict): Библиотека эталонных кривых, сгруппированная по Skin:
-                {skin_value: [samples]}, где sample содержит:
-                    - 'dynamic': DataFrame с X, Y
-                    - 'h', 'N', 'W', 'L', 'a/L': параметры
-            progress_callback (callable, optional): Функция обратного вызова для прогресса
-        """
-
         self.skin_library = skin_library
         self.progress_callback = progress_callback
 
-        self.derivative_modes = ["linear", "loglog"]
-        # По умолчанию используем только интегральную метрику
-        self.metric_types = ["integral"]
-        
-        # Кэш для интерполированной входной кривой
-        self._x_interp = None
-        self._y_interp = None
-        self._x_fact_orig = None
-        self._y_fact_orig = None
+        self.derivative_mode = "linear"
+        self.metric_type = "integral"
 
-    # -----------------------------
-    # INPUT CURVE PREPARATION
-    # -----------------------------
-    
-    def _prepare_input_curve(self, x_fact, y_fact, target_grid=None):
-        """
-        Однократная подготовка входной кривой.
-        
-        Интерполирует входную кривую на сетку (логарифмическую по умолчанию).
-        Результат сохраняется для повторного использования (кэширование).
-        
-        Args:
-            x_fact (np.ndarray): X координаты входной кривой
-            y_fact (np.ndarray): Y координаты входной кривой
-            target_grid (np.ndarray, optional): Целевая сетка. Если None, создается логарифмическая (200 точек)
-            
-        Returns:
-            Tuple[np.ndarray, np.ndarray]: (x_grid, y_interp) - интерполированная кривая
-        """
-        """
-        Однократная подготовка входной кривой.
-        
-        Интерполирует входную кривую на сетку референсных кривых.
-        Результат сохраняется для повторного использования.
-        
-        Args:
-            x_fact: X координаты входной кривой
-            y_fact: Y координаты входной кривой
-            target_grid: Целевая сетка (если None, создается логарифмическая)
-            
-        Returns:
-            x_grid, y_interp: Интерполированная кривая
-        """
-        x_fact = np.asarray(x_fact)
-        y_fact = np.asarray(y_fact)
-        
-        # Проверяем, нужна ли повторная интерполяция
-        if (self._x_fact_orig is not None and 
-            np.array_equal(x_fact, self._x_fact_orig) and
-            self._x_interp is not None):
-            logger.debug("Используем кэшированную интерполяцию")
-            return self._x_interp, self._y_interp
-        
-        # Если передана целевая сетка - используем её
-        if target_grid is not None:
-            x_grid = target_grid
-        else:
-            # Создаем стандартную логарифмическую сетку
-            x_min = np.max([np.min(x_fact), 1e-10])  # Избегаем нуля
-            x_max = np.max(x_fact)
-            x_grid = np.logspace(np.log10(x_min), np.log10(x_max), 200)
-        
-        # Интерполируем входную кривую на сетку
-        try:
-            y_interp = interpolate_input_curve(x_fact, y_fact, x_grid)
-            
-            # Фильтруем nan
-            valid_mask = ~np.isnan(y_interp)
-            if np.sum(valid_mask) < 10:
-                logger.warning("Мало точек после интерполяции, используем оригинальную сетку")
-                return x_fact, y_fact
-            
-            x_grid = x_grid[valid_mask]
-            y_interp = y_interp[valid_mask]
-            
-        except Exception as e:
-            logger.warning(f"Ошибка интерполяции: {e}, используем оригинальную сетку")
-            return x_fact, y_fact
-        
-        # Сохраняем для кэширования
-        self._x_fact_orig = x_fact.copy()
-        self._y_fact_orig = y_fact.copy()
-        self._x_interp = x_grid
-        self._y_interp = y_interp
-        
-        logger.info(f"Интерполяция выполнена: {len(x_fact)} -> {len(x_grid)} точек")
-        logger.info(f"  Диапазон X: [{x_grid[0]:.6f}, {x_grid[-1]:.6f}]")
-        
-        return x_grid, y_interp
+        self._x_grid = None
+        self._y_fact = None
+        self._x_fact_raw = None
+        self._y_fact_raw = None
 
-    # -----------------------------
-    # ENSEMBLE MISFIT
-    # -----------------------------
+        # Медиана первых X по всей библиотеке — верхняя граница stretch.
+        # Вычисляется один раз при инициализации.
+        self._lib_x0_median = _all_ref_x_median(skin_library)
+        logger.info(f"Медиана первых X библиотеки: {self._lib_x0_median:.4f}")
 
-    def ensemble_misfit(self, x_ref, y_ref):
-        """
-        Расчет невязки между интерполированной фактической и референсной кривыми.
-        
-        Использует предварительно интерполированную входную кривую (self._x_interp, self._y_interp).
-        Референсная кривая интерполируется на ту же сетку.
-        
-        БЕЗ НОРМАЛИЗАЦИИ - только приведение к общей сетке.
-        
-        Args:
-            x_ref (np.ndarray): X координаты референсной кривой
-            y_ref (np.ndarray): Y координаты референсной кривой
-            
-        Returns:
-            float: Медианное значение ошибки по всем метрикам и производным
-        """
-        if self._x_interp is None or self._y_interp is None:
-            raise ValueError("Входная кривая не подготовлена. Вызовите _prepare_input_curve()")
-        
-        scores = []
-        
-        # Приводим входную кривую к сетке референса (self._x_interp уже на нужной сетке)
-        # Но для честного сравнения - интерполируем обе на общую сетку
-        
-        # Используем сетку входной кривой
-        x_common = self._x_interp
-        y_fact_common = self._y_interp
-        
-        # Интерполируем референс на сетку входной кривой
-        try:
-            y_ref_interp = interpolate_input_curve(x_ref, y_ref, x_common)
-            
-            # Фильтруем nan
-            valid_mask = ~np.isnan(y_ref_interp)
-            if np.sum(valid_mask) < 10:
-                logger.debug(f"  Мало точек после интерполяции референса: {np.sum(valid_mask)}")
-                return np.inf
-            
-            x_common = x_common[valid_mask]
-            y_fact_common = y_fact_common[valid_mask]
-            y_ref_common = y_ref_interp[valid_mask]
-            
-        except ValueError as e:
-            logger.debug(f"  Ошибка интерполяции референса: {e}")
-            return np.inf
+    # ------------------------------------------------------------------
+    # Шаг 0
+    # ------------------------------------------------------------------
 
-        for d in self.derivative_modes:
-            for m in self.metric_types:
+    def _prepare(self, x_fact, y_fact, n_points=200):
+        """Интерполирует входную кривую на равномерную лог-сетку."""
+        mask = (x_fact > 0) & (y_fact > 0) & np.isfinite(x_fact) & np.isfinite(y_fact)
+        x_fact = x_fact[mask]
+        y_fact = y_fact[mask]
 
-                F = misfit(
-                    x_common, y_fact_common,
-                    x_common, y_ref_common,
-                    d, m,
-                    200
-                )
+        # Сырые данные сохраняем для align_fact_to_ref
+        self._x_fact_raw = x_fact
+        self._y_fact_raw = y_fact
 
-                scores.append(F)
+        x_grid = np.logspace(
+            np.log10(x_fact.min()), np.log10(x_fact.max()), n_points
+        )
+        y_interp = _interp_curve(x_fact, y_fact, x_grid)
+        valid = ~np.isnan(y_interp)
 
-        return np.median(scores)
+        self._x_grid = x_grid[valid]
+        self._y_fact = y_interp[valid]
 
-    # -----------------------------
-    # STEP 1 — SKIN (с учётом фиксированного N)
-    # -----------------------------
+        # Предпосчитываем производную факта один раз — для ускорения
+        _, self._alpha_fact = compute_derivative(
+            self._x_grid, self._y_fact, self.derivative_mode
+        )
+        logger.info(f"Производная факта предпосчитана: {len(self._alpha_fact)} точек")
 
-    def select_skin(self, beam=3, N_fixed=None):
-        """
-        Выбор лучших Skin-факторов методом Beam Search.
-        
-        Алгоритм:
-        1. Если задан N_fixed - сначала фильтруем по N
-        2. Для каждого Skin берём медианные значения других параметров (h, W, L, a/L)
-        3. Из кривых с медианными параметрами выбираем лучшую для каждого Skin
-        
-        Args:
-            beam (int): Количество лучших кандидатов для отбора (по умолчанию 3)
-            N_fixed (int, optional): Фиксированное количество трещин для фильтрации
-            
-        Returns:
-            Tuple[List[float], Dict[float, float]]: 
-                - список top-k Skin значений
-                - словарь {skin: ошибка}
-        """
-        
-        scores = {}
-
-        for skin, samples in self.skin_library.items():
-            
-            # ШАГ 1: Фильтрация по N если задан
-            if N_fixed is not None:
-                filtered_samples = [s for s in samples if s["N"] == N_fixed]
-                if not filtered_samples:
-                    # Если точного N нет - ищем ближайший
-                    available_N = list(set(s["N"] for s in samples))
-                    closest_N = min(available_N, key=lambda n: abs(n - N_fixed))
-                    filtered_samples = [s for s in samples if s["N"] == closest_N]
-            else:
-                filtered_samples = samples
-            
-            if not filtered_samples:
-                continue
-            
-            # ШАГ 2: Находим медианные значения параметров (h, W, L, a/L)
-            h_vals = [s["h"] for s in filtered_samples]
-            w_vals = [s["W"] for s in filtered_samples]
-            l_vals = [s["L"] for s in filtered_samples]
-            al_vals = [s["a/L"] for s in filtered_samples]
-            
-            h_median = np.median(h_vals)
-            w_median = np.median(w_vals)
-            l_median = np.median(l_vals)
-            al_median = np.median(al_vals)
-            
-            # ШАГ 3: Находим образец ближайший к медиане
-            best_sample = None
-            best_diff = np.inf
-            
-            for sample in filtered_samples:
-                diff = (abs(sample["h"] - h_median) + 
-                        abs(sample["W"] - w_median) + 
-                        abs(sample["L"] - l_median) + 
-                        abs(sample["a/L"] - al_median))
-                if diff < best_diff:
-                    best_diff = diff
-                    best_sample = sample
-            
-            if best_sample is not None:
-                x_ref = best_sample["dynamic"]["X"].values
-                y_ref = best_sample["dynamic"]["Y"].values
-
-                F = self.ensemble_misfit(x_ref, y_ref)
-                scores[skin] = F
-
-        return select_top_k(scores, beam), scores
-
-    # -----------------------------
-    # STEP 2 — N (количество трещин)
-    # -----------------------------
-
-    def select_N(self, skins, N_fixed=None):
-        """
-        Выбор оптимального N для выбранных Skin-кандидатов.
-        
-        Args:
-            skins (List[float]): Список Skin-кандидатов из этапа 1
-            N_fixed (int, optional): Фиксированное значение N. Если указано, используется оно.
-            
-        Returns:
-            Tuple[Tuple[float, int], Dict[Tuple[float, int], float]]:
-                - (best_skin, best_N)
-                - словарь ошибок {(skin, N): ошибка}
-        """
-        
-        # Если N задан - используем его напрямую без перебора
-        if N_fixed is not None:
-            scores = {}
-            for skin in skins:
-                # Ищем ближайший N в библиотеке для данного skin
-                available_N = list(set(s["N"] for s in self.skin_library[skin]))
-                if N_fixed in available_N:
-                    # Находим лучший sample с заданным N
-                    for sample in self.skin_library[skin]:
-                        if sample["N"] == N_fixed:
-                            x_ref = sample["dynamic"]["X"].values
-                            y_ref = sample["dynamic"]["Y"].values
-                            F = self.ensemble_misfit(x_ref, y_ref)
-                            scores[(skin, N_fixed)] = F
-                            break
-                else:
-                    # Если N нет в библиотеке - используем ближайший
-                    closest_N = min(available_N, key=lambda n: abs(n - N_fixed))
-                    for sample in self.skin_library[skin]:
-                        if sample["N"] == closest_N:
-                            x_ref = sample["dynamic"]["X"].values
-                            y_ref = sample["dynamic"]["Y"].values
-                            F = self.ensemble_misfit(x_ref, y_ref)
-                            scores[(skin, closest_N)] = F
-                            break
-            
-            if not scores:
-                # Fallback - просто берем первый skin и первый N
-                best_skin = skins[0]
-                best_N = list(set(s["N"] for s in self.skin_library[best_skin]))[0]
-                return (best_skin, best_N), {}
-            
-            best = min(scores, key=scores.get)
-            return best, scores
-        
-        # Оригинальный код - перебор всех N
-        scores = {}
-
-        for skin in skins:
-
-            for sample in self.skin_library[skin]:
-
-                N = sample["N"]
-
-                x_ref = sample["dynamic"]["X"].values
-                y_ref = sample["dynamic"]["Y"].values
-
-                F = self.ensemble_misfit(x_ref, y_ref)
-
-                scores[(skin, N)] = F
-
-        best = min(scores, key=scores.get)
-
-        return best, scores
-
-    # -----------------------------
-    # STEP 3 — BAYES OPT
-    # -----------------------------
-
-    def optimize_continuous(self, sample, k_bounds=(1e-5, 10), xf_bounds=(1e-3, 100)):
-        """
-        Байесовская оптимизация непрерывных параметров k и xf.
-        
-        Args:
-            sample (Dict): Выбранная эталонная кривая из библиотеки
-            k_bounds (Tuple[float, float]): Границы проницаемости (мин, макс) в мД
-            xf_bounds (Tuple[float, float]): Границы полудлины трещины (мин, макс) в м
-            
-        Returns:
-            Tuple[Dict[str, float], float]: 
-                - params с ключами 'k' и 'xf'
-                - best_score - лучшее значение ошибки
-        """
-
-        x_ref = sample["dynamic"]["X"].values
-        y_ref = sample["dynamic"]["Y"].values
-        
-        logger.info(f"  Оптимизация непрерывных параметров:")
-        logger.info(f"    Границы: k in [{k_bounds[0]:.6f}, {k_bounds[1]:.6f}], xf in [{xf_bounds[0]:.4f}, {xf_bounds[1]:.4f}]")
-
-        def objective(params):
-            k, xf = params
-
-            # Модифицируем эталонную кривую: масштабируем по Y с помощью k
-            y_mod = y_ref * k * (1 + 0.1 * np.log10(xf + 1))
-
-            # Считаем ошибку напрямую - без нормализации
-            error = self.ensemble_misfit(x_ref, y_mod)
-            
-            return error
-
-        bounds = {
-            "k": k_bounds,
-            "xf": xf_bounds
-        }
-        
-        # Progress callback for Bayes opt
-        def bayes_progress(trial_num, params, value, best_value, best_params):
-            if self.progress_callback:
-                self.progress_callback("bayes", trial_num, params, value, best_value, best_params)
-            
-            # Log trial details
-            status = "✓" if value < best_value else " "
-            if np.isinf(value):
-                logger.info(f"    Проба {trial_num:3d}: k={params['k']:.6f}, xf={params['xf']:.6f} -> ОШИБКА=inf (диапазоны не пересекаются)")
-            else:
-                logger.info(f"    Проба {trial_num:3d}: k={params['k']:.6f}, xf={params['xf']:.6f} -> ОШИБКА={value:.6f} [{status} ЛУЧШАЯ={best_value:.6f}]")
-
-        params, score = bayesian_fit(objective, bounds, progress_callback=bayes_progress)
-
-        return params, score
-
-    # -----------------------------
-    # MAIN SOLVER
-    # -----------------------------
-
-    def solve(self, x_fact, y_fact, k_bounds=(1e-5, 10), xf_bounds=(1e-3, 100), N_fixed=None):
-        """
-        Главный метод запуска оптимизации.
-        
-        Выполняет полный цикл оптимизации:
-        1. Подготовка входной кривой
-        2. Выбор Skin-фактора (Beam Search)
-        3. Выбор N (количество трещин) - если задан, используется фиксированное значение
-        4. Байесовская оптимизация k и xf
-        
-        Args:
-            x_fact (np.ndarray): X координаты входных данных (фактические)
-            y_fact (np.ndarray): Y координаты входных данных (фактические)
-            k_bounds (Tuple[float, float]): Границы проницаемости (мин, макс) в мД
-            xf_bounds (Tuple[float, float]): Границы полудлины трещины (мин, макс) в м
-            N_fixed (int, optional): Фиксированное количество трещин. Если None - подбирается автоматически.
-            
-        Returns:
-            Dict: Результат оптимизации с ключами:
-                - 'skin': оптимальный Skin-фактор
-                - 'N': оптимальное количество трещин
-                - 'params': {'k': ..., 'xf': ...}
-                - 'misfit': значение ошибки
-        """
-        
-        logger.info("=" * 60)
-        logger.info("НАЧАЛО ОПТИМИЗАЦИИ")
-        logger.info("=" * 60)
-        logger.info(f"Входные данные: {len(x_fact)} точек")
-        logger.info(f"Диапазон X фактических: [{np.min(x_fact):.6f}, {np.max(x_fact):.6f}]")
-        logger.info(f"Диапазон Y фактических: [{np.min(y_fact):.6f}, {np.max(y_fact):.6f}]")
-        if N_fixed is not None:
-            logger.info(f"Фиксированное N: {N_fixed}")
-        
-        # ШАГ 0: Подготовка входной кривой (однократная интерполяция)
-        logger.info("\n--- ШАГ 0: Подготовка входной кривой (интерполяция) ---")
-        self._prepare_input_curve(x_fact, y_fact)
-
-        # Step 1: Select Skin (with N_fixed filter)
-        logger.info("\n--- ШАГ 1: Выбор Skin-фактора (Beam Search) ---")
-        skins, skin_scores = self.select_skin(beam=5, N_fixed=N_fixed)
-        logger.info(f"Проверено {len(skin_scores)} значений Skin")
-        logger.info(f"Топ-{len(skins)} кандидатов: {skins}")
-        
-        # Show top 5 scores
-        sorted_scores = sorted(skin_scores.items(), key=lambda x: x[1])
-        logger.info("Лучшие Skin-факторы:")
-        for skin, score in sorted_scores[:5]:
-            if np.isinf(score):
-                logger.info(f"  Skin={skin:.2f} -> ОШИБКА=inf")
-            else:
-                logger.info(f"  Skin={skin:.2f} -> ОШИБКА={score:.6f}")
-
-        # Step 2: Select N (or use fixed N)
-        logger.info("\n--- ШАГ 2: Выбор N (количества трещин) ---")
-        (best_skin, best_N), scores_N = self.select_N(skins, N_fixed=N_fixed)
-        
-        logger.info(f"Выбран Skin={best_skin}, N={best_N}")
-        
-        # Show best N scores
-        sorted_n_scores = sorted(scores_N.items(), key=lambda x: x[1])
-        logger.info("Лучшие комбинации (Skin, N):")
-        for (skin, n), score in sorted_n_scores[:5]:
-            if np.isinf(score):
-                logger.info(f"  (S={skin:.2f}, N={n}) -> ОШИБКА=inf")
-            else:
-                logger.info(f"  (S={skin:.2f}, N={n}) -> ОШИБКА={score:.6f}")
-
-        candidates = [
-            s for s in self.skin_library[best_skin]
-            if s["N"] == best_N
-        ]
-
-        sample = candidates[0]
-        
-        logger.info(f"\nПараметры выбранного референса:")
-        logger.info(f"  h={sample['h']}, W={sample['W']}, L={sample['L']}, a/L={sample['a/L']}")
-
-        # Step 3: Optimize k and L (xf)
-        logger.info("\n--- ШАГ 3: Байесовская оптимизация k и xf ---")
-        logger.info(f"Границы: k in [{k_bounds[0]:.6f}, {k_bounds[1]:.6f}], xf in [{xf_bounds[0]:.6f}, {xf_bounds[1]:.6f}]")
-
-        params, score = self.optimize_continuous(
-            sample,
-            k_bounds=k_bounds,
-            xf_bounds=xf_bounds
+        logger.info(
+            f"Подготовка: {len(x_fact)} → {len(self._x_grid)} точек, "
+            f"X=[{self._x_grid[0]:.4f}, {self._x_grid[-1]:.4f}], "
+            f"Y=[{self._y_fact.min():.4e}, {self._y_fact.max():.4e}]"
         )
 
+    def _filter_library(self, W_fixed, N_fixed=None):
+        """Жёсткая фильтрация по W (0/None = все) + опциональная по N."""
+        ignore_W = (W_fixed is None or W_fixed == 0)
+        result = []
+        for skin_val, samples in self.skin_library.items():
+            for s in samples:
+                if not ignore_W and s["W"] != W_fixed:
+                    continue
+                if N_fixed is not None and s["N"] != N_fixed:
+                    continue
+                result.append({**s, "skin": skin_val})
+
+        logger.info(
+            f"Фильтрация W={'any' if ignore_W else W_fixed}"
+            + (f", N={N_fixed}" if N_fixed is not None else "")
+            + f": {len(result)} образцов"
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Базовый misfit с выравниванием
+    # ------------------------------------------------------------------
+
+    def _sample_misfit(self, sample):
+        """
+        Misfit формы с предварительным выравниванием.
+
+        1. align_fact_to_ref:
+             - якорный сдвиг: shift_x = x_ref[0] / x_fact[0]
+             - растяжение stretch ∈ (0, stretch_max] по minimize_scalar
+             stretch_max = self._lib_x0_median / x_ref[0]
+        2. misfit_shape(dY/dX, linear) на совмещённых кривых
+        3. Штраф за малое перекрытие X
+
+        Возвращает (F_penalized, shift_x, stretch).
+        """
+        x_ref = sample["dynamic"]["X"].values.astype(float)
+        y_ref = sample["dynamic"]["Y"].values.astype(float)
+
+        # stretch_max для этого референса: медиана библиотеки / первая точка этого ref
+        try:
+            x_ref_0 = x_ref[x_ref > 0][0]
+        except IndexError:
+            # Нет положительных X в референсе
+            logger.warning(f"Референс {sample.get('skin', '?')}/{sample.get('N', '?')} не имеет положительных X")
+            return np.inf, 1.0, 1.0
+        
+        stretch_max = self._lib_x0_median / x_ref_0 if x_ref_0 > 0 else 1.0
+        stretch_max = max(stretch_max, 1.0)  # минимум 1 — без сжатия ниже якорной точки
+
+        x_al, y_al, shift_x, stretch = align_fact_to_ref(
+            self._x_fact_raw, self._y_fact_raw,
+            x_ref, y_ref,
+            stretch_max=stretch_max,
+        )
+
+        # Перекрытие после выравнивания
+        x_al_pos = x_al[x_al > 0]
+        x_ref_pos = x_ref[x_ref > 0]
+        if len(x_al_pos) == 0 or len(x_ref_pos) == 0:
+            logger.debug(f"Нет положительных X для {sample.get('skin', '?')}/{sample.get('N', '?')}")
+            return np.inf, shift_x, stretch
+
+        xmin = max(x_al_pos.min(), x_ref_pos.min())
+        xmax = min(x_al_pos.max(), x_ref_pos.max())
+        span = x_al_pos.max() - x_al_pos.min()
+        overlap = (xmax - xmin) / span if span > 0 else 0.0
+
+        if overlap < 0.05:
+            # Логарифмируем только для отладки - не блокируем
+            logger.debug(f"Малое перекрытие {overlap:.2%} для {sample.get('skin', '?')}/{sample.get('N', '?')}: "
+                        f"x_al=[{x_al_pos.min():.4f}, {x_al_pos.max():.4f}], "
+                        f"x_ref=[{x_ref_pos.min():.4f}, {x_ref_pos.max():.4f}]")
+
+        F = misfit_shape(
+            x_al, y_al, x_ref, y_ref,
+            derivative_mode=self.derivative_mode,
+            metric_type=self.metric_type,
+        )
+
+        # Если F inf из-за проблем с производной - пробуем вернуть хотя бы что-то
+        if not np.isfinite(F):
+            logger.debug(f"misfit_shape вернул {F} для {sample.get('skin', '?')}/{sample.get('N', '?')}")
+            # Возвращаем с штрафом, но не inf - чтобы хоть что-то выбрать
+            F = 1e10
+
+        return F / max(overlap, 0.1), shift_x, stretch
+
+    # ------------------------------------------------------------------
+    # Шаги 1–4 (аналогичны предыдущей версии, но с _sample_misfit v2)
+    # ------------------------------------------------------------------
+
+    def select_skin(self, samples, h_known=None, beam=5):
+        skin_scores = {}
+        skin_scales = {}
+
+        for s in samples:
+            skin = s["skin"]
+            F, sx, sy = self._sample_misfit(s)
+            F_w = F / _h_weight(s["h"], h_known)
+            if skin not in skin_scores or F_w < skin_scores[skin]:
+                skin_scores[skin] = F_w
+                skin_scales[skin] = (sx, sy)
+
+        top_skins = select_top_k(skin_scores, beam)
+        self._skin_scales = skin_scales
+
+        logger.info(f"Шаг 1 — Skin. Проверено: {len(skin_scores)} значений (ВСЕ кривые)")
+        # Логируем ВСЕ значения Skin (перебор всех кривых по форме)
+        for sk in sorted(skin_scores.keys()):
+            sx, sy = skin_scales[sk]
+            logger.info(
+                f"  Skin={sk:.3f} → misfit={skin_scores[sk]:.6f}, "
+                f"scale_x={sx:.4f}, scale_y={sy:.4f}"
+            )
+        logger.info(f"Топ-{len(top_skins)} для дальнейшего отбора: {top_skins}")
+        return top_skins, skin_scores
+
+    def select_N(self, samples, top_skins, beam=5):
+        relevant = [s for s in samples if s["skin"] in top_skins]
+        sn_scores = {}
+        sn_scales = {}
+
+        for s in relevant:
+            key = (s["skin"], s["N"])
+            F, sx, sy = self._sample_misfit(s)
+            if key not in sn_scores or F < sn_scores[key]:
+                sn_scores[key] = F
+                sn_scales[key] = (sx, sy)
+
+        best_key = min(sn_scores, key=sn_scores.get)
+        best_skin, best_N = best_key
+        self._sn_scales = sn_scales
+
+        logger.info(f"Шаг 2 — N. Проверено: {len(sn_scores)} комбинаций")
+        for (sk, n), f in sorted(sn_scores.items(), key=lambda x: x[1])[:5]:
+            logger.info(f"  Skin={sk:.3f}, N={n} → misfit={f:.6f}")
+        return best_skin, best_N, sn_scores
+
+    def select_aL(self, samples, skin, N, beam=5):
+        relevant = [s for s in samples
+                    if s["skin"] == skin and s["N"] == N]
+        al_scores = {}
+
+        for s in relevant:
+            al = s["a/L"]
+            F, _, _ = self._sample_misfit(s)
+            if al not in al_scores or F < al_scores[al]:
+                al_scores[al] = F
+
+        top_aL = select_top_k(al_scores, beam)
+
+        logger.info(
+            f"Шаг 3 — a/L при Skin={skin:.3f}, N={N}. "
+            f"Проверено: {len(al_scores)} значений"
+        )
+        for al in top_aL:
+            logger.info(f"  a/L={al:.4f} → misfit={al_scores[al]:.6f}")
+        return top_aL, al_scores
+
+    def select_L(self, samples, skin, N, top_aL):
+        relevant = [s for s in samples
+                    if s["skin"] == skin and s["N"] == N
+                    and s["a/L"] in top_aL]
+
+        L_dict = {}
+        for s in relevant:
+            L_dict.setdefault(s["L"], []).append(s)
+
+        L_values = sorted(L_dict.keys())
+        if not L_values:
+            return None, None, None, None, 1.0, 1.0, np.inf
+
+        L_scores, L_best_s, L_best_sc = {}, {}, {}
+        for L in L_values:
+            best_F, best_s, best_sx, best_sy = np.inf, None, 1.0, 1.0
+            first_s = None  # Запоминаем первый образец для fallback
+            for s in L_dict[L]:
+                if first_s is None:
+                    first_s = s
+                F, sx, sy = self._sample_misfit(s)
+                if F < best_F:
+                    best_F, best_s, best_sx, best_sy = F, s, sx, sy
+            # Если best_s остался None (все вернули inf) - используем первый
+            if best_s is None and first_s is not None:
+                best_s = first_s
+                logger.warning(f"L={L}: все образцы вернули inf, использую первый попавшийся")
+            L_scores[L] = best_F
+            L_best_s[L] = best_s
+            L_best_sc[L] = (best_sx, best_sy)
+
+        # Фильтруем L с валидными образцами
+        valid_L = [L for L in L_values if L_best_s[L] is not None]
+        if not valid_L:
+            logger.error("Нет ни одного валидного L!")
+            return None, None, None, None, 1.0, 1.0, np.inf
+        
+        sorted_L = sorted(valid_L, key=lambda L: L_scores[L])
+        best_L = sorted_L[0]
+        best_F = L_scores[best_L]
+        best_sx, best_sy = L_best_sc[best_L]
+
+        logger.info(f"Шаг 4 — L. Проверено: {len(L_values)} значений")
+        for L in sorted_L[:5]:
+            logger.info(f"  L={L:.2f} → misfit={L_scores[L]:.6f}")
+
+        # Интерполяция между соседями
+        best_idx = L_values.index(best_L)
+        neighbours = []
+        if best_idx > 0:
+            nb = L_values[best_idx - 1]
+            neighbours.append((nb, L_scores[nb], L_best_s[nb], L_best_sc[nb]))
+        if best_idx < len(L_values) - 1:
+            nb = L_values[best_idx + 1]
+            neighbours.append((nb, L_scores[nb], L_best_s[nb], L_best_sc[nb]))
+
+        if neighbours:
+            L_nb, F_nb, s_nb, (sx_nb, sy_nb) = min(neighbours, key=lambda t: t[1])
+            alpha = _choose_alpha(best_F, F_nb)
+
+            if 0.0 < alpha < 1.0:
+                x1 = L_best_s[best_L]["dynamic"]["X"].values.astype(float)
+                y1 = L_best_s[best_L]["dynamic"]["Y"].values.astype(float)
+                x2 = s_nb["dynamic"]["X"].values.astype(float)
+                y2 = s_nb["dynamic"]["Y"].values.astype(float)
+
+                xb = np.logspace(
+                    np.log10(max(x1.min(), x2.min())),
+                    np.log10(min(x1.max(), x2.max())), 300
+                )
+                yb = _blend_curves(_interp_curve(x1, y1, xb),
+                                   _interp_curve(x2, y2, xb), alpha)
+
+                x_al, y_al, sx_bl, sy_bl = align_fact_to_ref(
+                    self._x_fact_raw, self._y_fact_raw, xb, yb
+                )
+                xmin = max(x_al[x_al > 0].min(), xb[xb > 0].min())
+                xmax = min(x_al[x_al > 0].max(), xb[xb > 0].max())
+                span = x_al[x_al > 0].max() - x_al[x_al > 0].min()
+                overlap = (xmax - xmin) / span if span > 0 else 0.0
+                F_bl = misfit_shape(x_al, y_al, xb, yb,
+                                    derivative_mode=self.derivative_mode,
+                                    metric_type=self.metric_type)
+                F_bl = F_bl / max(overlap, 0.1)
+
+                L_bl = (1.0 - alpha) * best_L + alpha * L_nb
+                aL_bl = ((1.0 - alpha) * L_best_s[best_L]["a/L"]
+                         + alpha * s_nb["a/L"])
+
+                logger.info(
+                    f"  Интерполяция L={best_L:.1f}+{L_nb:.1f}, "
+                    f"alpha={alpha:.2f} → L={L_bl:.2f}, F={F_bl:.6f}"
+                )
+
+                if F_bl <= best_F:
+                    return L_bl, aL_bl, xb, yb, sx_bl, sy_bl, F_bl
+
+        # Проверяем, что best_s существует
+        if L_best_s[best_L] is None:
+            logger.warning(f"Не найден валидный образец для L={best_L}")
+            # Возвращаем None вместо падения
+            return None, None, None, None, None, None, np.inf
+        
+        x_b = L_best_s[best_L]["dynamic"]["X"].values.astype(float)
+        y_b = L_best_s[best_L]["dynamic"]["Y"].values.astype(float)
+        return best_L, L_best_s[best_L]["a/L"], x_b, y_b, best_sx, best_sy, best_F
+
+    # ------------------------------------------------------------------
+    # Шаг 5: аналитическое восстановление k и L
+    # ------------------------------------------------------------------
+
+    def recover_k_L(self, scale_x, scale_y, k_init, L_init, k_bounds, L_bounds):
+        """
+        Восстановление физических параметров из масштабных коэффициентов.
+
+        Из формул X = k*f(...) и Y = g(...)/L:
+            scale_x = X_ref_median / X_fact_median = k_real / k_init
+            scale_y = Y_ref_median / Y_fact_median = L_init / L_real
+
+            k_real = k_init * scale_x
+            L_real = L_init / scale_y
+        """
+        k_real = float(np.clip(k_init * scale_x, k_bounds[0], k_bounds[1]))
+        L_real = float(np.clip(
+            L_init / scale_y if scale_y > 0 else L_init,
+            L_bounds[0], L_bounds[1]
+        ))
+        logger.info(
+            f"Шаг 5: scale_x={scale_x:.4f}, scale_y={scale_y:.4f} "
+            f"→ k={k_real:.6f} мД, L={L_real:.4f} м"
+        )
+        return k_real, L_real
+
+    # ------------------------------------------------------------------
+    # Шаг 5: восстановление k из горизонтального сдвига по X
+    # ------------------------------------------------------------------
+
+    def recover_k(self, best_sample, k_ref=5.0, k_bounds=(1e-5, 100)):
+        """
+        Восстановление k из соотношения медиан X факта и референса.
+
+        Физика:
+            X = 0.00864 * k * h * |dP| / (mu * B * Q)
+            X ∝ k при фиксированных статических параметрах.
+
+            Библиотека посчитана при k_ref=5:
+                X_ref = 0.00864 * k_ref * h * |dP| / (mu * B * Q)
+                X_fact = 0.00864 * k_real * h * |dP| / (mu * B * Q)
+
+            →  X_fact / X_ref = k_real / k_ref
+            →  k_real = k_ref * median(X_fact) / median(X_ref)
+
+        Медиана робастна к выбросам на краях кривой.
+        """
+        x_ref  = best_sample["dynamic"]["X"].values.astype(float)
+        x_ref  = x_ref[x_ref > 0]
+        x_fact = self._x_fact_raw[self._x_fact_raw > 0]
+
+        if len(x_ref) == 0 or len(x_fact) == 0:
+            logger.warning("recover_k: нет положительных X, возвращаю k_ref")
+            return k_ref
+
+        med_fact = np.median(x_fact)
+        med_ref  = np.median(x_ref)
+
+        if med_ref == 0:
+            logger.warning("recover_k: медиана X_ref = 0, возвращаю k_ref")
+            return k_ref
+
+        k_real = k_ref * (med_fact / med_ref)
+        k_real = float(np.clip(k_real, k_bounds[0], k_bounds[1]))
+
+        logger.info(
+            f"Шаг 5 — k: median(X_fact)={med_fact:.4f}, "
+            f"median(X_ref)={med_ref:.4f}, "
+            f"k_ref={k_ref} → k_real={k_real:.6f} мД"
+        )
+        return k_real
+
+    # ------------------------------------------------------------------
+    # Главный метод
+    # ------------------------------------------------------------------
+
+    def solve(self, x_fact, y_fact,
+              W_fixed=None, N_fixed=None, h_known=None,
+              k_bounds=(1e-5, 10), xf_bounds=(1e-3, 100),
+              beam=5):
+        """
+        Полный ступенчатый подбор.
+        Параметры результата берутся напрямую из найденной кривой библиотеки —
+        так же как Skin подбирается по форме, так же L, a/L, N из совпадения.
+        k пока возвращается как None — восстановление через Y отдельным шагом.
+        """
+        logger.info("=" * 60)
+        logger.info("НАЧАЛО ОПТИМИЗАЦИИ")
+        logger.info(f"  W={W_fixed}, N={N_fixed}, h={h_known}")
+
+        self._prepare(x_fact, y_fact)
+        samples = self._filter_library(W_fixed, N_fixed)
+
+        if not samples:
+            raise ValueError(f"Библиотека пуста: W={W_fixed}, N={N_fixed}")
+
+        logger.info("\n--- Шаг 1: Skin ---")
+        top_skins, _ = self.select_skin(samples, h_known=h_known, beam=beam)
+
+        if N_fixed is not None:
+            best_skin, best_N = top_skins[0], N_fixed
+            logger.info(f"\n--- Шаг 2: N зафиксирован={N_fixed} ---")
+        else:
+            logger.info("\n--- Шаг 2: N (подбор) ---")
+            best_skin, best_N, _ = self.select_N(samples, top_skins, beam=beam)
+
+        logger.info(f"  → Skin={best_skin:.3f}, N={best_N}")
+
+        logger.info("\n--- Шаг 3: a/L ---")
+        top_aL, _ = self.select_aL(samples, best_skin, best_N, beam=beam)
+
+        logger.info("\n--- Шаг 4: L ---")
+        best_L, best_aL, x_ref_f, y_ref_f, _, _, misfit_f = self.select_L(
+            samples, best_skin, best_N, top_aL
+        )
+
+        if x_ref_f is None:
+            # Пытаемся найти хоть какой-то образец из библиотеки
+            logger.warning("x_ref_f is None - пробуем получить кривую из выборки")
+            # Найдём первый попавшийся образец для данных skin/N
+            for s in samples:
+                if s.get('skin') == best_skin and s.get('N') == best_N:
+                    x_ref_f = s["dynamic"]["X"].values.astype(float)
+                    y_ref_f = s["dynamic"]["Y"].values.astype(float)
+                    best_L = s.get('L', 50.0)
+                    best_aL = s.get('a/L', 1.0)
+                    misfit_f = np.inf
+                    logger.warning(f"Использую fallback: L={best_L}, a/L={best_aL}")
+                    break
+            if x_ref_f is None:
+                raise ValueError("Не удалось подобрать L - нет подходящих образцов в библиотеке.")
+
+        # Шаг 5: k из горизонтального сдвига X
+        logger.info("\n--- Шаг 5: k ---")
+        best_sample_for_k = None
+        for s in samples:
+            if (s.get("skin") == best_skin
+                    and s.get("N") == best_N
+                    and s.get("L") == best_L
+                    and s.get("a/L") == best_aL):
+                best_sample_for_k = s
+                break
+        # Fallback: если точного совпадения нет (был blend), берём ближайший по L
+        if best_sample_for_k is None:
+            candidates = [s for s in samples
+                          if s.get("skin") == best_skin and s.get("N") == best_N]
+            if candidates:
+                best_sample_for_k = min(
+                    candidates,
+                    key=lambda s: abs(s.get("L", 0) - best_L)
+                )
+
+        k_opt = self.recover_k(
+            best_sample_for_k,
+            k_ref=5.0,
+            k_bounds=k_bounds,
+        ) if best_sample_for_k is not None else None
+
+        # Получаем дополнительные параметры из лучшей кривой
+        best_h = None
+        best_W = None
+        for s in samples:
+            if s.get('skin') == best_skin and s.get('N') == best_N:
+                if s.get('L') == best_L and s.get('a/L') == best_aL:
+                    best_h = s.get('h')
+                    best_W = s.get('W')
+                    break
+
         logger.info("\n" + "=" * 60)
-        logger.info("РЕЗУЛЬТАТ ОПТИМИЗАЦИИ:")
-        logger.info(f"  Skin-фактор S = {best_skin:.4f}")
-        logger.info(f"  Количество трещин N = {best_N}")
-        logger.info(f"  Проницаемость k = {params.get('k', params.get('xf', 0)):.6f} мД")
-        logger.info(f"  Полудлина трещины xf = {params.get('xf', params.get('k', 0)):.4f} м")
-        logger.info(f"  Итоговая ошибка = {score:.6f}")
+        logger.info("РЕЗУЛЬТАТ (параметры найденной кривой):")
+        logger.info(f"  Skin (S)   = {best_skin:.4f}")
+        logger.info(f"  N (число трещин) = {best_N}")
+        logger.info(f"  L (полудлина) = {best_L:.4f} м")
+        logger.info(f"  a/L         = {best_aL:.4f}")
+        logger.info(f"  k           = {k_opt:.6f} мД" if k_opt is not None else "  k           = N/A")
+        if best_h is not None:
+            logger.info(f"  h (толщина пласта) = {best_h:.4f} м")
+        if best_W is not None:
+            logger.info(f"  W (ширина трещины) = {best_W:.4f} м")
+        logger.info(f"  Misfit     = {misfit_f:.6f}")
         logger.info("=" * 60)
 
         return {
-            "skin": best_skin,
-            "N": best_N,
-            "params": params,
-            "misfit": score
+            "skin":  best_skin,
+            "N":     best_N,
+            "L":     best_L,
+            "aL":    best_aL,
+            "h":     best_h,
+            "W":     best_W,
+            "params": {"k": k_opt, "xf": best_L},
+            "misfit": misfit_f,
+            "x_ref_matched": x_ref_f,
+            "y_ref_matched": y_ref_f,
         }
+
