@@ -96,26 +96,30 @@ log-log
 
 #### Принцип работы
 
-Алгоритм использует **гибридный подход**:
+Алгоритм использует **ступенчатый подход** с последовательным сужением пространства поиска:
 
-1. **Выбор Skin-фактора (Beam Search)** — перебор дискретных значений из библиотеки, выбор top-k лучших
+1. **Выбор Skin-фактора (Beam Search)** — перебор дискретных значений из библиотеки с h-взвешиванием, выбор top-k лучших
 
 2. **Выбор N (количество трещин)** — для выбранных Skin перебор значений N, выбор лучшей комбинации
 
-3. **Байесовская оптимизация (Optuna)** — оптимизация непрерывных параметров k и xf:
-   - Эталонная кривая модифицируется: `y_mod = y_ref * k * (1 + 0.1 * log10(xf + 1))`
-   - Сравнение с входными данными **без нормализации**
-   - Параметр k влияет на амплитуду и напрямую отражается на ошибке
+3. **Выбор a/L** — Beam Search по параметру отношения расстояния до границы к длине трещины
+
+4. **Выбор L (полудлина трещины)** — перебор значений из библиотеки с интерполяцией между соседними кривыми
+
+5. **Восстановление k** — аналитический расчёт проницаемости из масштабных коэффициентов: `X ∝ k`
 
 #### Невязка
 
-- Интерполяция обеих кривых на общую сетку
-- Сравнение **реальных значений** (raw, без нормализации)
-- Метрики L1, L2, integral по производным (linear, loglog)
+Используются две функции невязки:
+
+- **misfit_shape** (с нормировкой) — для выбора формы кривой (Skin, N, a/L, L)
+- **misfit_aligned** (без нормировки) — для восстановления проницаемости k
+
+Метрики: L1, L2, integral по производным (linear, loglog).
 
 #### Результат
 
-Оптимизация возвращает: Skin S, проницаемость k (мД), полудлину L (м), количество трещин N, значение ошибки.
+Оптимизация возвращает: Skin S, проницаемость k (мД), полудлину L (м), a/L, количество трещин N, значение ошибки.
 
 ---
 
@@ -252,18 +256,16 @@ static parameters
 Эталонные кривые хранятся в SQLite базе:
 
 ```
-reference.db
+storage/db/reference_curves.db
 ```
 
 Структура таблиц:
 
-### dynamic
+### dynamics
 
 ```
 curve_id
 elemIdx
-t
-dP
 X
 Y
 ```
@@ -277,13 +279,13 @@ h
 N
 W
 L
-Q
+aL
 ```
 
 Доступ к базе реализован через:
 
 ```
-ReferenceCurveDBManager
+ReferenceRepository (core/reference_repo.py)
 ```
 
 ---
@@ -293,36 +295,85 @@ ReferenceCurveDBManager
 ```
 HydraFracApp
 │
-├── core
-│   ├── models.py
-│   ├── dimensionless.py
-│   ├── solver.py
-│   └── app_state.py
+├── core/
+│   ├── models.py              # Модели данных (RawDynamicData, ProcessingDynamicData, ...)
+│   ├── app_state.py           # Центральное состояние приложения
+│   ├── dimensionless.py       # Расчёт безразмерных параметров X, Y
+│   ├── reference_repo.py      # Репозиторий эталонных кривых (SQLite)
+│   ├── solver.py              # Базовый интерфейс солвера
+│   ├── objective.py           # Целевая функция оптимизации
+│   └── w_scaling.py           # Масштабирование по W
 │
-├── processing
-│   ├── loaders
-│   │   ├── csv_loader.py
-│   │   └── las_loader.py
-│   └── preprocessing.py
+├── solver/
+│   ├── solver_wrapper.py      # Обёртка над ReservoirSolver (используется в main.py)
+│   ├── solver_new.py          # Основной ReservoirSolver (ступенчатый алгоритм)
+│   ├── solver.py              # Базовая версия солвера
+│   ├── misfit.py              # Функции невязки (misfit_shape, misfit_aligned)
+│   ├── metrics.py             # Метрики сравнения (L1, L2, integral)
+│   ├── derivative.py          # Вычисление производных
+│   ├── interpolation.py       # Интерполяция кривых
+│   ├── library.py             # Построение библиотеки эталонов
+│   ├── beam_search.py         # Beam Search
+│   ├── preprocess_grid.py     # Обработка сеток
+│   └── config.py              # Конфигурация солвера
 │
-├── storage
-│   └── reference_repository.py
+├── processing/
+│   ├── loaders/
+│   │   ├── csv_loader.py      # Загрузчик CSV
+│   │   └── las_loader.py      # Загрузчик LAS
+│   ├── preprocessing.py       # Оркестратор предобработки
+│   ├── raw_to_processing.py   # Преобразование сырых данных
+│   ├── rebuild_processing_dynamic.py
+│   ├── interpolate_pressure.py
+│   ├── interpolate_debit.py
+│   ├── extrapolate_time.py
+│   ├── extrapolate_pressure.py
+│   ├── extrapolate_debit.py
+│   ├── smooth_pressure.py
+│   ├── remove_pressure_outliers.py
+│   ├── extend_masks_to_time_grid.py
+│   └── autosplitter.py        # Автоматическое разделение КСД/КВД
 │
-├── ui
-│   ├── main_ui.ui
-│   └── ui.py
+├── storage/
+│   └── db/
+│       └── reference_curves.db
 │
-├── helpers
+├── schemas/
+│   ├── raw_dynamic_input.py   # Валидация динамических данных
+│   ├── static_params.py       # Валидация статических параметров
+│   └── optimize_thresholds.py # Валидация границ оптимизации
+│
+├── helpers/
 │   ├── calculate_burde.py
-│   └── math utilities
+│   ├── calculate_dP.py
+│   ├── calculate_k_value.py
+│   ├── calculate_L_value.py
+│   └── normalize_Q_by_n.py
 │
-├── schemas
-│   └── pydantic validation models
+├── ui/
+│   ├── main_ui.ui
+│   ├── ui.py
+│   ├── ui_setup.py
+│   ├── paste_dialog_data.py
+│   ├── autosplit_dialog.py
+│   ├── plot_pressure.py
+│   ├── plot_debit.py
+│   ├── plot_xy.py
+│   ├── plot_burde.py
+│   ├── data_table.py
+│   └── export_processing_to_csv.py
 │
-├── utils
-│   └── вспомогательные функции
+├── utils/
+│   ├── get_file_suffix.py
+│   ├── get_filename.py
+│   └── validation_errors.py
 │
-└── main.py
+├── docs/                      # Документация
+├── data_files/                # Тестовые данные
+│
+├── config.py
+├── main.py
+└── requirements.txt
 ```
 
 ---
