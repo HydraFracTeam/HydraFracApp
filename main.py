@@ -79,6 +79,7 @@ class MyApp(QMainWindow):
         self.app_state = AppState()
         self.logger = logging.getLogger(__name__)
         self._autosplit_info = None  # Информация о разделении КСД/КВД
+        self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
         
         self._load_controls: List[QWidget] = [
             self.ui.load_file_button,
@@ -473,7 +474,6 @@ class MyApp(QMainWindow):
                 return
             
             # Store dimensionless data in app state
-            from core.models import DimensionlessData
             self.app_state.dimensionless = DimensionlessData(X=x_fact, Y=y_fact)
             
             # Run solver
@@ -497,7 +497,6 @@ class MyApp(QMainWindow):
             self.ui.frac_length_result_spinbox.setValue(result.L_opt)
             
             # Store result in app state
-            from core.models import SolverState
             self.app_state.solver_state = SolverState(
                 k_current=result.k_opt,
                 L_current=result.L_opt,
@@ -571,32 +570,29 @@ class MyApp(QMainWindow):
 
     def _find_best_reference_curve(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
         """
-        Find the best matching reference curve based on optimization results.
+        Находит наилучшую подходящую эталонную кривую на основе результатов оптимизации.
         """
         try:
-            repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
-
-            available_skins = repo.get_available_skins()
+            available_skins = self.ref_repo.get_available_skins()
             if not available_skins:
                 return None
 
             closest_skin = min(available_skins, key=lambda x: abs(x - skin_opt))
-            return repo.find_best_curve(closest_skin, L_opt, N=N_fixed, W=W_fixed)
+            return self.ref_repo.find_best_curve(closest_skin, L_opt, N=N_fixed, W=W_fixed)
 
         except Exception as e:
-            self.logger.error(f"Error finding reference curve: {e}")
+            self.logger.error(f"Ошибка при поиске эталонной кривой: {e}")
             return None
 
     def _find_neighbor_reference_curves(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
         """
-        Find neighbor reference curves: 2 with skin-1 and skin-2, and 2 with skin+1 and skin+2.
+        Находит соседние эталонные кривые: 2 с skin-1 и skin-2, и 2 с skin+1 и skin+2.
         """
         try:
-            repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
-            return repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            return self.ref_repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
 
         except Exception as e:
-            self.logger.error(f"Error finding neighbor curves: {e}")
+            self.logger.error(f"Ошибка при поиске соседних кривых: {e}")
             return []
     
     def refresh_ui(self):
