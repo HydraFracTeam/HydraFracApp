@@ -359,59 +359,43 @@ class MyApp(QMainWindow):
         self.ui.reset_plots_btn.clicked.connect(self.reset_preprocessing_dynamic_data)
         
     def interpolate_processing_dynamic_data(self):
-        from copy import deepcopy
-        processing = deepcopy(self.app_state.processing_dynamic_data)
-        processing = extend_masks_to_time_grid(processing)
-        processing = interpolate_pressure(processing)
-        processing = interpolate_debit(processing)
-        
-        self.app_state.processing_dynamic_data = processing
-        self.recalculate_processing_dynamic_data()
-        self.recalculate_dimensionless()
-        self.refresh_ui()
-    
+        self._apply_preprocessing(
+            extend_masks_to_time_grid,
+            interpolate_pressure,
+            interpolate_debit,
+        )
+
     def extrapolate_processing_dynamic_data(self):
-        from copy import deepcopy
-        processing = deepcopy(self.app_state.processing_dynamic_data)
-        processing = extrapolate_time(processing)
-        processing = extend_masks_to_time_grid(processing)
-        processing = extrapolate_pressure(processing)
-        processing = extrapolate_debit(processing)
-        
-        self.app_state.processing_dynamic_data = processing
-        self.recalculate_processing_dynamic_data()
-        self.recalculate_dimensionless()
-        self.refresh_ui()
-    
+        self._apply_preprocessing(
+            extrapolate_time,
+            extend_masks_to_time_grid,
+            extrapolate_pressure,
+            extrapolate_debit,
+        )
+
     def smooth_processing_dynamic_data(self):
-        from copy import deepcopy
-        processing = deepcopy(self.app_state.processing_dynamic_data)
-        processing = smooth_pressure(processing)
-        
-        self.app_state.processing_dynamic_data = processing
-        
-        self.recalculate_processing_dynamic_data()
-        self.recalculate_dimensionless()
-        self.refresh_ui()
-    
+        self._apply_preprocessing(smooth_pressure)
+
     def remove_outliers_in_processing_dynamic_data(self):
+        self._apply_preprocessing(remove_pressure_outliers)
+   
+    def _apply_preprocessing(self, *actions):
+        """Pipeline: deepcopy → apply actions → save → recalc → refresh UI."""
         from copy import deepcopy
         processing = deepcopy(self.app_state.processing_dynamic_data)
-        processing = remove_pressure_outliers(processing)
-        
+        for action in actions:
+            processing = action(processing)
         self.app_state.processing_dynamic_data = processing
-        
         self.recalculate_processing_dynamic_data()
         self.recalculate_dimensionless()
-        self.refresh_ui()
-    
+        self.refresh_ui() 
+        
     def reset_preprocessing_dynamic_data(self):
         self.app_state.processing_dynamic_data = raw_to_processing(self.app_state.raw_dynamic_data)
         self.recalculate_processing_dynamic_data()
         self.recalculate_dimensionless()
         self.refresh_ui()
-    
-    
+
     ## РАЗДЕЛ РАСЧЁТА ОПТИМАЛЬНЫХ ПАРАМЕТРОВ
     def calculate_optimal_parameters(self):
         """Execute the solver to find optimal S, k, L parameters."""
