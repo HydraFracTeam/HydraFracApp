@@ -66,6 +66,7 @@ from processing import (
     raw_to_processing,
     )
 from processing.autosplitter import get_split_info
+from processing.autosplit_service import apply_autosplit
 from ui.autosplit_dialog import AutosplitDialog
 
 
@@ -134,48 +135,21 @@ class MyApp(QMainWindow):
 
             try:
                 raw = dialog.get_data()
-                
-                # Проверка на автосплиттер
+
+                # Автосплиттер
                 try:
                     split_info = get_split_info(raw.t, raw.P)
                 except Exception as e:
                     self.logger.warning(f"Ошибка автосплиттера: {e}")
                     split_info = None
-                
+
                 if split_info is not None:
                     try:
-                        # Показываем диалог выбора
                         mode = AutosplitDialog.show_dialog(self, split_info)
-                        
-                        if mode == AutosplitDialog.MODE_KSD:
-                            split_idx = split_info.get('index', len(raw.t) // 2)
-                            raw.t = raw.t[:split_idx]
-                            raw.P = raw.P[:split_idx]
-                            # Проверяем Q перед срезом
-                            if hasattr(raw, 'Q') and raw.Q is not None:
-                                raw.Q = raw.Q[:split_idx]
-                            self.show_in_text_report(
-                                f"Выбран режим КСД: использованы точки 0-{split_idx}"
-                            )
-                        elif mode == AutosplitDialog.MODE_KVD:
-                            split_idx = split_info.get('index', len(raw.t) // 2)
-                            raw.t = raw.t[split_idx:]
-                            raw.P = raw.P[split_idx:]
-                            # Проверяем Q перед срезом
-                            if hasattr(raw, 'Q') and raw.Q is not None:
-                                raw.Q = raw.Q[split_idx:]
-                            self.show_in_text_report(
-                                f"Выбран режим КВД: использованы точки {split_idx}-end"
-                            )
-                        elif mode == AutosplitDialog.MODE_BOTH:
-                            self.show_in_text_report(
-                                f"⚠ Использованы все данные (КСД + КВД). "
-                                f"Подбор может быть некорректным!"
-                            )
-                            self._autosplit_info = split_info
-                        elif mode == AutosplitDialog.MODE_IGNORE:
-                            self.show_in_text_report("Автосплиттер отключен.")
-                            self._autosplit_info = None
+                        if mode:
+                            raw, msg, self._autosplit_info = apply_autosplit(raw, split_info, mode)
+                            if msg:
+                                self.show_in_text_report(msg)
                         else:
                             self._autosplit_info = None
                     except Exception as e:
@@ -185,8 +159,7 @@ class MyApp(QMainWindow):
                     self._autosplit_info = None
 
                 self.app_state.raw_dynamic_data = raw
-                
-                # Отображаем линию разделения если есть
+
                 if self._autosplit_info is not None:
                     self._draw_autosplit_line()
 
@@ -204,6 +177,7 @@ class MyApp(QMainWindow):
                     "Ошибка данных",
                     format_pydantic_error(e)
                 )
+                
     def load_dynamic_data_from_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -226,61 +200,21 @@ class MyApp(QMainWindow):
             else:
                 raise ValueError("Загружать можно только .csv или .las файлы.")
         
-            # Проверка на автосплиттер
+            # Автосплиттер
             try:
                 split_info = get_split_info(raw_data.t, raw_data.P)
             except Exception as e:
                 self.logger.warning(f"Ошибка автосплиттера: {e}")
                 split_info = None
-            
+
             if split_info is not None:
                 try:
-                    # Показываем диалог выбора
                     mode = AutosplitDialog.show_dialog(self, split_info)
-                    
-                    if mode == AutosplitDialog.MODE_KSD:
-                        # Оставляем только КСД (до точки разделения)
-                        split_idx = split_info.get('index', len(raw_data.t) // 2)
-                        raw_data.t = raw_data.t[:split_idx]
-                        raw_data.P = raw_data.P[:split_idx]
-                        # Проверяем Q перед срезом
-                        if hasattr(raw_data, 'Q') and raw_data.Q is not None:
-                            raw_data.Q = raw_data.Q[:split_idx]
-                        self.show_in_text_report(
-                            f"Выбран режим КСД: использованы точки 0-{split_idx} "
-                            f"(t < {split_info.get('time', 0):.2f})"
-                        )
-                        
-                    elif mode == AutosplitDialog.MODE_KVD:
-                        # Оставляем только КВД (после точки разделения)
-                        split_idx = split_info.get('index', len(raw_data.t) // 2)
-                        raw_data.t = raw_data.t[split_idx:]
-                        raw_data.P = raw_data.P[split_idx:]
-                        # Проверяем Q перед срезом
-                        if hasattr(raw_data, 'Q') and raw_data.Q is not None:
-                            raw_data.Q = raw_data.Q[split_idx:]
-                        self.show_in_text_report(
-                            f"Выбран режим КВД: использованы точки {split_idx}-{len(raw_data.t) + split_idx} "
-                            f"(t >= {split_info.get('time', 0):.2f})"
-                        )
-                        
-                    elif mode == AutosplitDialog.MODE_BOTH:
-                        # Оставляем все, но показываем предупреждение
-                        self.show_in_text_report(
-                            f"⚠ Предупреждение: использованы все данные (КСД + КВД). "
-                            f"Точка разделения: t = {split_info.get('time', 0):.2f}. "
-                            f"Подбор параметров может быть некорректным!"
-                        )
-                        # Сохраняем инфо о разделении для визуализации
-                        self._autosplit_info = split_info
-                        
-                    elif mode == AutosplitDialog.MODE_IGNORE:
-                        # Игнорируем разделение
-                        self.show_in_text_report("Автосплиттер отключен. Использованы все данные.")
-                        self._autosplit_info = None
-                        
+                    if mode:
+                        raw_data, msg, self._autosplit_info = apply_autosplit(raw_data, split_info, mode)
+                        if msg:
+                            self.show_in_text_report(msg)
                     else:
-                        # Диалог закрыт без выбора - используем все данные
                         self.show_in_text_report("Выбор отменен. Использованы все данные.")
                         self._autosplit_info = None
                 except Exception as e:
@@ -781,7 +715,7 @@ class MyApp(QMainWindow):
             neighbors = self._find_neighbor_reference_curves(k_opt, L_opt, skin_opt, N_fixed, W_fixed)
             # Colors for 4 neighbors: Skin-2, Skin-1, Skin+1, Skin+2
             neighbor_colors = [
-                (0, 191, 255),    # Skin-2 - глубокий синий
+                (0, 191, 255),    # Skin-2 - голубой
                 (100, 200, 100),  # Skin-1 - яркий зелёный
                 (255, 165, 0),    # Skin+1 - оранжевый
                 (220, 20, 60),    # Skin+2 - насыщенный красный
