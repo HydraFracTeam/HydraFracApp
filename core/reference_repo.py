@@ -45,30 +45,6 @@ class ReferenceRepository:
             self._connection.close()
             self._connection = None
     
-    def load_all_data(self) -> pd.DataFrame:
-        """
-        Load all reference data from database into a single DataFrame.
-        
-        Returns:
-            DataFrame with columns: Skin, h, N, W, L, a/L, X, Y
-        """
-        conn = self._get_connection()
-        
-        # Join statics and dynamics to get complete data
-        query = """
-            SELECT 
-                s.Skin, s.h, s.N, s.W, s.L, s.aL as "a/L",
-                d.X, d.Y
-            FROM statics s
-            JOIN dynamics d ON s.curve_id = d.curve_id
-            ORDER BY s.curve_id, d.elemIdx
-        """
-        
-        df = pd.read_sql_query(query, conn)
-        logger.info(f"Loaded {len(df)} rows from database")
-        
-        return df
-    
     def get_skin_library(self) -> Dict:
         """
         Build skin library from database.
@@ -170,3 +146,153 @@ class ReferenceRepository:
         x = np.array([row[0] for row in rows])
         y = np.array([row[1] for row in rows])
         return x, y
+
+    def get_static_params(self, curve_id: int) -> dict:
+        """
+        Получить статические параметры эталонной кривой.
+
+        Returns:
+            dict с ключами: Skin, L, W, h, N
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",
+            (curve_id,)
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError(f"No static params found for curve_id {curve_id}")
+        return {
+            'Skin': row['Skin'],
+            'L': row['L'],
+            'W': row['W'],
+            'h': row['h'],
+            'N': row['N'],
+        }
+
+    def find_best_curve(
+        self,
+        skin: float,
+        L_opt: float,
+        N: Optional[int] = None,
+        W: Optional[float] = None,
+    ) -> Optional[Dict]:
+        """
+        Найти эталонную кривую, ближайшую по L, с фильтрацией по N и W.
+
+        Args:
+            skin: значение skin-фактора
+            L_opt: целевая полудлина трещины
+            N: фильтр по количеству трещин (опционально)
+            W: фильтр по ширине трещины (опционально)
+
+        Returns:
+            dict с ключами curve_id, Skin, L, W, h, N, X, Y или None
+        """
+        curve_ids = self.get_curves_by_skin(skin)
+        if not curve_ids:
+            return None
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        best_curve = None
+        best_diff = float('inf')
+
+        for curve_id in curve_ids:
+            cursor.execute(
+                "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",
+                (curve_id,)
+            )
+            row = cursor.fetchone()
+            if row is None:
+                continue
+
+            if N is not None and row['N'] != N:
+                continue
+            if W is not None and row['W'] != W:
+                continue
+
+            diff = abs(row['L'] - L_opt)
+            if diff < best_diff:
+                best_diff = diff
+                best_curve = {
+                    'curve_id': curve_id,
+                    'Skin': row['Skin'],
+                    'L': row['L'],
+                    'W': row['W'],
+                    'h': row['h'],
+                    'N': row['N'],
+                }
+
+        if best_curve:
+            X, Y = self.get_reference_curve(best_curve['curve_id'])
+            best_curve['X'] = X
+            best_curve['Y'] = Y
+
+        return best_curve
+
+    def find_neighbor_curves(
+        self,
+        skin: float,
+        L_opt: float,
+        N: Optional[int] = None,
+        W: Optional[float] = None,
+    ) -> List[Dict]:
+        """
+        Найти соседние эталонные кривые (skin±1, skin±2), ближайшие по L.
+
+        Args:
+            skin: оптимальное значение skin-фактора
+            L_opt: оптимальная полудлина трещины
+            N: фильтр по количеству трещин (опционально)
+            W: фильтр по ширине трещины (опционально)
+
+        Returns:
+            список dict с ключами curve_id, Skin, L, W, h, N, X, Y
+        """
+        neighbors = []
+
+        available_skins = self.get_available_skins()
+        if not available_skins:
+            return neighbors
+
+        skin_offsets = [-2, -1, 1, 2]
+        target_skins = [skin + offset for offset in skin_offsets]
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        for target_skin in target_skins:
+            query = "SELECT curve_id, Skin, L, W, h, N FROM statics WHERE ABS(Skin - ?) < 0.001"
+            params: list = [target_skin]
+
+            if N is not None:
+                query += " AND N = ?"
+                params.append(N)
+            if W is not None:
+                query += " AND W = ?"
+                params.append(W)
+
+            query += " ORDER BY ABS(L - ?) LIMIT 1"
+            params.append(L_opt)
+
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+            if row:
+                skin_already_added = any(n['Skin'] == row['Skin'] for n in neighbors)
+                if not skin_already_added:
+                    X, Y = self.get_reference_curve(row['curve_id'])
+                    neighbors.append({
+                        'curve_id': row['curve_id'],
+                        'X': X,
+                        'Y': Y,
+                        'Skin': row['Skin'],
+                        'L': row['L'],
+                        'W': row['W'],
+                        'h': row['h'],
+                        'N': row['N'],
+                    })
+
+        return neighbors

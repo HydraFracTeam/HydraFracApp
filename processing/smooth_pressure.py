@@ -6,8 +6,8 @@ from core.models import ProcessingDynamicData
 
 def smooth_pressure(
     data: ProcessingDynamicData,
-    window_length: int = 11,
-    polyorder: int = 2,
+    window_length: int = 9,
+    polyorder: int = 3,
 ) -> ProcessingDynamicData:
     """
     Сглаживание давления методом Savitzky–Golay.
@@ -26,9 +26,9 @@ def smooth_pressure(
     if P is None:
         raise ValueError("Pressure array is None")
 
-    if len(P) < window_length:
-        # если данных мало — уменьшаем окно
-        window_length = max(3, len(P) // 2 * 2 + 1)
+    # if len(P) < window_length:
+    #     # если данных мало — уменьшаем окно
+    #     window_length = max(3, len(P) // 2 * 2 + 1)
 
     if window_length % 2 == 0:
         window_length += 1

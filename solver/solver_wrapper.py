@@ -136,7 +136,3 @@ class Solver:
             error_value=float(error_val),
             W_scale_factor=1.0,
         )
-
-    def get_available_skins(self) -> List[float]:
-        self._ensure_library_loaded()
-        return self.reference_repo.get_available_skins()
