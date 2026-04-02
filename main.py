@@ -35,7 +35,7 @@ from ui import (
     )
 import pyqtgraph as pg
 from core.app_state import AppState
-from storage.reference_repository import ReferenceCurveDBManager
+from core.reference_repo import ReferenceRepository
 from config import settings
 from solver import Solver
 from core.dimensionless import calculate_x, calculate_y
@@ -46,8 +46,6 @@ from schemas import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
 # модельки
 from core.models import DimensionlessData, SolverState
-# хелперы, расчеты
-from core.dimensionless import calculate_x, calculate_y
 from helpers import (
     calculate_L_value, 
     calculate_k_value,
@@ -68,6 +66,7 @@ from processing import (
     raw_to_processing,
     )
 from processing.autosplitter import get_split_info
+from processing.autosplit_service import apply_autosplit
 from ui.autosplit_dialog import AutosplitDialog
 
 
@@ -78,9 +77,9 @@ class MyApp(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.app_state = AppState()
-        self.ref_curve_db = ReferenceCurveDBManager(db_path=settings.REF_DATABASE_PATH)
         self.logger = logging.getLogger(__name__)
         self._autosplit_info = None  # Информация о разделении КСД/КВД
+        self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
         
         self._load_controls: List[QWidget] = [
             self.ui.load_file_button,
@@ -137,48 +136,21 @@ class MyApp(QMainWindow):
 
             try:
                 raw = dialog.get_data()
-                
-                # Проверка на автосплиттер
+
+                # Автосплиттер
                 try:
                     split_info = get_split_info(raw.t, raw.P)
                 except Exception as e:
                     self.logger.warning(f"Ошибка автосплиттера: {e}")
                     split_info = None
-                
+
                 if split_info is not None:
                     try:
-                        # Показываем диалог выбора
                         mode = AutosplitDialog.show_dialog(self, split_info)
-                        
-                        if mode == AutosplitDialog.MODE_KSD:
-                            split_idx = split_info.get('index', len(raw.t) // 2)
-                            raw.t = raw.t[:split_idx]
-                            raw.P = raw.P[:split_idx]
-                            # Проверяем Q перед срезом
-                            if hasattr(raw, 'Q') and raw.Q is not None:
-                                raw.Q = raw.Q[:split_idx]
-                            self.show_in_text_report(
-                                f"Выбран режим КСД: использованы точки 0-{split_idx}"
-                            )
-                        elif mode == AutosplitDialog.MODE_KVD:
-                            split_idx = split_info.get('index', len(raw.t) // 2)
-                            raw.t = raw.t[split_idx:]
-                            raw.P = raw.P[split_idx:]
-                            # Проверяем Q перед срезом
-                            if hasattr(raw, 'Q') and raw.Q is not None:
-                                raw.Q = raw.Q[split_idx:]
-                            self.show_in_text_report(
-                                f"Выбран режим КВД: использованы точки {split_idx}-end"
-                            )
-                        elif mode == AutosplitDialog.MODE_BOTH:
-                            self.show_in_text_report(
-                                f"⚠ Использованы все данные (КСД + КВД). "
-                                f"Подбор может быть некорректным!"
-                            )
-                            self._autosplit_info = split_info
-                        elif mode == AutosplitDialog.MODE_IGNORE:
-                            self.show_in_text_report("Автосплиттер отключен.")
-                            self._autosplit_info = None
+                        if mode:
+                            raw, msg, self._autosplit_info = apply_autosplit(raw, split_info, mode)
+                            if msg:
+                                self.show_in_text_report(msg)
                         else:
                             self._autosplit_info = None
                     except Exception as e:
@@ -188,8 +160,7 @@ class MyApp(QMainWindow):
                     self._autosplit_info = None
 
                 self.app_state.raw_dynamic_data = raw
-                
-                # Отображаем линию разделения если есть
+
                 if self._autosplit_info is not None:
                     self._draw_autosplit_line()
 
@@ -207,6 +178,7 @@ class MyApp(QMainWindow):
                     "Ошибка данных",
                     format_pydantic_error(e)
                 )
+                
     def load_dynamic_data_from_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -229,61 +201,21 @@ class MyApp(QMainWindow):
             else:
                 raise ValueError("Загружать можно только .csv или .las файлы.")
         
-            # Проверка на автосплиттер
+            # Автосплиттер
             try:
                 split_info = get_split_info(raw_data.t, raw_data.P)
             except Exception as e:
                 self.logger.warning(f"Ошибка автосплиттера: {e}")
                 split_info = None
-            
+
             if split_info is not None:
                 try:
-                    # Показываем диалог выбора
                     mode = AutosplitDialog.show_dialog(self, split_info)
-                    
-                    if mode == AutosplitDialog.MODE_KSD:
-                        # Оставляем только КСД (до точки разделения)
-                        split_idx = split_info.get('index', len(raw_data.t) // 2)
-                        raw_data.t = raw_data.t[:split_idx]
-                        raw_data.P = raw_data.P[:split_idx]
-                        # Проверяем Q перед срезом
-                        if hasattr(raw_data, 'Q') and raw_data.Q is not None:
-                            raw_data.Q = raw_data.Q[:split_idx]
-                        self.show_in_text_report(
-                            f"Выбран режим КСД: использованы точки 0-{split_idx} "
-                            f"(t < {split_info.get('time', 0):.2f})"
-                        )
-                        
-                    elif mode == AutosplitDialog.MODE_KVD:
-                        # Оставляем только КВД (после точки разделения)
-                        split_idx = split_info.get('index', len(raw_data.t) // 2)
-                        raw_data.t = raw_data.t[split_idx:]
-                        raw_data.P = raw_data.P[split_idx:]
-                        # Проверяем Q перед срезом
-                        if hasattr(raw_data, 'Q') and raw_data.Q is not None:
-                            raw_data.Q = raw_data.Q[split_idx:]
-                        self.show_in_text_report(
-                            f"Выбран режим КВД: использованы точки {split_idx}-{len(raw_data.t) + split_idx} "
-                            f"(t >= {split_info.get('time', 0):.2f})"
-                        )
-                        
-                    elif mode == AutosplitDialog.MODE_BOTH:
-                        # Оставляем все, но показываем предупреждение
-                        self.show_in_text_report(
-                            f"⚠ Предупреждение: использованы все данные (КСД + КВД). "
-                            f"Точка разделения: t = {split_info.get('time', 0):.2f}. "
-                            f"Подбор параметров может быть некорректным!"
-                        )
-                        # Сохраняем инфо о разделении для визуализации
-                        self._autosplit_info = split_info
-                        
-                    elif mode == AutosplitDialog.MODE_IGNORE:
-                        # Игнорируем разделение
-                        self.show_in_text_report("Автосплиттер отключен. Использованы все данные.")
-                        self._autosplit_info = None
-                        
+                    if mode:
+                        raw_data, msg, self._autosplit_info = apply_autosplit(raw_data, split_info, mode)
+                        if msg:
+                            self.show_in_text_report(msg)
                     else:
-                        # Диалог закрыт без выбора - используем все данные
                         self.show_in_text_report("Выбор отменен. Использованы все данные.")
                         self._autosplit_info = None
                 except Exception as e:
@@ -427,59 +359,43 @@ class MyApp(QMainWindow):
         self.ui.reset_plots_btn.clicked.connect(self.reset_preprocessing_dynamic_data)
         
     def interpolate_processing_dynamic_data(self):
-        from copy import deepcopy
-        processing = deepcopy(self.app_state.processing_dynamic_data)
-        processing = extend_masks_to_time_grid(processing)
-        processing = interpolate_pressure(processing)
-        processing = interpolate_debit(processing)
-        
-        self.app_state.processing_dynamic_data = processing
-        self.recalculate_processing_dynamic_data()
-        self.recalculate_dimensionless()
-        self.refresh_ui()
-    
+        self._apply_preprocessing(
+            extend_masks_to_time_grid,
+            interpolate_pressure,
+            interpolate_debit,
+        )
+
     def extrapolate_processing_dynamic_data(self):
-        from copy import deepcopy
-        processing = deepcopy(self.app_state.processing_dynamic_data)
-        processing = extrapolate_time(processing)
-        processing = extend_masks_to_time_grid(processing)
-        processing = extrapolate_pressure(processing)
-        processing = extrapolate_debit(processing)
-        
-        self.app_state.processing_dynamic_data = processing
-        self.recalculate_processing_dynamic_data()
-        self.recalculate_dimensionless()
-        self.refresh_ui()
-    
+        self._apply_preprocessing(
+            extrapolate_time,
+            extend_masks_to_time_grid,
+            extrapolate_pressure,
+            extrapolate_debit,
+        )
+
     def smooth_processing_dynamic_data(self):
-        from copy import deepcopy
-        processing = deepcopy(self.app_state.processing_dynamic_data)
-        processing = smooth_pressure(processing)
-        
-        self.app_state.processing_dynamic_data = processing
-        
-        self.recalculate_processing_dynamic_data()
-        self.recalculate_dimensionless()
-        self.refresh_ui()
-    
+        self._apply_preprocessing(smooth_pressure)
+
     def remove_outliers_in_processing_dynamic_data(self):
+        self._apply_preprocessing(remove_pressure_outliers)
+   
+    def _apply_preprocessing(self, *actions):
+        """Pipeline: deepcopy → apply actions → save → recalc → refresh UI."""
         from copy import deepcopy
         processing = deepcopy(self.app_state.processing_dynamic_data)
-        processing = remove_pressure_outliers(processing)
-        
+        for action in actions:
+            processing = action(processing)
         self.app_state.processing_dynamic_data = processing
-        
         self.recalculate_processing_dynamic_data()
         self.recalculate_dimensionless()
-        self.refresh_ui()
-    
+        self.refresh_ui() 
+        
     def reset_preprocessing_dynamic_data(self):
         self.app_state.processing_dynamic_data = raw_to_processing(self.app_state.raw_dynamic_data)
         self.recalculate_processing_dynamic_data()
         self.recalculate_dimensionless()
         self.refresh_ui()
-    
-    
+
     ## РАЗДЕЛ РАСЧЁТА ОПТИМАЛЬНЫХ ПАРАМЕТРОВ
     def calculate_optimal_parameters(self):
         """Execute the solver to find optimal S, k, L parameters."""
@@ -542,7 +458,6 @@ class MyApp(QMainWindow):
                 return
             
             # Store dimensionless data in app state
-            from core.models import DimensionlessData
             self.app_state.dimensionless = DimensionlessData(X=x_fact, Y=y_fact)
             
             # Run solver
@@ -566,7 +481,6 @@ class MyApp(QMainWindow):
             self.ui.frac_length_result_spinbox.setValue(result.L_opt)
             
             # Store result in app state
-            from core.models import SolverState
             self.app_state.solver_state = SolverState(
                 k_current=result.k_opt,
                 L_current=result.L_opt,
@@ -640,165 +554,30 @@ class MyApp(QMainWindow):
 
     def _find_best_reference_curve(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
         """
-        Find the best matching reference curve based on optimization results.
-        
-        Args:
-            k_opt: Optimized permeability
-            L_opt: Optimized half-length
-            skin_opt: Optimized skin factor
-            N_fixed: Number of fractures (optional)
-            W_fixed: Well length (optional)
-            
-        Returns:
-            dict with 'X', 'Y', 'Skin', 'L' keys or None if not found
+        Находит наилучшую подходящую эталонную кривую на основе результатов оптимизации.
         """
-        from core.reference_repo import ReferenceRepository
-        from config import settings
-        
         try:
-            repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
-            
-            # Get available skins
-            available_skins = repo.get_available_skins()
-            
+            available_skins = self.ref_repo.get_available_skins()
             if not available_skins:
                 return None
-            
-            # Find closest skin value
+
             closest_skin = min(available_skins, key=lambda x: abs(x - skin_opt))
-            
-            # Get curves for this skin
-            curve_ids = repo.get_curves_by_skin(closest_skin)
-            
-            if not curve_ids:
-                return None
-            
-            # Get all static data to find best match for L
-            conn = repo._get_connection()
-            cursor = conn.cursor()
-            
-            best_curve = None
-            best_diff = float('inf')
-            
-            for curve_id in curve_ids:
-                cursor.execute(
-                    "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",
-                    (curve_id,)
-                )
-                row = cursor.fetchone()
-                if row:
-                    # Apply N and W filtering if provided
-                    if N_fixed is not None and row['N'] != N_fixed:
-                        continue
-                    if W_fixed is not None and row['W'] != W_fixed:
-                        continue
-                    
-                    # Calculate difference in L
-                    diff = abs(row['L'] - L_opt)
-                    if diff < best_diff:
-                        best_diff = diff
-                        best_curve = {
-                            'curve_id': curve_id,
-                            'Skin': row['Skin'],
-                            'L': row['L'],
-                            'W': row['W'],
-                            'h': row['h'],
-                            'N': row['N'],
-                        }
-            
-            repo._close_connection()
-            
-            if best_curve:
-                # Get X, Y data
-                X, Y = repo.get_reference_curve(best_curve['curve_id'])
-                best_curve['X'] = X
-                best_curve['Y'] = Y
-                
-            return best_curve
-            
+            return self.ref_repo.find_best_curve(closest_skin, L_opt, N=N_fixed, W=W_fixed)
+
         except Exception as e:
-            self.logger.error(f"Error finding reference curve: {e}")
+            self.logger.error(f"Ошибка при поиске эталонной кривой: {e}")
             return None
 
     def _find_neighbor_reference_curves(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
         """
-        Find neighbor reference curves: 2 with skin-1 and skin-2, and 2 with skin+1 and skin+2.
-        Uses the same k and L parameters.
-        
-        Args:
-            k_opt: Optimized permeability
-            L_opt: Optimized half-length
-            skin_opt: Optimized skin factor
-            N_fixed: Number of fractures (optional)
-            W_fixed: Well length (optional)
-            
-        Returns:
-            List of dicts with 'X', 'Y', 'Skin', 'L' keys
+        Находит соседние эталонные кривые: 2 с skin-1 и skin-2, и 2 с skin+1 и skin+2.
         """
-        from core.reference_repo import ReferenceRepository
-        from config import settings
-        
-        neighbors = []
-        
         try:
-            repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
-            
-            # Get available skins
-            available_skins = repo.get_available_skins()
-            
-            if not available_skins:
-                return neighbors
-            
-            # Find skin values for neighbors: skin-2, skin-1, skin+1, skin+2
-            skin_offsets = [-2, -1, 1, 2]
-            target_skins = [skin_opt + offset for offset in skin_offsets]
-            
-            conn = repo._get_connection()
-            cursor = conn.cursor()
-            
-            for target_skin in target_skins:
-                # Find closest available skin to target
-                closest_skin = min(available_skins, key=lambda x: abs(x - target_skin)) if available_skins else None
-                
-                if closest_skin is not None:
-                    # Build query with optional N and W filtering
-                    query = "SELECT curve_id, Skin, L, W, h, N FROM statics WHERE ABS(Skin - ?) < 0.001"
-                    params = [target_skin]
-                    
-                    if N_fixed is not None:
-                        query += " AND N = ?"
-                        params.append(N_fixed)
-                    if W_fixed is not None:
-                        query += " AND W = ?"
-                        params.append(W_fixed)
-                    
-                    query += " ORDER BY ABS(L - ?) LIMIT 1"
-                    params.append(L_opt)
-                    
-                    cursor.execute(query, params)
-                    row = cursor.fetchone()
-                    if row:
-                        # Check if we already have this skin in neighbors
-                        skin_already_added = any(n['Skin'] == row['Skin'] for n in neighbors)
-                        if not skin_already_added:
-                            X, Y = repo.get_reference_curve(row['curve_id'])
-                            neighbors.append({
-                                'curve_id': row['curve_id'],
-                                'X': X,
-                                'Y': Y,
-                                'Skin': row['Skin'],
-                                'L': row['L'],
-                                'W': row['W'],
-                                'h': row['h'],
-                                'N': row['N'],
-                            })
-            
-            repo._close_connection()
-            
+            return self.ref_repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+
         except Exception as e:
-            self.logger.error(f"Error finding neighbor curves: {e}")
-        
-        return neighbors
+            self.logger.error(f"Ошибка при поиске соседних кривых: {e}")
+            return []
     
     def refresh_ui(self):
         self.update_data_table()
@@ -916,16 +695,16 @@ class MyApp(QMainWindow):
             neighbors = self._find_neighbor_reference_curves(k_opt, L_opt, skin_opt, N_fixed, W_fixed)
             # Colors for 4 neighbors: Skin-2, Skin-1, Skin+1, Skin+2
             neighbor_colors = [
-                (0, 150, 0),    # Skin-2 - dark green
-                (0, 200, 100),  # Skin-1 - light green
-                (200, 150, 0),  # Skin+1 - orange
-                (200, 50, 50),  # Skin+2 - red-orange
+                (0, 191, 255),    # Skin-2 - голубой
+                (100, 200, 100),  # Skin-1 - яркий зелёный
+                (255, 165, 0),    # Skin+1 - оранжевый
+                (220, 20, 60),    # Skin+2 - насыщенный красный
             ]
             for i, neighbor in enumerate(neighbors):
                 if i < len(neighbor_colors):
                     color = neighbor_colors[i]
                 else:
-                    color = (150, 150, 150)  # gray for additional
+                    color = (128, 128, 128)  # серый для дополнительных
                 
                 # Determine name suffix based on skin relative to optimal
                 if neighbor['Skin'] < skin_opt:
