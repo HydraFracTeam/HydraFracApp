@@ -64,6 +64,7 @@ from processing import (
     remove_pressure_outliers,
     smooth_pressure,
     raw_to_processing,
+    validate_pressure_and_debit,
     )
 from processing.autosplitter import get_split_info
 from processing.autosplit_service import apply_autosplit
@@ -418,7 +419,7 @@ class MyApp(QMainWindow):
             static_params = self.app_state.static_params
             thresholds = self.app_state.optimize_thresholds
             
-            # Calculate dimensionless parameters
+            validate_pressure_and_debit(dynamic_data)
             # We need to estimate initial k and L for X, Y calculation
             # Use middle of bounds as initial estimate
             k_init = (thresholds.k_min + thresholds.k_max) / 2
