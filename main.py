@@ -71,6 +71,7 @@ from processing.autosplit_service import apply_autosplit
 from ui.autosplit_dialog import AutosplitDialog
 
 
+from persistence.state_serializer import save_state, load_state
 
 class MyApp(QMainWindow):
     def __init__(self) -> None:
@@ -122,12 +123,75 @@ class MyApp(QMainWindow):
         # Создаем  интерфейс с вкладками
         setup_add_interface(self)
 
+    def export_session(self):
+        if self.app_state.raw_dynamic_data is None:
+            QMessageBox.warning(self, "Ошибка", "Нет данных для сохранения.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить сессию",
+            "",
+            "Flow Session (*.fflow)"
+        )
+
+        if not path:
+            return
+
+        try:
+            save_state(self.app_state, path)
+            self.show_in_text_report(f"Сессия сохранена: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить:\n{str(e)}")
     
+    def import_session(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Загрузить сессию",
+            "",
+            "Flow Session (*.fflow)"
+        )
+
+        if not path:
+            return
+
+        try:
+            self.app_state = load_state(path)
+
+            # 🔴 КРИТИЧНО: восстановление производных данных
+            if self.app_state.processing_dynamic_data and self.app_state.static_params:
+                self.recalculate_processing_dynamic_data()
+
+            if self.app_state.processing_dynamic_data and self.app_state.solver_state:
+                self.recalculate_dimensionless()
+
+            # 🔴 обновление UI
+            self.refresh_ui()
+
+            # 🔴 включение нужных контролов
+            self.disable_load_controls()
+
+            if self.app_state.static_params:
+                self.disable_static_controls()
+                self.enable_threshold_controls()
+
+            if self.app_state.optimize_thresholds:
+                self.disable_threshold_controls()
+                self.enable_calculation_controls()
+
+            self.show_in_text_report(f"Сессия загружена: {path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить:\n{str(e)}")
+        
     ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
     def setup_load_dynamic_data_menu(self):
         self.ui.load_file_button.clicked.connect(self.load_dynamic_data_from_file)
         self.ui.reset_data_button.clicked.connect(self.reset_all_data)
         self.ui.insert_data_from_buffer_button.clicked.connect(self.insert_data_from_buffer)
+        
+        self.ui.export_session_btn.clicked.connect(self.export_session)
+        self.ui.import_session_btn.clicked.connect(self.import_session)
             
     def insert_data_from_buffer(self):
 
