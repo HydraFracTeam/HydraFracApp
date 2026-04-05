@@ -32,6 +32,7 @@ from ui import (
     plot_autosplit_line,
     export_processing_to_csv,
     PasteDataDialog,
+    fill_state_to_ui,
     )
 import pyqtgraph as pg
 from core.app_state import AppState
@@ -69,9 +70,9 @@ from processing import (
 from processing.autosplitter import get_split_info
 from processing.autosplit_service import apply_autosplit
 from ui.autosplit_dialog import AutosplitDialog
+from migrations import load_state, save_state
 
 
-from persistence.state_serializer import save_state, load_state
 
 class MyApp(QMainWindow):
     def __init__(self) -> None:
@@ -123,67 +124,7 @@ class MyApp(QMainWindow):
         # Создаем  интерфейс с вкладками
         setup_add_interface(self)
 
-    def export_session(self):
-        if self.app_state.raw_dynamic_data is None:
-            QMessageBox.warning(self, "Ошибка", "Нет данных для сохранения.")
-            return
-
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Сохранить сессию",
-            "",
-            "Flow Session (*.fflow)"
-        )
-
-        if not path:
-            return
-
-        try:
-            save_state(self.app_state, path)
-            self.show_in_text_report(f"Сессия сохранена: {path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить:\n{str(e)}")
-    
-    def import_session(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Загрузить сессию",
-            "",
-            "Flow Session (*.fflow)"
-        )
-
-        if not path:
-            return
-
-        try:
-            self.app_state = load_state(path)
-
-            # 🔴 КРИТИЧНО: восстановление производных данных
-            if self.app_state.processing_dynamic_data and self.app_state.static_params:
-                self.recalculate_processing_dynamic_data()
-
-            if self.app_state.processing_dynamic_data and self.app_state.solver_state:
-                self.recalculate_dimensionless()
-
-            # 🔴 обновление UI
-            self.refresh_ui()
-
-            # 🔴 включение нужных контролов
-            self.disable_load_controls()
-
-            if self.app_state.static_params:
-                self.disable_static_controls()
-                self.enable_threshold_controls()
-
-            if self.app_state.optimize_thresholds:
-                self.disable_threshold_controls()
-                self.enable_calculation_controls()
-
-            self.show_in_text_report(f"Сессия загружена: {path}")
-
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить:\n{str(e)}")
-        
+   
     ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
     def setup_load_dynamic_data_menu(self):
         self.ui.load_file_button.clicked.connect(self.load_dynamic_data_from_file)
@@ -310,6 +251,69 @@ class MyApp(QMainWindow):
             )
             return
     
+    def export_session(self):
+        if self.app_state.raw_dynamic_data is None:
+            QMessageBox.warning(self, "Ошибка", "Нет данных для сохранения.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить сессию",
+            "",
+            "Flow Session (*.fflow)"
+        )
+
+        if not path:
+            return
+
+        try:
+            save_state(self.app_state, path)
+            self.show_in_text_report(f"Сессия сохранена: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить:\n{str(e)}")
+    
+    def import_session(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Загрузить сессию",
+            "",
+            "Flow Session (*.fflow)"
+        )
+
+        if not path:
+            return
+
+        try:
+            self.app_state = load_state(path)
+            # заполнение UI из state
+            fill_state_to_ui(self.ui, self.app_state)
+
+            # 🔴 КРИТИЧНО: восстановление производных данных
+            if self.app_state.processing_dynamic_data and self.app_state.static_params:
+                self.recalculate_processing_dynamic_data()
+
+            if self.app_state.processing_dynamic_data and self.app_state.solver_state:
+                self.recalculate_dimensionless()
+
+            # 🔴 обновление UI
+            self.refresh_ui()
+
+            # 🔴 включение нужных контролов
+            self.disable_load_controls()
+
+            if self.app_state.static_params:
+                self.disable_static_controls()
+                self.enable_threshold_controls()
+
+            if self.app_state.optimize_thresholds:
+                self.disable_threshold_controls()
+                self.enable_calculation_controls()
+
+            self.show_in_text_report(f"Сессия загружена: {path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить:\n{str(e)}")
+     
     ## РАЗДЕЛ РАБОТЫ СО СТАТИЧНЫМИ ПАРАМЕТРАМИ
 
     def setup_static_data_menu(self):
@@ -570,7 +574,7 @@ class MyApp(QMainWindow):
                 "Ошибка расчёта",
                 f"Ошибка при оптимизации параметров:\n{str(e)}"
             )
-            self.logger.error(f"Solver error: {e}", exc_info=True)
+            self.logger.error(f"Ошибка солвера: {e}", exc_info=True)
     
     ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
     def enable_load_controls(self) -> None:
