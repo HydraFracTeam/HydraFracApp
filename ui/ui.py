@@ -17,9 +17,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QMainWindow,
-    QPushButton, QSizePolicy, QSpinBox, QStatusBar,
-    QTabWidget, QTableView, QTextEdit, QVBoxLayout,
-    QWidget)
+    QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QStatusBar, QTabWidget, QTableView, QTextEdit,
+    QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -46,7 +46,16 @@ class Ui_MainWindow(object):
         self.left_panel.setMinimumSize(QSize(0, 0))
         self.verticalLayout_3 = QVBoxLayout(self.left_panel)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.groupBox_3 = QGroupBox(self.left_panel)
+        self.scrollArea = QScrollArea(self.left_panel)
+        self.scrollArea.setObjectName(u"scrollArea")
+        self.scrollArea.setMinimumSize(QSize(520, 0))
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollAreaWidgetContents = QWidget()
+        self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 504, 1102))
+        self.verticalLayout_14 = QVBoxLayout(self.scrollAreaWidgetContents)
+        self.verticalLayout_14.setObjectName(u"verticalLayout_14")
+        self.groupBox_3 = QGroupBox(self.scrollAreaWidgetContents)
         self.groupBox_3.setObjectName(u"groupBox_3")
         self.verticalLayout_11 = QVBoxLayout(self.groupBox_3)
         self.verticalLayout_11.setObjectName(u"verticalLayout_11")
@@ -91,10 +100,25 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_11.addLayout(self.verticalLayout_2)
 
+        self.horizontalLayout_27 = QHBoxLayout()
+        self.horizontalLayout_27.setObjectName(u"horizontalLayout_27")
+        self.export_session_btn = QPushButton(self.groupBox_3)
+        self.export_session_btn.setObjectName(u"export_session_btn")
 
-        self.verticalLayout_3.addWidget(self.groupBox_3)
+        self.horizontalLayout_27.addWidget(self.export_session_btn)
 
-        self.static_params_group = QGroupBox(self.left_panel)
+        self.import_session_btn = QPushButton(self.groupBox_3)
+        self.import_session_btn.setObjectName(u"import_session_btn")
+
+        self.horizontalLayout_27.addWidget(self.import_session_btn)
+
+
+        self.verticalLayout_11.addLayout(self.horizontalLayout_27)
+
+
+        self.verticalLayout_14.addWidget(self.groupBox_3)
+
+        self.static_params_group = QGroupBox(self.scrollAreaWidgetContents)
         self.static_params_group.setObjectName(u"static_params_group")
         sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         sizePolicy3.setHorizontalStretch(0)
@@ -327,9 +351,9 @@ class Ui_MainWindow(object):
         self.verticalLayout_13.addWidget(self.insert_static_params_button)
 
 
-        self.verticalLayout_3.addWidget(self.static_params_group)
+        self.verticalLayout_14.addWidget(self.static_params_group)
 
-        self.optimize_params_block = QGroupBox(self.left_panel)
+        self.optimize_params_block = QGroupBox(self.scrollAreaWidgetContents)
         self.optimize_params_block.setObjectName(u"optimize_params_block")
         self.verticalLayout_12 = QVBoxLayout(self.optimize_params_block)
         self.verticalLayout_12.setObjectName(u"verticalLayout_12")
@@ -410,9 +434,9 @@ class Ui_MainWindow(object):
         self.verticalLayout_12.addWidget(self.insert_thresholds_button)
 
 
-        self.verticalLayout_3.addWidget(self.optimize_params_block)
+        self.verticalLayout_14.addWidget(self.optimize_params_block)
 
-        self.calculate_block = QGroupBox(self.left_panel)
+        self.calculate_block = QGroupBox(self.scrollAreaWidgetContents)
         self.calculate_block.setObjectName(u"calculate_block")
         self.calculate_block.setMinimumSize(QSize(0, 0))
         self.verticalLayout_10 = QVBoxLayout(self.calculate_block)
@@ -493,15 +517,16 @@ class Ui_MainWindow(object):
         self.verticalLayout_10.addWidget(self.groupBox_6)
 
 
-        self.verticalLayout_3.addWidget(self.calculate_block)
+        self.verticalLayout_14.addWidget(self.calculate_block)
 
-        self.report_group = QGroupBox(self.left_panel)
+        self.report_group = QGroupBox(self.scrollAreaWidgetContents)
         self.report_group.setObjectName(u"report_group")
         sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sizePolicy5.setHorizontalStretch(0)
         sizePolicy5.setVerticalStretch(0)
         sizePolicy5.setHeightForWidth(self.report_group.sizePolicy().hasHeightForWidth())
         self.report_group.setSizePolicy(sizePolicy5)
+        self.report_group.setMinimumSize(QSize(0, 180))
         self.verticalLayout_6 = QVBoxLayout(self.report_group)
         self.verticalLayout_6.setObjectName(u"verticalLayout_6")
         self.text_report = QTextEdit(self.report_group)
@@ -515,7 +540,11 @@ class Ui_MainWindow(object):
         self.verticalLayout_6.addWidget(self.text_report)
 
 
-        self.verticalLayout_3.addWidget(self.report_group)
+        self.verticalLayout_14.addWidget(self.report_group)
+
+        self.scrollArea.setWidget(self.scrollAreaWidgetContents)
+
+        self.verticalLayout_3.addWidget(self.scrollArea)
 
 
         self.horizontalLayout_5.addWidget(self.left_panel)
@@ -734,6 +763,8 @@ class Ui_MainWindow(object):
         self.load_file_label.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u0444\u0430\u0439\u043b", None))
         self.insert_data_from_buffer_button.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0441\u0442\u0430\u0432\u043a\u0430 \u0438\u0437 \u0431\u0443\u0444\u0435\u0440\u0430 \u043e\u0431\u043c\u0435\u043d\u0430", None))
         self.reset_data_button.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))
+        self.export_session_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0441\u0435\u0441\u0441\u0438\u044e", None))
+        self.import_session_btn.setText(QCoreApplication.translate("MainWindow", u"\u0418\u043c\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0441\u0435\u0441\u0441\u0438\u044e", None))
         self.static_params_group.setTitle(QCoreApplication.translate("MainWindow", u"\u0421\u0442\u0430\u0442\u0438\u0447\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u043f\u043b\u0430\u0441\u0442\u0430 \u0438 \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b", None))
         self.well_length_label.setText(QCoreApplication.translate("MainWindow", u"\u0414\u043b\u0438\u043d\u0430 \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b, \u043c", None))
         self.well_height_label.setText(QCoreApplication.translate("MainWindow", u"\u0422\u043e\u043b\u0449\u0438\u043d\u0430 \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b, \u043c", None))

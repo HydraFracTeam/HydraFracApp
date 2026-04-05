@@ -54,5 +54,6 @@ def remove_pressure_outliers(
 
     data.P = P
     data.is_P_interpolated = False
+    data.is_Q_interpolated = False
 
     return data
