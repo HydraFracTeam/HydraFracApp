@@ -676,34 +676,8 @@ class MyApp(QMainWindow):
 
         except Exception as e:
             self.logger.warning(f"Не удалось собрать reference curves: {e}")
+            QMessageBox.warning(self, "Ошибка", "Не удалось собрать создать отображения рефенсных кривых!")
             self.app_state.reference_curves = None
-
-    def _find_best_reference_curve(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
-        """
-        Находит наилучшую подходящую эталонную кривую на основе результатов оптимизации.
-        """
-        try:
-            available_skins = self.ref_repo.get_available_skins()
-            if not available_skins:
-                return None
-
-            closest_skin = min(available_skins, key=lambda x: abs(x - skin_opt))
-            return self.ref_repo.find_best_curve(closest_skin, L_opt, N=N_fixed, W=W_fixed)
-
-        except Exception as e:
-            self.logger.error(f"Ошибка при поиске эталонной кривой: {e}")
-            return None
-
-    def _find_neighbor_reference_curves(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
-        """
-        Находит соседние эталонные кривые: 2 с skin-1 и skin-2, и 2 с skin+1 и skin+2.
-        """
-        try:
-            return self.ref_repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
-
-        except Exception as e:
-            self.logger.error(f"Ошибка при поиске соседних кривых: {e}")
-            return []
     
     def refresh_ui(self):
         self.update_data_table()
