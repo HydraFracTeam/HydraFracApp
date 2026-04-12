@@ -820,9 +820,11 @@ class MyApp(QMainWindow):
 
     def update_burde_plot(self):
         """Перерисовка дока Бурде."""
+        plot: pg.PlotItem = self.ui.plot_burde
+        plot.clear()
         if self.app_state.processing_dynamic_data and self.app_state.processing_dynamic_data.burde is not None:
             plot_burde(
-                plot=self.ui.plot_burde,
+                plot=plot,
                 t=self.app_state.processing_dynamic_data.t,
                 burde=self.app_state.processing_dynamic_data.burde,
             )
