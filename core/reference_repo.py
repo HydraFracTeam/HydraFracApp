@@ -202,7 +202,7 @@ class ReferenceRepository:
 
         for curve_id in curve_ids:
             cursor.execute(
-                "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",
+                "SELECT Skin, L, W, h, N, aL FROM statics WHERE curve_id = ?",
                 (curve_id,)
             )
             row = cursor.fetchone()
@@ -224,6 +224,7 @@ class ReferenceRepository:
                     'W': row['W'],
                     'h': row['h'],
                     'N': row['N'],
+                    'aL': row['aL'],
                 }
 
         if best_curve:

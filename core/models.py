@@ -1,9 +1,19 @@
 from dataclasses import dataclass
 import numpy as np
-from typing import Optional
-
+from typing import Optional, List
 
 from schemas.static_params import StaticParams
+
+
+@dataclass
+class RefStaticParams:
+    """Статические параметры референсной кривой из БД (без валидации)."""
+    Skin: Optional[float] = None
+    h: float = 0.0
+    N: int = 1
+    W: float = 0.0
+    L: float = 0.0
+    aL: float = 0.0
 
 
 @dataclass
@@ -60,7 +70,21 @@ class SolverState:
 
 
 @dataclass
-class ReferenceCurve:
-    dynamic_data: RawDynamicData
+class MainRefCurve:
+    """Лучшая подобранная эталонная кривая после оптимизации."""
     dimensionless: DimensionlessData
-    static_params: StaticParams
+    static_params: RefStaticParams
+
+
+@dataclass
+class NeighbourRefCurve:
+    """Одна соседняя кривая (Skin±1, Skin±2)."""
+    dimensionless: DimensionlessData
+    skin_offset: int  # -2, -1, +1, +2 — для цветовой маркировки на графике
+
+
+@dataclass
+class ReferenceCurves:
+    """Коллекция референсных кривых: лучшая + соседи."""
+    main: Optional[MainRefCurve] = None
+    neighbours: Optional[List[NeighbourRefCurve]] = None

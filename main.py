@@ -38,6 +38,7 @@ import pyqtgraph as pg
 from core.app_state import AppState
 from core.reference_repo import ReferenceRepository
 from config import settings
+from solver.solver_wrapper import SolverResult
 from solver import Solver
 from core.dimensionless import calculate_x, calculate_y
 from utils import format_pydantic_error
@@ -46,7 +47,7 @@ from utils import format_pydantic_error
 from schemas import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
 # модельки
-from core.models import DimensionlessData, SolverState
+from core.models import DimensionlessData, SolverState, MainRefCurve, NeighbourRefCurve, ReferenceCurves, RefStaticParams
 from helpers import (
     calculate_L_value, 
     calculate_k_value,
@@ -556,7 +557,10 @@ class MyApp(QMainWindow):
                 skin_current=result.S_opt,
                 residual=result.error_value
             )
-            
+
+            # Build reference curves from repo
+            self._build_reference_curves(result)
+
             self.show_in_text_report(
                 f"Оптимизация завершена:\n"
                 f"  Скин-фактор S = {result.S_opt:.4f}\n"
@@ -620,6 +624,59 @@ class MyApp(QMainWindow):
         self.ui.cb_burde_curve.stateChanged.connect(self.update_dimensionless_plot)
         self.ui.cb_main_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
         self.ui.cb_neighbours_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
+
+    def _build_reference_curves(self, result: SolverResult):
+        """
+        Собирает ReferenceCurves из результата солвера и сохраняет в AppState.
+        """
+        try:
+            static_params = self.app_state.static_params
+            N_fixed = static_params.N
+            W_fixed = static_params.W
+            skin_opt = result.S_opt
+            L_opt = result.L_opt
+
+            # Главная кривая
+            main_dict = self.ref_repo.find_best_curve(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            main_curve = None
+            if main_dict is not None:
+                main_curve = MainRefCurve(
+                    dimensionless=DimensionlessData(
+                        X=main_dict['X'],
+                        Y=main_dict['Y'],
+                    ),
+                    static_params=RefStaticParams(
+                        Skin=main_dict['Skin'],
+                        h=main_dict['h'],
+                        N=int(main_dict['N']),
+                        W=main_dict['W'],
+                        L=main_dict['L'],
+                        aL=main_dict["aL"],
+                    ),
+                )
+
+            # Соседи
+            neighbors_list = self.ref_repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            neighbours = []
+            for nb in neighbors_list:
+                skin_diff = nb['Skin'] - skin_opt
+                skin_offset = int(round(skin_diff))
+                neighbours.append(NeighbourRefCurve(
+                    dimensionless=DimensionlessData(
+                        X=nb['X'],
+                        Y=nb['Y'],
+                    ),
+                    skin_offset=skin_offset,
+                ))
+
+            self.app_state.reference_curves = ReferenceCurves(
+                main=main_curve,
+                neighbours=neighbours if neighbours else None,
+            )
+
+        except Exception as e:
+            self.logger.warning(f"Не удалось собрать reference curves: {e}")
+            self.app_state.reference_curves = None
 
     def _find_best_reference_curve(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
         """
@@ -735,66 +792,48 @@ class MyApp(QMainWindow):
             )
         
         # Get optimization results if available
-        solver_state = self.app_state.solver_state
-        k_opt = solver_state.k_current if solver_state else None
-        L_opt = solver_state.L_current if solver_state else None
-        skin_opt = solver_state.skin_current if solver_state else None
-        
-        # Get static params for N and W filtering
-        static_params = self.app_state.static_params
-        N_fixed = static_params.N if static_params else None
-        W_fixed = static_params.W if static_params else None
-        
-        # Plot main reference curve (if checkbox is checked and we have optimization results)
-        if self.ui.cb_main_ref_XY.isChecked() and k_opt and L_opt and skin_opt:
-            ref_curve = self._find_best_reference_curve(k_opt, L_opt, skin_opt, N_fixed, W_fixed)
-            if ref_curve:
-                self._plot_reference_curve(
-                    plot=plot,
-                    X=ref_curve['X'],
-                    Y=ref_curve['Y'],
-                    skin=ref_curve['Skin'],
-                    L=ref_curve['L'],
-                    color=(255, 0, 0),
-                    name=f"Эталонная кривая (S={ref_curve['Skin']:.1f}, L={ref_curve['L']:.1f})",
-                )
-        
-        # Plot neighbor reference curves (if checkbox is checked and we have optimization results)
-        if self.ui.cb_neighbours_ref_XY.isChecked() and k_opt and L_opt and skin_opt:
-            neighbors = self._find_neighbor_reference_curves(k_opt, L_opt, skin_opt, N_fixed, W_fixed)
+        ref_curves = self.app_state.reference_curves
+
+        # Plot main reference curve (if checkbox is checked and we have it)
+        if self.ui.cb_main_ref_XY.isChecked() and ref_curves and ref_curves.main:
+            main = ref_curves.main
+            skin_val = main.static_params.Skin or 0
+            self._plot_reference_curve(
+                plot=plot,
+                X=main.dimensionless.X,
+                Y=main.dimensionless.Y,
+                color=(255, 0, 0),
+                name=f"Эталонная кривая (S={skin_val:.1f})",
+            )
+
+        # Plot neighbor reference curves (if checkbox is checked and we have them)
+        if self.ui.cb_neighbours_ref_XY.isChecked() and ref_curves and ref_curves.neighbours:
             # Colors for 4 neighbors: Skin-2, Skin-1, Skin+1, Skin+2
-            neighbor_colors = [
-                (0, 191, 255),    # Skin-2 - голубой
-                (100, 200, 100),  # Skin-1 - яркий зелёный
-                (255, 165, 0),    # Skin+1 - оранжевый
-                (220, 20, 60),    # Skin+2 - насыщенный красный
-            ]
-            for i, neighbor in enumerate(neighbors):
-                if i < len(neighbor_colors):
-                    color = neighbor_colors[i]
+            neighbor_colors = {
+                -2: (0, 191, 255),     # голубой
+                -1: (100, 200, 100),   # яркий зелёный
+                +1: (255, 165, 0),     # оранжевый
+                +2: (220, 20, 60),     # насыщенный красный
+            }
+            for nb in ref_curves.neighbours:
+                offset = nb.skin_offset
+                color = neighbor_colors.get(offset, (128, 128, 128))
+                skin_val = nb.skin_offset
+
+                if offset < 0:
+                    name_suffix = f"(Skin-{abs(offset)})"
                 else:
-                    color = (128, 128, 128)  # серый для дополнительных
-                
-                # Determine name suffix based on skin relative to optimal
-                if neighbor['Skin'] < skin_opt:
-                    skin_diff = int(skin_opt - neighbor['Skin'])
-                    name_suffix = f"(Skin-{skin_diff})"
-                else:
-                    skin_diff = int(neighbor['Skin'] - skin_opt)
-                    name_suffix = f"(Skin+{skin_diff})"
-                    
+                    name_suffix = f"(Skin+{offset})"
+
                 self._plot_reference_curve(
                     plot=plot,
-                    X=neighbor['X'],
-                    Y=neighbor['Y'],
-                    skin=neighbor['Skin'],
-                    L=neighbor['L'],
+                    X=nb.dimensionless.X,
+                    Y=nb.dimensionless.Y,
                     color=color,
-                    name=f"Сосед {name_suffix} (S={neighbor['Skin']:.1f}, L={neighbor['L']:.1f})",
+                    name=f"Сосед {name_suffix} (S={skin_val:.1f})",
                 )
 
-    def _plot_reference_curve(self, plot: pg.PlotItem, X: np.ndarray, Y: np.ndarray, 
-                               skin: float, L: float, color: tuple, name: str):
+    def _plot_reference_curve(self, plot: pg.PlotItem, X: np.ndarray, Y: np.ndarray, color: tuple, name: str):
         """
         Plot a reference curve on the dimensionless plot.
         
@@ -803,7 +842,6 @@ class MyApp(QMainWindow):
             X: X coordinates of the reference curve
             Y: Y coordinates of the reference curve
             skin: Skin factor value
-            L: Half-length value
             color: RGB color tuple
             name: Name for the legend
         """
