@@ -635,15 +635,15 @@ class Ui_MainWindow(object):
 
         self.verticalLayout.addWidget(self.groupBox)
 
-        self.dim_plot = QWidget(self.timeseries_tab)
-        self.dim_plot.setObjectName(u"dim_plot")
+        self.plot_dock = QWidget(self.timeseries_tab)
+        self.plot_dock.setObjectName(u"plot_dock")
         sizePolicy7 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         sizePolicy7.setHorizontalStretch(0)
         sizePolicy7.setVerticalStretch(0)
-        sizePolicy7.setHeightForWidth(self.dim_plot.sizePolicy().hasHeightForWidth())
-        self.dim_plot.setSizePolicy(sizePolicy7)
+        sizePolicy7.setHeightForWidth(self.plot_dock.sizePolicy().hasHeightForWidth())
+        self.plot_dock.setSizePolicy(sizePolicy7)
 
-        self.verticalLayout.addWidget(self.dim_plot)
+        self.verticalLayout.addWidget(self.plot_dock)
 
         self.tab_widget.addTab(self.timeseries_tab, "")
         self.data_tab = QWidget()

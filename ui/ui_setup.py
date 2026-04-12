@@ -2,78 +2,117 @@
 Модуль для наполнения UI компонентов приложения.
 Работает ТОЛЬКО с элементами, созданными в main_ui.ui
 """
-from PySide6.QtWidgets import ( QMainWindow,
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QTableView
-)
+from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QPalette, QColor
 
+import pyqtgraph as pg
+from pyqtgraph.dockarea import DockArea, Dock
 
 from ui.ui import Ui_MainWindow
-import pyqtgraph as pg
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+
+# Тёмная тема для графиков
+BG_COLOR = '#1e1e1e'
+TEXT_COLOR = '#cccccc'
+AXIS_COLOR = '#888888'
+DOCK_LABEL_BG = '#3a3a3a'
+DOCK_LABEL_FG = '#cccccc'
+DOCK_LABEL_BORDER = '#555555'
 
 
-def setup_add_interface(app: Ui_MainWindow) -> None:
+def setup_add_interface(app) -> None:
     """
     Инициализация динамических элементов UI:
-    - графики (pyqtgraph)
+    - DockArea с графиками (pyqtgraph)
     - таблица данных
     """
-
-    setup_timeseries_tab(app)
-    setup_type_curves_tab(app)
+    setup_dock_area(app)
 
 
-# ------------------------------------------------------------------
-# Безразмерные кривые
-# ------------------------------------------------------------------
+
+def _make_dock(name: str, title: str, size=(500, 300), log_x=False, log_y=False) -> tuple[Dock, pg.PlotWidget]:
+    """Создаёт док с PlotWidget."""
+    plot = pg.PlotWidget()
+    plot.showGrid(x=True, y=True)
+    plot.setBackground(BG_COLOR)
+    if log_x:
+        plot.setLogMode(x=True)
+    if log_y:
+        plot.setLogMode(y=True)
+
+    dock = Dock(name, size=size)
+    dock.addWidget(plot)
+    return dock, plot
 
 
-def attach_pg_to_widget(container: QMainWindow) -> pg.PlotItem:
+def setup_dock_area(app) -> None:
     """
-    Встраивает pyqtgraph в QWidget из .ui
-    и возвращает PlotItem для рисования
+    Создаёт DockArea в plot_dock контейнере из .ui
+    и 4 дока: P(t), Q(t), XY, Burde.
     """
+    container = app.ui.plot_dock
     if container is None:
-        raise RuntimeError("Graph container widget not found")
+        raise RuntimeError("plot_dock widget not found in UI")
 
-    layout = container.layout()
-    if layout is None:
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
+    # Создаём DockArea
+    dock_area = DockArea()
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(dock_area)
+    app.ui.dock_area = dock_area
 
-    plot_widget = pg.PlotWidget()
-    plot_widget.showGrid(x=True, y=True)
+    # --- Док: Давление P(t) ---
+    dock_p, p_plot = _make_dock("P(t) — Давление", "P(t)", size=(500, 300))
+    p_plot.setLabel('left', 'Давление, кгс/см²', color=TEXT_COLOR)
+    p_plot.setLabel('bottom', 'Время, ч', color=TEXT_COLOR)
+    p_plot.getAxis('left').setPen(AXIS_COLOR)
+    p_plot.getAxis('bottom').setPen(AXIS_COLOR)
+    p_plot.getAxis('left').setTextPen(TEXT_COLOR)
+    p_plot.getAxis('bottom').setTextPen(TEXT_COLOR)
 
-    layout.addWidget(plot_widget)
+    dock_area.addDock(dock_p, 'left')
+    app.ui.dock_pressure = dock_p
+    app.ui.plot_pressure = p_plot.getPlotItem()
 
-    return plot_widget.getPlotItem()
+    # --- Док: Дебит Q(t) ---
+    dock_q, q_plot = _make_dock("Q(t) — Дебит", "Q(t)", size=(500, 300))
+    q_plot.setLabel('left', 'Дебит, м³/сут', color=TEXT_COLOR)
+    q_plot.setLabel('bottom', 'Время, ч', color=TEXT_COLOR)
+    q_plot.getAxis('left').setPen(AXIS_COLOR)
+    q_plot.getAxis('bottom').setPen(AXIS_COLOR)
+    q_plot.getAxis('left').setTextPen(TEXT_COLOR)
+    q_plot.getAxis('bottom').setTextPen(TEXT_COLOR)
 
+    dock_area.addDock(dock_q, 'right', dock_p)
+    app.ui.dock_debit = dock_q
+    app.ui.plot_debit = q_plot.getPlotItem()
 
-def setup_timeseries_tab(app: Ui_MainWindow) -> None:
-    app.ui.p_graphic = attach_pg_to_widget(app.ui.p_graphic)
-    app.ui.q_graphic = attach_pg_to_widget(app.ui.q_graphic)
-    app.ui.dim_plot = attach_pg_to_widget(app.ui.dim_plot)
+    # --- Док: Безразмерные X-Y ---
+    dock_xy, xy_plot = _make_dock("X-Y (log-log)", "XY", size=(500, 300), log_x=True, log_y=True)
+    xy_plot.setLabel('left', 'Y', color=TEXT_COLOR)
+    xy_plot.setLabel('bottom', 'X', color=TEXT_COLOR)
+    xy_plot.getAxis('left').setPen(AXIS_COLOR)
+    xy_plot.getAxis('bottom').setPen(AXIS_COLOR)
+    xy_plot.getAxis('left').setTextPen(TEXT_COLOR)
+    xy_plot.getAxis('bottom').setTextPen(TEXT_COLOR)
 
+    dock_area.addDock(dock_xy, 'bottom', dock_p)
+    app.ui.dock_xy = dock_xy
+    app.ui.plot_xy = xy_plot.getPlotItem()
 
-# ------------------------------------------------------------------
-# Эталонные кривые
-# ------------------------------------------------------------------
+    # --- Док: Производная Бурде ---
+    dock_b, b_plot = _make_dock("Бурде (log-log)", "Burde", size=(500, 300), log_x=True, log_y=True)
+    b_plot.setLabel('left', "d(ΔP)/d(ln t)", color=TEXT_COLOR)
+    b_plot.setLabel('bottom', 'Время, ч', color=TEXT_COLOR)
+    b_plot.getAxis('left').setPen(AXIS_COLOR)
+    b_plot.getAxis('bottom').setPen(AXIS_COLOR)
+    b_plot.getAxis('left').setTextPen(TEXT_COLOR)
+    b_plot.getAxis('bottom').setTextPen(TEXT_COLOR)
 
-def setup_type_curves_tab(app: QMainWindow) -> None:
-    placeholder = app.findChild(
-        QWidget, "type_curves_plot_placeholder"
-    )
+    dock_area.addDock(dock_b, 'right', dock_xy)
+    app.ui.dock_burde = dock_b
+    app.ui.plot_burde = b_plot.getPlotItem()
 
-    layout = placeholder.layout()
-    if layout is None:
-        layout = QVBoxLayout(placeholder)
-
-    app.ui.type_curves_widget = pg.PlotWidget()
-    app.ui.type_curves_widget.setLogMode(True, True)
-    app.ui.type_curves_widget.showGrid(x=True, y=True)
-    app.ui.type_curves_widget.setLabel('left', 'Дебит, м³/сут')
-    app.ui.type_curves_widget.setLabel('bottom', 'Время, ч')
-
-    layout.addWidget(app.ui.type_curves_widget)
-
+    # Скрываем все доки при старте (отложенно, чтобы DockArea успел проинициализироваться)
+    for d in [dock_p, dock_q, dock_xy, dock_b]:
+        QTimer.singleShot(0, d.hide)

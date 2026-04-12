@@ -9,6 +9,7 @@ import sys
 import logging
 import numpy as np
 from typing import List, Dict, Tuple
+from pyqtgraph.dockarea import Dock
 
 # Configure logging to show solver progress
 logging.basicConfig(
@@ -119,10 +120,10 @@ class MyApp(QMainWindow):
         self.setup_load_dynamic_data_menu()
         self.setup_static_data_menu()
         self.setup_threshold_menu()
-        self.connect_graphic_checkboxes()
+        self.setup_dock_visibility_checkboxes()
         self.setup_preprocessing_controls()
         self.setup_data_table_elements()
-        # Создаем  интерфейс с вкладками
+        # Создаем интерфейс с DockArea
         setup_add_interface(self)
 
    
@@ -570,7 +571,7 @@ class MyApp(QMainWindow):
             )
             
             # Refresh the plot to show reference curves if checkboxes are already checked
-            self.update_dimensionless_plot()
+            self.update_dim_plots()
             
         except Exception as e:
             QMessageBox.critical(
@@ -618,12 +619,34 @@ class MyApp(QMainWindow):
         for elem in self._calculation_controls:
             elem.setEnabled(False)
     
-    # ОБНОВЛЕНИЕ ГРАФИКОВ, ТАБЛИЦ
-    def connect_graphic_checkboxes(self):
-        self.ui.cb_calc_XY.stateChanged.connect(self.update_dimensionless_plot)
-        self.ui.cb_burde_curve.stateChanged.connect(self.update_dimensionless_plot)
-        self.ui.cb_main_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
-        self.ui.cb_neighbours_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
+    # УПРАВЛЕНИЕ ВИДИМОСТЬЮ ДОКОВ
+    def setup_dock_visibility_checkboxes(self):
+        """Подключает чекбоксы к показу/скрытию доков."""
+        self.ui.cb_pressure_dock.stateChanged.connect(
+            lambda state: self._toggle_dock(self.ui.dock_pressure, state)
+        )
+        self.ui.cb_debit_dock.stateChanged.connect(
+            lambda state: self._toggle_dock(self.ui.dock_debit, state)
+        )
+        self.ui.cb_calc_XY_dock.stateChanged.connect(self._on_xy_dock_toggle)
+        self.ui.cb_burde_curve_dock.stateChanged.connect(
+            lambda state: self._toggle_dock(self.ui.dock_burde, state)
+        )
+
+    def _on_xy_dock_toggle(self, state):
+        """Показать/скрыть XY-док и перерисовать при включении."""
+        self._toggle_dock(self.ui.dock_xy, state)
+        from PySide6.QtCore import Qt
+        if state == Qt.CheckState.Checked.value:
+            self.update_xy_plot()
+
+    def _toggle_dock(self, dock: Dock, state):
+        """Показать/скрыть док по состоянию чекбокса."""
+        from PySide6.QtCore import Qt
+        if state == Qt.CheckState.Checked.value:
+            dock.show()
+        else:
+            dock.hide()
 
     def _build_reference_curves(self, result: SolverResult):
         """
@@ -682,7 +705,6 @@ class MyApp(QMainWindow):
     def refresh_ui(self):
         self.update_data_table()
         self.update_dim_plots()
-        self.update_dimensionless_plot()
     
     def reset_ui(self):
         self.reset_plots()
@@ -720,56 +742,46 @@ class MyApp(QMainWindow):
         clear_data_table(self.ui.data_table)
     
     def reset_plots(self):
-        clear_plot(self.ui.p_graphic)
-        clear_plot(self.ui.q_graphic)
-        clear_plot(self.ui.dim_plot)
-    
+        clear_plot(self.ui.plot_pressure)
+        clear_plot(self.ui.plot_debit)
+        clear_plot(self.ui.plot_xy)
+        clear_plot(self.ui.plot_burde)
+
     def update_dim_plots(self):
         plot_pressure(
-            plot = self.ui.p_graphic,
-            t = self.app_state.processing_dynamic_data.t,
-            P = self.app_state.processing_dynamic_data.P,
+            plot=self.ui.plot_pressure,
+            t=self.app_state.processing_dynamic_data.t,
+            P=self.app_state.processing_dynamic_data.P,
             P_interpolated_mask=self.app_state.processing_dynamic_data.P_interpolated_mask,
             P_extrapolated_mask=self.app_state.processing_dynamic_data.P_extrapolated_mask,
         )
         plot_debit(
-            plot = self.ui.q_graphic,
-            t = self.app_state.processing_dynamic_data.t,
-            Q = self.app_state.processing_dynamic_data.Q,
+            plot=self.ui.plot_debit,
+            t=self.app_state.processing_dynamic_data.t,
+            Q=self.app_state.processing_dynamic_data.Q,
             Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
             Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
         )
-    
-    def update_dimensionless_plot(self):
+        self.update_xy_plot()
+        self.update_burde_plot()
 
-        plot: pg.PlotItem = self.ui.dim_plot
+    def update_xy_plot(self):
+        """Перерисовка XY-дока: факт + опционально эталон + соседи."""
+        plot: pg.PlotItem = self.ui.plot_xy
         plot.clear()
+        plot.setLogMode(True, True)
 
-        if self.ui.cb_calc_XY.isChecked():
-            if not self.app_state.dimensionless:
-                return
-
+        # Фактические данные — всегда
+        if self.app_state.dimensionless:
             plot_xy(
                 plot=plot,
                 X=self.app_state.dimensionless.X,
                 Y=self.app_state.dimensionless.Y,
             )
 
-        if self.ui.cb_burde_curve.isChecked():
-            if not self.app_state.processing_dynamic_data:
-                return
-
-            plot_burde(
-                plot=plot,
-                t=self.app_state.processing_dynamic_data.t,
-                burde=self.app_state.processing_dynamic_data.burde,
-            )
-        
-        # Get optimization results if available
+        # Эталонная кривая
         ref_curves = self.app_state.reference_curves
-
-        # Plot main reference curve (if checkbox is checked and we have it)
-        if self.ui.cb_main_ref_XY.isChecked() and ref_curves and ref_curves.main:
+        if ref_curves and ref_curves.main:
             main = ref_curves.main
             skin_val = main.static_params.Skin or 0
             self._plot_reference_curve(
@@ -780,19 +792,18 @@ class MyApp(QMainWindow):
                 name=f"Эталонная кривая (S={skin_val:.1f})",
             )
 
-        # Plot neighbor reference curves (if checkbox is checked and we have them)
-        if self.ui.cb_neighbours_ref_XY.isChecked() and ref_curves and ref_curves.neighbours:
-            # Colors for 4 neighbors: Skin-2, Skin-1, Skin+1, Skin+2
+        # Соседние кривые
+        if ref_curves and ref_curves.neighbours:
             neighbor_colors = {
-                -2: (0, 191, 255),     # голубой
-                -1: (100, 200, 100),   # яркий зелёный
-                +1: (255, 165, 0),     # оранжевый
-                +2: (220, 20, 60),     # насыщенный красный
+                -2: (0, 191, 255),
+                -1: (100, 200, 100),
+                +1: (255, 165, 0),
+                +2: (220, 20, 60),
             }
             for nb in ref_curves.neighbours:
                 offset = nb.skin_offset
                 color = neighbor_colors.get(offset, (128, 128, 128))
-                skin_val = nb.skin_offset
+                skin_val = offset  # для лейбла используем offset
 
                 if offset < 0:
                     name_suffix = f"(Skin-{abs(offset)})"
@@ -804,8 +815,17 @@ class MyApp(QMainWindow):
                     X=nb.dimensionless.X,
                     Y=nb.dimensionless.Y,
                     color=color,
-                    name=f"Сосед {name_suffix} (S={skin_val:.1f})",
+                    name=f"Сосед {name_suffix} (S={offset:+d})",
                 )
+
+    def update_burde_plot(self):
+        """Перерисовка дока Бурде."""
+        if self.app_state.processing_dynamic_data and self.app_state.processing_dynamic_data.burde is not None:
+            plot_burde(
+                plot=self.ui.plot_burde,
+                t=self.app_state.processing_dynamic_data.t,
+                burde=self.app_state.processing_dynamic_data.burde,
+            )
 
     def _plot_reference_curve(self, plot: pg.PlotItem, X: np.ndarray, Y: np.ndarray, color: tuple, name: str):
         """
