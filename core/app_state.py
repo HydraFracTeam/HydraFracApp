@@ -3,7 +3,7 @@ from typing import Optional
 
 from core.models import (
     RawDynamicData,
-    ReferenceCurve,
+    ReferenceCurves,
     SolverState,
     ProcessingDynamicData,
     DimensionlessData,
@@ -31,7 +31,7 @@ class AppState:
     
     optimize_thresholds: Optional[OptimizeThresholds] = None # границы для полудлины трещины L и проницаемости k
     
-    reference_curve: Optional[ReferenceCurve] = None # моделька для текущей эталонной кривой, может позже поменяться 
+    reference_curves: Optional[ReferenceCurves] = None  # лучшая эталонная кривая + соседи после оптимизации 
 
     solver_state: Optional[SolverState] = None # параметры солвера, хранит данные решения и невязку
 

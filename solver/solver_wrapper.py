@@ -4,6 +4,7 @@ import logging
 
 from .solver_new import ReservoirSolver
 from core.reference_repo import ReferenceRepository
+from core.models import ReferenceCurves
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class SolverResult:
         N_opt: Optional[float],
         error_value: float,
         W_scale_factor: float = 1.0,
+        reference_curves: Optional[ReferenceCurves] = None,
     ):
         self.S_opt = S_opt
         self.k_opt = k_opt
@@ -28,6 +30,7 @@ class SolverResult:
         self.N_opt = N_opt
         self.error_value = error_value
         self.W_scale_factor = W_scale_factor
+        self.reference_curves = reference_curves
 
     def __repr__(self):
         k_str = f"{self.k_opt:.6f}" if self.k_opt is not None else "N/A"

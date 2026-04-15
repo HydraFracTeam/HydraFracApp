@@ -9,6 +9,7 @@ import sys
 import logging
 import numpy as np
 from typing import List, Dict, Tuple
+from pyqtgraph.dockarea import Dock
 
 # Configure logging to show solver progress
 logging.basicConfig(
@@ -21,7 +22,7 @@ logging.basicConfig(
 
 from ui.ui import Ui_MainWindow
 from ui import ( 
-    setup_add_interface, 
+    setup_dock_area, 
     update_data_table_view, 
     clear_data_table,
     plot_pressure, 
@@ -38,6 +39,7 @@ import pyqtgraph as pg
 from core.app_state import AppState
 from core.reference_repo import ReferenceRepository
 from config import settings
+from solver.solver_wrapper import SolverResult
 from solver import Solver
 from core.dimensionless import calculate_x, calculate_y
 from utils import format_pydantic_error
@@ -46,7 +48,7 @@ from utils import format_pydantic_error
 from schemas import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
 # модельки
-from core.models import DimensionlessData, SolverState
+from core.models import DimensionlessData, SolverState, MainRefCurve, NeighbourRefCurve, ReferenceCurves, RefStaticParams
 from helpers import (
     calculate_L_value, 
     calculate_k_value,
@@ -118,11 +120,11 @@ class MyApp(QMainWindow):
         self.setup_load_dynamic_data_menu()
         self.setup_static_data_menu()
         self.setup_threshold_menu()
-        self.connect_graphic_checkboxes()
+        self.setup_dock_visibility_checkboxes()
         self.setup_preprocessing_controls()
         self.setup_data_table_elements()
-        # Создаем  интерфейс с вкладками
-        setup_add_interface(self)
+        # Создаем интерфейс с DockArea
+        setup_dock_area(self)
 
    
     ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
@@ -288,17 +290,17 @@ class MyApp(QMainWindow):
             # заполнение UI из state
             fill_state_to_ui(self.ui, self.app_state)
 
-            # 🔴 КРИТИЧНО: восстановление производных данных
+            # КРИТИЧНО: восстановление производных данных
             if self.app_state.processing_dynamic_data and self.app_state.static_params:
                 self.recalculate_processing_dynamic_data()
 
             if self.app_state.processing_dynamic_data and self.app_state.solver_state:
                 self.recalculate_dimensionless()
 
-            # 🔴 обновление UI
+            # обновление UI
             self.refresh_ui()
 
-            # 🔴 включение нужных контролов
+            # включение нужных контролов
             self.disable_load_controls()
 
             if self.app_state.static_params:
@@ -556,7 +558,10 @@ class MyApp(QMainWindow):
                 skin_current=result.S_opt,
                 residual=result.error_value
             )
-            
+
+            # Build reference curves from repo
+            self._build_reference_curves(result)
+
             self.show_in_text_report(
                 f"Оптимизация завершена:\n"
                 f"  Скин-фактор S = {result.S_opt:.4f}\n"
@@ -566,7 +571,7 @@ class MyApp(QMainWindow):
             )
             
             # Refresh the plot to show reference curves if checkboxes are already checked
-            self.update_dimensionless_plot()
+            self.update_dim_plots()
             
         except Exception as e:
             QMessageBox.critical(
@@ -614,44 +619,92 @@ class MyApp(QMainWindow):
         for elem in self._calculation_controls:
             elem.setEnabled(False)
     
-    # ОБНОВЛЕНИЕ ГРАФИКОВ, ТАБЛИЦ
-    def connect_graphic_checkboxes(self):
-        self.ui.cb_calc_XY.stateChanged.connect(self.update_dimensionless_plot)
-        self.ui.cb_burde_curve.stateChanged.connect(self.update_dimensionless_plot)
-        self.ui.cb_main_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
-        self.ui.cb_neighbours_ref_XY.stateChanged.connect(self.update_dimensionless_plot)
+    # УПРАВЛЕНИЕ ВИДИМОСТЬЮ ДОКОВ
+    def setup_dock_visibility_checkboxes(self):
+        """Подключает чекбоксы к показу/скрытию доков."""
+        self.ui.cb_pressure_dock.stateChanged.connect(
+            lambda state: self._toggle_dock(self.ui.dock_pressure, state)
+        )
+        self.ui.cb_debit_dock.stateChanged.connect(
+            lambda state: self._toggle_dock(self.ui.dock_debit, state)
+        )
+        self.ui.cb_calc_XY_dock.stateChanged.connect(self._on_xy_dock_toggle)
+        self.ui.cb_burde_curve_dock.stateChanged.connect(
+            lambda state: self._toggle_dock(self.ui.dock_burde, state)
+        )
 
-    def _find_best_reference_curve(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
+    def _on_xy_dock_toggle(self, state):
+        """Показать/скрыть XY-док и перерисовать при включении."""
+        self._toggle_dock(self.ui.dock_xy, state)
+        from PySide6.QtCore import Qt
+        if state == Qt.CheckState.Checked.value:
+            self.update_xy_plot()
+
+    def _toggle_dock(self, dock: Dock, state):
+        """Показать/скрыть док по состоянию чекбокса."""
+        from PySide6.QtCore import Qt
+        if state == Qt.CheckState.Checked.value:
+            dock.show()
+        else:
+            dock.hide()
+
+    def _build_reference_curves(self, result: SolverResult):
         """
-        Находит наилучшую подходящую эталонную кривую на основе результатов оптимизации.
+        Собирает ReferenceCurves из результата солвера и сохраняет в AppState.
         """
         try:
-            available_skins = self.ref_repo.get_available_skins()
-            if not available_skins:
-                return None
+            static_params = self.app_state.static_params
+            N_fixed = static_params.N
+            W_fixed = static_params.W
+            skin_opt = result.S_opt
+            L_opt = result.L_opt
 
-            closest_skin = min(available_skins, key=lambda x: abs(x - skin_opt))
-            return self.ref_repo.find_best_curve(closest_skin, L_opt, N=N_fixed, W=W_fixed)
+            # Главная кривая
+            main_dict = self.ref_repo.find_best_curve(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            main_curve = None
+            if main_dict is not None:
+                main_curve = MainRefCurve(
+                    dimensionless=DimensionlessData(
+                        X=main_dict['X'],
+                        Y=main_dict['Y'],
+                    ),
+                    static_params=RefStaticParams(
+                        Skin=main_dict['Skin'],
+                        h=main_dict['h'],
+                        N=int(main_dict['N']),
+                        W=main_dict['W'],
+                        L=main_dict['L'],
+                        aL=main_dict["aL"],
+                    ),
+                )
+
+            # Соседи
+            neighbors_list = self.ref_repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            neighbours = []
+            for nb in neighbors_list:
+                skin_diff = nb['Skin'] - skin_opt
+                skin_offset = int(round(skin_diff))
+                neighbours.append(NeighbourRefCurve(
+                    dimensionless=DimensionlessData(
+                        X=nb['X'],
+                        Y=nb['Y'],
+                    ),
+                    skin_offset=skin_offset,
+                ))
+
+            self.app_state.reference_curves = ReferenceCurves(
+                main=main_curve,
+                neighbours=neighbours if neighbours else None,
+            )
 
         except Exception as e:
-            self.logger.error(f"Ошибка при поиске эталонной кривой: {e}")
-            return None
-
-    def _find_neighbor_reference_curves(self, k_opt: float, L_opt: float, skin_opt: float, N_fixed: int = None, W_fixed: float = None):
-        """
-        Находит соседние эталонные кривые: 2 с skin-1 и skin-2, и 2 с skin+1 и skin+2.
-        """
-        try:
-            return self.ref_repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
-
-        except Exception as e:
-            self.logger.error(f"Ошибка при поиске соседних кривых: {e}")
-            return []
+            self.logger.warning(f"Не удалось собрать reference curves: {e}")
+            QMessageBox.warning(self, "Ошибка", "Не удалось собрать создать отображения рефенсных кривых!")
+            self.app_state.reference_curves = None
     
     def refresh_ui(self):
         self.update_data_table()
         self.update_dim_plots()
-        self.update_dimensionless_plot()
     
     def reset_ui(self):
         self.reset_plots()
@@ -689,112 +742,94 @@ class MyApp(QMainWindow):
         clear_data_table(self.ui.data_table)
     
     def reset_plots(self):
-        clear_plot(self.ui.p_graphic)
-        clear_plot(self.ui.q_graphic)
-        clear_plot(self.ui.dim_plot)
-    
+        clear_plot(self.ui.plot_pressure)
+        clear_plot(self.ui.plot_debit)
+        clear_plot(self.ui.plot_xy)
+        clear_plot(self.ui.plot_burde)
+
     def update_dim_plots(self):
         plot_pressure(
-            plot = self.ui.p_graphic,
-            t = self.app_state.processing_dynamic_data.t,
-            P = self.app_state.processing_dynamic_data.P,
+            plot=self.ui.plot_pressure,
+            t=self.app_state.processing_dynamic_data.t,
+            P=self.app_state.processing_dynamic_data.P,
             P_interpolated_mask=self.app_state.processing_dynamic_data.P_interpolated_mask,
             P_extrapolated_mask=self.app_state.processing_dynamic_data.P_extrapolated_mask,
         )
         plot_debit(
-            plot = self.ui.q_graphic,
-            t = self.app_state.processing_dynamic_data.t,
-            Q = self.app_state.processing_dynamic_data.Q,
+            plot=self.ui.plot_debit,
+            t=self.app_state.processing_dynamic_data.t,
+            Q=self.app_state.processing_dynamic_data.Q,
             Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
             Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
         )
-    
-    def update_dimensionless_plot(self):
+        self.update_xy_plot()
+        self.update_burde_plot()
 
-        plot: pg.PlotItem = self.ui.dim_plot
+    def update_xy_plot(self):
+        """Перерисовка XY-дока: факт + опционально эталон + соседи."""
+        plot: pg.PlotItem = self.ui.plot_xy
         plot.clear()
+        plot.setLogMode(True, True)
 
-        if self.ui.cb_calc_XY.isChecked():
-            if not self.app_state.dimensionless:
-                return
-
+        # Фактические данные — всегда
+        if self.app_state.dimensionless:
             plot_xy(
                 plot=plot,
                 X=self.app_state.dimensionless.X,
                 Y=self.app_state.dimensionless.Y,
             )
 
-        if self.ui.cb_burde_curve.isChecked():
-            if not self.app_state.processing_dynamic_data:
-                return
+        # Эталонная кривая
+        ref_curves = self.app_state.reference_curves
+        if ref_curves and ref_curves.main:
+            main = ref_curves.main
+            skin_val = main.static_params.Skin or 0
+            self._plot_reference_curve(
+                plot=plot,
+                X=main.dimensionless.X,
+                Y=main.dimensionless.Y,
+                color=(255, 0, 0),
+                name=f"Эталонная кривая (S={skin_val:.1f})",
+            )
 
+        # Соседние кривые
+        if ref_curves and ref_curves.neighbours:
+            neighbor_colors = {
+                -2: (0, 191, 255),
+                -1: (100, 200, 100),
+                +1: (255, 165, 0),
+                +2: (220, 20, 60),
+            }
+            for nb in ref_curves.neighbours:
+                offset = nb.skin_offset
+                color = neighbor_colors.get(offset, (128, 128, 128))
+                skin_val = offset  # для лейбла используем offset
+
+                if offset < 0:
+                    name_suffix = f"(Skin-{abs(offset)})"
+                else:
+                    name_suffix = f"(Skin+{offset})"
+
+                self._plot_reference_curve(
+                    plot=plot,
+                    X=nb.dimensionless.X,
+                    Y=nb.dimensionless.Y,
+                    color=color,
+                    name=f"Сосед {name_suffix} (S={offset:+d})",
+                )
+
+    def update_burde_plot(self):
+        """Перерисовка дока Бурде."""
+        plot: pg.PlotItem = self.ui.plot_burde
+        plot.clear()
+        if self.app_state.processing_dynamic_data and self.app_state.processing_dynamic_data.burde is not None:
             plot_burde(
                 plot=plot,
                 t=self.app_state.processing_dynamic_data.t,
                 burde=self.app_state.processing_dynamic_data.burde,
             )
-        
-        # Get optimization results if available
-        solver_state = self.app_state.solver_state
-        k_opt = solver_state.k_current if solver_state else None
-        L_opt = solver_state.L_current if solver_state else None
-        skin_opt = solver_state.skin_current if solver_state else None
-        
-        # Get static params for N and W filtering
-        static_params = self.app_state.static_params
-        N_fixed = static_params.N if static_params else None
-        W_fixed = static_params.W if static_params else None
-        
-        # Plot main reference curve (if checkbox is checked and we have optimization results)
-        if self.ui.cb_main_ref_XY.isChecked() and k_opt and L_opt and skin_opt:
-            ref_curve = self._find_best_reference_curve(k_opt, L_opt, skin_opt, N_fixed, W_fixed)
-            if ref_curve:
-                self._plot_reference_curve(
-                    plot=plot,
-                    X=ref_curve['X'],
-                    Y=ref_curve['Y'],
-                    skin=ref_curve['Skin'],
-                    L=ref_curve['L'],
-                    color=(255, 0, 0),
-                    name=f"Эталонная кривая (S={ref_curve['Skin']:.1f}, L={ref_curve['L']:.1f})",
-                )
-        
-        # Plot neighbor reference curves (if checkbox is checked and we have optimization results)
-        if self.ui.cb_neighbours_ref_XY.isChecked() and k_opt and L_opt and skin_opt:
-            neighbors = self._find_neighbor_reference_curves(k_opt, L_opt, skin_opt, N_fixed, W_fixed)
-            # Colors for 4 neighbors: Skin-2, Skin-1, Skin+1, Skin+2
-            neighbor_colors = [
-                (0, 191, 255),    # Skin-2 - голубой
-                (100, 200, 100),  # Skin-1 - яркий зелёный
-                (255, 165, 0),    # Skin+1 - оранжевый
-                (220, 20, 60),    # Skin+2 - насыщенный красный
-            ]
-            for i, neighbor in enumerate(neighbors):
-                if i < len(neighbor_colors):
-                    color = neighbor_colors[i]
-                else:
-                    color = (128, 128, 128)  # серый для дополнительных
-                
-                # Determine name suffix based on skin relative to optimal
-                if neighbor['Skin'] < skin_opt:
-                    skin_diff = int(skin_opt - neighbor['Skin'])
-                    name_suffix = f"(Skin-{skin_diff})"
-                else:
-                    skin_diff = int(neighbor['Skin'] - skin_opt)
-                    name_suffix = f"(Skin+{skin_diff})"
-                    
-                self._plot_reference_curve(
-                    plot=plot,
-                    X=neighbor['X'],
-                    Y=neighbor['Y'],
-                    skin=neighbor['Skin'],
-                    L=neighbor['L'],
-                    color=color,
-                    name=f"Сосед {name_suffix} (S={neighbor['Skin']:.1f}, L={neighbor['L']:.1f})",
-                )
 
-    def _plot_reference_curve(self, plot: pg.PlotItem, X: np.ndarray, Y: np.ndarray, 
-                               skin: float, L: float, color: tuple, name: str):
+    def _plot_reference_curve(self, plot: pg.PlotItem, X: np.ndarray, Y: np.ndarray, color: tuple, name: str):
         """
         Plot a reference curve on the dimensionless plot.
         
@@ -803,7 +838,6 @@ class MyApp(QMainWindow):
             X: X coordinates of the reference curve
             Y: Y coordinates of the reference curve
             skin: Skin factor value
-            L: Half-length value
             color: RGB color tuple
             name: Name for the legend
         """
