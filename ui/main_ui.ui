@@ -836,32 +836,6 @@
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout">
            <item>
-            <widget class="QPushButton" name="ml_filter_btn">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="text">
-              <string>Сгладить</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="extrapolate_btn">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="text">
-              <string>Экстраполировать</string>
-             </property>
-            </widget>
-           </item>
-           <item>
             <widget class="QPushButton" name="interp_btn">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
@@ -884,6 +858,32 @@
              </property>
              <property name="text">
               <string>Удалить выбросы</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="extrapolate_btn">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>Экстраполировать</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="ml_filter_btn">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>Сгладить</string>
              </property>
             </widget>
            </item>
@@ -916,9 +916,12 @@
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout_6">
            <item>
-            <widget class="QCheckBox" name="cb_burde_curve_dock">
+            <widget class="QCheckBox" name="cb_pressure_dock">
              <property name="text">
-              <string>Производная Бурде (dP/dt)</string>
+              <string>График давления</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
@@ -930,9 +933,9 @@
             </widget>
            </item>
            <item>
-            <widget class="QCheckBox" name="cb_pressure_dock">
+            <widget class="QCheckBox" name="cb_burde_curve_dock">
              <property name="text">
-              <string>График давления</string>
+              <string>Производная Бурде (dP/dt)</string>
              </property>
             </widget>
            </item>

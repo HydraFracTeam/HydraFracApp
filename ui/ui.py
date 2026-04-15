@@ -566,25 +566,11 @@ class Ui_MainWindow(object):
         self.preprocessing_groupBoxs.setMaximumSize(QSize(16777215, 75))
         self.horizontalLayout = QHBoxLayout(self.preprocessing_groupBoxs)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.ml_filter_btn = QPushButton(self.preprocessing_groupBoxs)
-        self.ml_filter_btn.setObjectName(u"ml_filter_btn")
+        self.interp_btn = QPushButton(self.preprocessing_groupBoxs)
+        self.interp_btn.setObjectName(u"interp_btn")
         sizePolicy6 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         sizePolicy6.setHorizontalStretch(0)
         sizePolicy6.setVerticalStretch(0)
-        sizePolicy6.setHeightForWidth(self.ml_filter_btn.sizePolicy().hasHeightForWidth())
-        self.ml_filter_btn.setSizePolicy(sizePolicy6)
-
-        self.horizontalLayout.addWidget(self.ml_filter_btn)
-
-        self.extrapolate_btn = QPushButton(self.preprocessing_groupBoxs)
-        self.extrapolate_btn.setObjectName(u"extrapolate_btn")
-        sizePolicy6.setHeightForWidth(self.extrapolate_btn.sizePolicy().hasHeightForWidth())
-        self.extrapolate_btn.setSizePolicy(sizePolicy6)
-
-        self.horizontalLayout.addWidget(self.extrapolate_btn)
-
-        self.interp_btn = QPushButton(self.preprocessing_groupBoxs)
-        self.interp_btn.setObjectName(u"interp_btn")
         sizePolicy6.setHeightForWidth(self.interp_btn.sizePolicy().hasHeightForWidth())
         self.interp_btn.setSizePolicy(sizePolicy6)
 
@@ -596,6 +582,20 @@ class Ui_MainWindow(object):
         self.outlier_btn.setSizePolicy(sizePolicy6)
 
         self.horizontalLayout.addWidget(self.outlier_btn)
+
+        self.extrapolate_btn = QPushButton(self.preprocessing_groupBoxs)
+        self.extrapolate_btn.setObjectName(u"extrapolate_btn")
+        sizePolicy6.setHeightForWidth(self.extrapolate_btn.sizePolicy().hasHeightForWidth())
+        self.extrapolate_btn.setSizePolicy(sizePolicy6)
+
+        self.horizontalLayout.addWidget(self.extrapolate_btn)
+
+        self.ml_filter_btn = QPushButton(self.preprocessing_groupBoxs)
+        self.ml_filter_btn.setObjectName(u"ml_filter_btn")
+        sizePolicy6.setHeightForWidth(self.ml_filter_btn.sizePolicy().hasHeightForWidth())
+        self.ml_filter_btn.setSizePolicy(sizePolicy6)
+
+        self.horizontalLayout.addWidget(self.ml_filter_btn)
 
         self.reset_plots_btn = QPushButton(self.preprocessing_groupBoxs)
         self.reset_plots_btn.setObjectName(u"reset_plots_btn")
@@ -612,20 +612,21 @@ class Ui_MainWindow(object):
         self.groupBox.setMaximumSize(QSize(16777215, 75))
         self.horizontalLayout_6 = QHBoxLayout(self.groupBox)
         self.horizontalLayout_6.setObjectName(u"horizontalLayout_6")
-        self.cb_burde_curve_dock = QCheckBox(self.groupBox)
-        self.cb_burde_curve_dock.setObjectName(u"cb_burde_curve_dock")
+        self.cb_pressure_dock = QCheckBox(self.groupBox)
+        self.cb_pressure_dock.setObjectName(u"cb_pressure_dock")
+        self.cb_pressure_dock.setChecked(True)
 
-        self.horizontalLayout_6.addWidget(self.cb_burde_curve_dock)
+        self.horizontalLayout_6.addWidget(self.cb_pressure_dock)
 
         self.cb_debit_dock = QCheckBox(self.groupBox)
         self.cb_debit_dock.setObjectName(u"cb_debit_dock")
 
         self.horizontalLayout_6.addWidget(self.cb_debit_dock)
 
-        self.cb_pressure_dock = QCheckBox(self.groupBox)
-        self.cb_pressure_dock.setObjectName(u"cb_pressure_dock")
+        self.cb_burde_curve_dock = QCheckBox(self.groupBox)
+        self.cb_burde_curve_dock.setObjectName(u"cb_burde_curve_dock")
 
-        self.horizontalLayout_6.addWidget(self.cb_pressure_dock)
+        self.horizontalLayout_6.addWidget(self.cb_burde_curve_dock)
 
         self.cb_calc_XY_dock = QCheckBox(self.groupBox)
         self.cb_calc_XY_dock.setObjectName(u"cb_calc_XY_dock")
@@ -753,15 +754,15 @@ class Ui_MainWindow(object):
         self.frac_length_result_label.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u043b\u0443\u0434\u043b\u0438\u043d\u0430 \u0442\u0440\u0435\u0449\u0438\u043d\u044b, \u043c", None))
         self.report_group.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u0447\u0451\u0442", None))
         self.preprocessing_groupBoxs.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u043d\u0430\u0434 \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u0435\u043c \u0438 \u0434\u0435\u0431\u0438\u0442\u043e\u043c", None))
-        self.ml_filter_btn.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0433\u043b\u0430\u0434\u0438\u0442\u044c", None))
-        self.extrapolate_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u0442\u0440\u0430\u043f\u043e\u043b\u0438\u0440\u043e\u0432\u0430\u0442\u044c", None))
         self.interp_btn.setText(QCoreApplication.translate("MainWindow", u"\u0412\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u043f\u0440\u043e\u043f\u0443\u0441\u043a\u0438", None))
         self.outlier_btn.setText(QCoreApplication.translate("MainWindow", u"\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0432\u044b\u0431\u0440\u043e\u0441\u044b", None))
+        self.extrapolate_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u0442\u0440\u0430\u043f\u043e\u043b\u0438\u0440\u043e\u0432\u0430\u0442\u044c", None))
+        self.ml_filter_btn.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0433\u043b\u0430\u0434\u0438\u0442\u044c", None))
         self.reset_plots_btn.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f", None))
         self.groupBox.setTitle(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0434\u043b\u044f \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f", None))
-        self.cb_burde_curve_dock.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u043d\u0430\u044f \u0411\u0443\u0440\u0434\u0435 (dP/dt)", None))
-        self.cb_debit_dock.setText(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a \u0434\u0435\u0431\u0438\u0442\u0430", None))
         self.cb_pressure_dock.setText(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u044f", None))
+        self.cb_debit_dock.setText(QCoreApplication.translate("MainWindow", u"\u0413\u0440\u0430\u0444\u0438\u043a \u0434\u0435\u0431\u0438\u0442\u0430", None))
+        self.cb_burde_curve_dock.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u043d\u0430\u044f \u0411\u0443\u0440\u0434\u0435 (dP/dt)", None))
         self.cb_calc_XY_dock.setText(QCoreApplication.translate("MainWindow", u"\u0411\u0435\u0437\u0440\u0430\u0437\u043c\u0435\u0440\u043d\u044b\u0435 X-Y", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.timeseries_tab), QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
         self.export_data_table_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))

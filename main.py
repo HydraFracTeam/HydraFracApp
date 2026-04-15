@@ -22,7 +22,7 @@ logging.basicConfig(
 
 from ui.ui import Ui_MainWindow
 from ui import ( 
-    setup_add_interface, 
+    setup_dock_area, 
     update_data_table_view, 
     clear_data_table,
     plot_pressure, 
@@ -124,7 +124,7 @@ class MyApp(QMainWindow):
         self.setup_preprocessing_controls()
         self.setup_data_table_elements()
         # Создаем интерфейс с DockArea
-        setup_add_interface(self)
+        setup_dock_area(self)
 
    
     ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
@@ -290,17 +290,17 @@ class MyApp(QMainWindow):
             # заполнение UI из state
             fill_state_to_ui(self.ui, self.app_state)
 
-            # 🔴 КРИТИЧНО: восстановление производных данных
+            # КРИТИЧНО: восстановление производных данных
             if self.app_state.processing_dynamic_data and self.app_state.static_params:
                 self.recalculate_processing_dynamic_data()
 
             if self.app_state.processing_dynamic_data and self.app_state.solver_state:
                 self.recalculate_dimensionless()
 
-            # 🔴 обновление UI
+            # обновление UI
             self.refresh_ui()
 
-            # 🔴 включение нужных контролов
+            # включение нужных контролов
             self.disable_load_controls()
 
             if self.app_state.static_params:

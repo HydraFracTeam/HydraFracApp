@@ -19,17 +19,6 @@ DOCK_LABEL_BG = '#3a3a3a'
 DOCK_LABEL_FG = '#cccccc'
 DOCK_LABEL_BORDER = '#555555'
 
-
-def setup_add_interface(app) -> None:
-    """
-    Инициализация динамических элементов UI:
-    - DockArea с графиками (pyqtgraph)
-    - таблица данных
-    """
-    setup_dock_area(app)
-
-
-
 def _make_dock(name: str, title: str, size=(500, 300), log_x=False, log_y=False) -> tuple[Dock, pg.PlotWidget]:
     """Создаёт док с PlotWidget."""
     plot = pg.PlotWidget()
@@ -70,7 +59,6 @@ def setup_dock_area(app) -> None:
     p_plot.getAxis('left').setTextPen(TEXT_COLOR)
     p_plot.getAxis('bottom').setTextPen(TEXT_COLOR)
 
-    dock_area.addDock(dock_p, 'left')
     app.ui.dock_pressure = dock_p
     app.ui.plot_pressure = p_plot.getPlotItem()
 
@@ -83,7 +71,6 @@ def setup_dock_area(app) -> None:
     q_plot.getAxis('left').setTextPen(TEXT_COLOR)
     q_plot.getAxis('bottom').setTextPen(TEXT_COLOR)
 
-    dock_area.addDock(dock_q, 'right', dock_p)
     app.ui.dock_debit = dock_q
     app.ui.plot_debit = q_plot.getPlotItem()
 
@@ -96,7 +83,6 @@ def setup_dock_area(app) -> None:
     xy_plot.getAxis('left').setTextPen(TEXT_COLOR)
     xy_plot.getAxis('bottom').setTextPen(TEXT_COLOR)
 
-    dock_area.addDock(dock_xy, 'bottom', dock_p)
     app.ui.dock_xy = dock_xy
     app.ui.plot_xy = xy_plot.getPlotItem()
 
@@ -109,10 +95,15 @@ def setup_dock_area(app) -> None:
     b_plot.getAxis('left').setTextPen(TEXT_COLOR)
     b_plot.getAxis('bottom').setTextPen(TEXT_COLOR)
 
-    dock_area.addDock(dock_b, 'right', dock_xy)
     app.ui.dock_burde = dock_b
     app.ui.plot_burde = b_plot.getPlotItem()
+    
+    
+    dock_area.addDock(dock_p)
+    dock_area.addDock(dock_q, 'right', dock_p)
+    dock_area.addDock(dock_xy, 'bottom', dock_p)
+    dock_area.addDock(dock_b, 'bottom', dock_q)
 
     # Скрываем все доки при старте (отложенно, чтобы DockArea успел проинициализироваться)
-    for d in [dock_p, dock_q, dock_xy, dock_b]:
+    for d in [dock_q, dock_xy, dock_b]:
         QTimer.singleShot(0, d.hide)
