@@ -109,7 +109,6 @@ RawDynamicData
 Используется в этапах:
 
 ```
-preprocessing
 dimensionless calculations
 solver
 ```

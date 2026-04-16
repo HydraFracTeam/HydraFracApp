@@ -559,9 +559,6 @@ class MyApp(QMainWindow):
                 residual=result.error_value
             )
 
-            # Build reference curves from repo
-            self._build_reference_curves(result)
-
             self.show_in_text_report(
                 f"Оптимизация завершена:\n"
                 f"  Скин-фактор S = {result.S_opt:.4f}\n"
@@ -569,7 +566,10 @@ class MyApp(QMainWindow):
                 f"  Полудлина трещины L = {result.L_opt:.4f} м\n"
                 f"  Ошибка подбора = {result.error_value:.6f}"
             )
-            
+            #пересчитаем XY под найденные k и L
+            self.recalculate_dimensionless()
+            # Build reference curves from repo
+            self._build_reference_curves(result)
             # Refresh the plot to show reference curves if checkboxes are already checked
             self.update_dim_plots()
             

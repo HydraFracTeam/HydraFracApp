@@ -143,7 +143,6 @@ Core
 Processing
 │
 ├── загрузка данных
-└── preprocessing
 
 Storage
 │
@@ -321,7 +320,6 @@ HydraFracApp
 │   ├── loaders/
 │   │   ├── csv_loader.py      # Загрузчик CSV
 │   │   └── las_loader.py      # Загрузчик LAS
-│   ├── preprocessing.py       # Оркестратор предобработки
 │   ├── raw_to_processing.py   # Преобразование сырых данных
 │   ├── rebuild_processing_dynamic.py
 │   ├── interpolate_pressure.py
