@@ -1,7 +1,11 @@
+#sessions/load_state.py
+
 import json
 import zipfile
 import tempfile
 from pathlib import Path
+import tarfile
+import zstandard as zstd
 
 import pyarrow.parquet as pq
 
@@ -17,19 +21,27 @@ from schemas import StaticParams, OptimizeThresholds
 def _to_numpy(series):
     return None if series is None else series.to_numpy()
 
-
 def load_state(path: str) -> AppState:
     path = Path(path)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
 
-        with zipfile.ZipFile(path, "r") as z:
-            z.extractall(tmp)
+        # zstd -> tar
+        dctx = zstd.ZstdDecompressor()
+
+        tar_path = tmp / "data.tar"
+        with open(path, "rb") as f_in, open(tar_path, "wb") as f_out:
+            f_out.write(dctx.decompress(f_in.read()))
+
+        # tar -> files
+        with tarfile.open(tar_path, "r") as tar:
+            tar.extractall(tmp)
 
         meta = json.loads((tmp / "meta.json").read_text())
 
         state = AppState()
+
 
         # RAW
         raw_path = tmp / "raw.parquet"

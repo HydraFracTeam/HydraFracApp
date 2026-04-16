@@ -1,14 +1,18 @@
+#sessions/save_state.py
+
 import json
 import zipfile
 import tempfile
 from pathlib import Path
+import tarfile
+import zstandard as zstd
+
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from core.app_state import AppState
-
 
 def save_state(state: AppState, path: str) -> None:
     path = Path(path)
@@ -62,15 +66,13 @@ def save_state(state: AppState, path: str) -> None:
                 "is_Q_normalized": p.is_Q_normalized,
             }
 
-        # STATIC
+        # STATIC / THRESHOLDS / SOLVER
         if state.static_params:
             meta["static"] = state.static_params.model_dump()
 
-        # THRESHOLDS
         if state.optimize_thresholds:
             meta["thresholds"] = state.optimize_thresholds.model_dump()
 
-        # SOLVER
         if state.solver_state:
             meta["solver"] = {
                 "k": state.solver_state.k_current,
@@ -82,7 +84,15 @@ def save_state(state: AppState, path: str) -> None:
         # META
         (tmp / "meta.json").write_text(json.dumps(meta))
 
-        # ZIP
-        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        # TAR
+        tar_path = tmp / "data.tar"
+        with tarfile.open(tar_path, "w") as tar:
             for f in tmp.iterdir():
-                z.write(f, arcname=f.name)
+                if f.name != "data.tar":
+                    tar.add(f, arcname=f.name)
+
+        # ZSTD
+        cctx = zstd.ZstdCompressor(level=10)
+
+        with open(tar_path, "rb") as f_in, open(path, "wb") as f_out:
+            f_out.write(cctx.compress(f_in.read()))
