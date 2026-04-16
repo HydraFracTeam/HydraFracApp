@@ -22,19 +22,20 @@ def smooth_pressure(
         raise ValueError("ProcessingDynamicData is None")
 
     P = data.P
+    t = data.t
 
     if P is None:
         raise ValueError("Pressure array is None")
 
-    # if len(P) < window_length:
-    #     # если данных мало — уменьшаем окно
-    #     window_length = max(3, len(P) // 2 * 2 + 1)
+    if len(P) < window_length:
+        # если данных мало — уменьшаем окно
+        window_length = max(3, len(P) // 2 * 2 + 1)
 
     if window_length % 2 == 0:
         window_length += 1
 
     # маска реальных значений
-    mask = np.isfinite(P)
+    mask = np.isfinite(P) & (t > 1)
 
     if mask.sum() < polyorder + 2:
         return data
