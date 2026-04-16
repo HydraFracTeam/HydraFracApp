@@ -30,7 +30,7 @@ class ProcessingDynamicData: # храним как данные, с которы
     t: np.ndarray
     P: np.ndarray
     Q: np.ndarray
-    dP: np.ndarray
+    dP: Optional[np.ndarray] = None
     
     is_Q_normalized: bool = False
     

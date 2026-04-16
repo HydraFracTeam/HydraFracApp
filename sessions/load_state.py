@@ -56,9 +56,6 @@ def load_state(path: str) -> AppState:
                 t=df["t"].to_numpy(),
                 P=df["P"].to_numpy(),
                 Q=df["Q"].to_numpy(),
-                dP=df["dP"].to_numpy(),
-
-                burde=_to_numpy(df["burde"]),
 
                 P_interpolated_mask=_to_numpy(df["P_interpolated_mask"]),
                 Q_interpolated_mask=_to_numpy(df["Q_interpolated_mask"]),

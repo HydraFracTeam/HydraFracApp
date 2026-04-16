@@ -42,9 +42,6 @@ def save_state(state: AppState, path: str) -> None:
                 "t": p.t,
                 "P": p.P,
                 "Q": p.Q,
-                "dP": p.dP,
-
-                "burde": p.burde,
 
                 "P_interpolated_mask": p.P_interpolated_mask,
                 "Q_interpolated_mask": p.Q_interpolated_mask,

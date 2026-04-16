@@ -72,7 +72,7 @@ from processing import (
 from processing.autosplitter import get_split_info
 from processing.autosplit_service import apply_autosplit
 from ui.autosplit_dialog import AutosplitDialog
-from migrations import load_state, save_state
+from sessions import load_state, save_state
 
 
 
