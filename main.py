@@ -449,18 +449,22 @@ class MyApp(QMainWindow):
 
     def remove_outliers_in_processing_dynamic_data(self):
         self._apply_preprocessing(remove_pressure_outliers)
-   
+
     def _apply_preprocessing(self, *actions):
         """Pipeline: deepcopy → apply actions → save → recalc → refresh UI."""
-        from copy import deepcopy
-        processing = deepcopy(self.app_state.processing_dynamic_data)
-        for action in actions:
-            processing = action(processing)
-        self.app_state.processing_dynamic_data = processing
-        self.recalculate_processing_dynamic_data()
-        self.recalculate_dimensionless()
-        self.refresh_ui() 
-        
+        try:
+            from copy import deepcopy
+            processing = deepcopy(self.app_state.processing_dynamic_data)
+            for action in actions:
+                processing = action(processing)
+            self.app_state.processing_dynamic_data = processing
+            self.recalculate_processing_dynamic_data()
+            self.recalculate_dimensionless()
+            self.refresh_ui()
+        except Exception as e:
+            self.logger.error(f"Ошибка предобработки данных: {e}")
+            QMessageBox.warning(self, "Ошибка", f"Не удалось выполнить предобработку данных:\n{str(e)}")
+
     def reset_preprocessing_dynamic_data(self):
         self.app_state.processing_dynamic_data = raw_to_processing(self.app_state.raw_dynamic_data)
         self.recalculate_processing_dynamic_data()
@@ -474,27 +478,27 @@ class MyApp(QMainWindow):
         if self.app_state.processing_dynamic_data is None:
             QMessageBox.warning(self, "Ошибка", "Сначала загрузите и обработайте динамические данные.")
             return
-        
+
         if self.app_state.static_params is None:
             QMessageBox.warning(self, "Ошибка", "Сначала введите статические параметры.")
             return
-            
+
         if self.app_state.optimize_thresholds is None:
             QMessageBox.warning(self, "Ошибка", "Сначала задайте границы оптимизации.")
             return
-        
+
         try:
             # Get data from app state
             dynamic_data = self.app_state.processing_dynamic_data
             static_params = self.app_state.static_params
             thresholds = self.app_state.optimize_thresholds
-            
+
             validate_pressure_and_debit(dynamic_data)
             # We need to estimate initial k and L for X, Y calculation
             # Use middle of bounds as initial estimate
             k_init = (thresholds.k_min + thresholds.k_max) / 2
             L_init = (thresholds.L_min + thresholds.L_max) / 2
-            
+
             x_fact = calculate_x(
                 k=k_init,
                 h=static_params.h,
@@ -503,7 +507,7 @@ class MyApp(QMainWindow):
                 B=static_params.B,
                 Q=dynamic_data.Q,
             )
-            
+
             y_fact = calculate_y(
                 Q=dynamic_data.Q,
                 B=static_params.B,
@@ -519,22 +523,22 @@ class MyApp(QMainWindow):
             mask = (x_fact > 0) & (y_fact > 0)
             x_fact = x_fact[mask]
             y_fact = y_fact[mask]
-            
+
             if len(x_fact) < 10:
                 QMessageBox.warning(
-                    self, 
-                    "Ошибка", 
+                    self,
+                    "Ошибка",
                     "Недостаточно данных для расчёта. Проверьте входные данные."
                 )
                 return
-            
+
             # Store dimensionless data in app state
             self.app_state.dimensionless = DimensionlessData(X=x_fact, Y=y_fact)
-            
+
             # Run solver
             self.show_in_text_report("Запуск оптимизации...")
             solver = Solver()
-            
+
             result = solver.solve_from_dimensionless(
                 x_fact=x_fact,
                 y_fact=y_fact,
@@ -545,12 +549,12 @@ class MyApp(QMainWindow):
                 L_bounds=(thresholds.L_min, thresholds.L_max),
                 beam_width=5,
             )
-            
+
             # Update UI with results
             self.ui.skin_result_spinbox.setValue(result.S_opt)
             self.ui.permeability_result_spinbox.setValue(result.k_opt)
             self.ui.frac_length_result_spinbox.setValue(result.L_opt)
-            
+
             # Store result in app state
             self.app_state.solver_state = SolverState(
                 k_current=result.k_opt,
@@ -572,8 +576,9 @@ class MyApp(QMainWindow):
             self._build_reference_curves(result)
             # Refresh the plot to show reference curves if checkboxes are already checked
             self.update_dim_plots()
-            
+
         except Exception as e:
+            self.logger.error(f"Ошибка расчёта оптимальных параметров: {e}")
             QMessageBox.critical(
                 self,
                 "Ошибка расчёта",
@@ -696,10 +701,9 @@ class MyApp(QMainWindow):
                 main=main_curve,
                 neighbours=neighbours if neighbours else None,
             )
-
         except Exception as e:
-            self.logger.warning(f"Не удалось собрать reference curves: {e}")
-            QMessageBox.warning(self, "Ошибка", "Не удалось собрать создать отображения рефенсных кривых!")
+            self.logger.error(f"Ошибка создания reference curves: {e}")
+            QMessageBox.warning(self, "Ошибка", f"Не удалось создать отображения рефенсных кривых:\n{str(e)}")
             self.app_state.reference_curves = None
     
     def refresh_ui(self):
@@ -858,96 +862,113 @@ class MyApp(QMainWindow):
     # АВТОСПЛИТТЕР
     def _draw_autosplit_line(self):
         """Отрисовка линии разделения КСД/КВД на графике давления."""
-        if not hasattr(self, '_autosplit_info') or self._autosplit_info is None:
-            return
-        
         try:
+            if not hasattr(self, '_autosplit_info') or self._autosplit_info is None:
+                return
+
             split_time = self._autosplit_info.get('time')
             split_pressure = self._autosplit_info.get('pressure')
-            
+
             if split_time is None or split_pressure is None:
                 return
-            
+
             # Получаем график давления
             plot = self.ui.p_graphic
             if plot is None:
                 return
-            
+
             plot_autosplit_line(
                 plot=self.ui.p_graphic,
                 split_time=split_time,
                 split_pressure=split_pressure,
             )
-            
+
             self.logger.info(f"Отображена линия AUTO SPLIT: t={split_time:.2f}, P={split_pressure:.2f}")
         except Exception as e:
-            self.logger.warning(f"Не удалось отрисовать линию разделения: {e}")
+            self.logger.error(f"Ошибка отрисовки линии разделения: {e}")
+            QMessageBox.warning(self, "Ошибка", f"Не удалось отрисовать линию разделения:\n{str(e)}")
     
     ## ВЫЗОВ РАСЧЕТОВ
     def recalculate_dimensionless(self):
-        dyn = self.app_state.processing_dynamic_data
-        static = self.app_state.static_params
-        solver = self.app_state.solver_state
+        try:
+            dyn = self.app_state.processing_dynamic_data
+            static = self.app_state.static_params
+            solver = self.app_state.solver_state
 
-        self.app_state.dimensionless = DimensionlessData(
-            X=calculate_x(
-                delta_p=dyn.dP,
-                k=solver.k_current,
-                h=static.h,
-                mu=static.mu,
-                B=static.B,
-                Q=dyn.Q,
-            ),
+            self.app_state.dimensionless = DimensionlessData(
+                X=calculate_x(
+                    delta_p=dyn.dP,
+                    k=solver.k_current,
+                    h=static.h,
+                    mu=static.mu,
+                    B=static.B,
+                    Q=dyn.Q,
+                ),
 
-            Y=calculate_y(
-                Q=dyn.Q,
-                t=dyn.t,
-                B=static.B,
-                delta_p=dyn.dP,
-                phi=static.phi,
-                ct=static.ct,
-                h=static.h,
-                L=solver.L_current,
+                Y=calculate_y(
+                    Q=dyn.Q,
+                    t=dyn.t,
+                    B=static.B,
+                    delta_p=dyn.dP,
+                    phi=static.phi,
+                    ct=static.ct,
+                    h=static.h,
+                    L=solver.L_current,
+                )
             )
-        )
+        except Exception as e:
+            self.logger.error(f"Ошибка расчета безразмерных параметров: {e}")
+            QMessageBox.warning(self, "Ошибка", f"Не удалось рассчитать безразмерные параметры:\n{str(e)}")
         
     def recalculate_processing_dynamic_data(self):
-        raw = self.app_state.raw_dynamic_data
-        static = self.app_state.static_params
-        dyn = self.app_state.processing_dynamic_data
-        
-        self.app_state.processing_dynamic_data = rebuild_processing_dynamic(
-            raw_data=raw,
-            static_data=static,
-            current_processing_data=dyn,
-        )
+        try:
+            raw = self.app_state.raw_dynamic_data
+            static = self.app_state.static_params
+            dyn = self.app_state.processing_dynamic_data
+
+            self.app_state.processing_dynamic_data = rebuild_processing_dynamic(
+                raw_data=raw,
+                static_data=static,
+                current_processing_data=dyn,
+            )
+        except Exception as e:
+            self.logger.error(f"Ошибка обработки динамических данных: {e}")
+            QMessageBox.warning(self, "Ошибка", f"Не удалось обработать динамические данные:\n{str(e)}")
     
         
         
     ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
     def reset_all_data(self): # сброс всех данных
-        self.app_state = AppState()
-        self.enable_load_controls()
-        self.disable_static_controls()
-        self.disable_threshold_controls()
-        self.disable_calculation_controls()
-        self.ui.text_report.clear()
-        self.reset_data_table()
-        self.reset_plots()
-        self.ui.load_file_label.setText("Файл не загружен")
+        try:
+            self.app_state = AppState()
+            self.enable_load_controls()
+            self.disable_static_controls()
+            self.disable_threshold_controls()
+            self.disable_calculation_controls()
+            self.ui.text_report.clear()
+            self.reset_data_table()
+            self.reset_plots()
+            self.ui.load_file_label.setText("Файл не загружен")
+        except Exception as e:
+            self.logger.error(f"Ошибка сброса данных: {e}")
+            QMessageBox.warning(self, "Ошибка", f"Не удалось сбросить данные:\n{str(e)}")
         
     def show_in_text_report(self, text: str) -> None:
         self.ui.text_report.append(text)
     
     def _init_solver_state(self):
-        th = self.app_state.optimize_thresholds
+        try:
+            th = self.app_state.optimize_thresholds
 
-        self.app_state.solver_state = SolverState(
-            k_current=calculate_k_value(th.k_min, th.k_max),
-            L_current=calculate_L_value(th.L_min, th.L_max),
-            skin_current=-1,
-            residual=-1
-        )
+            self.app_state.solver_state = SolverState(
+                k_current=calculate_k_value(th.k_min, th.k_max),
+                L_current=calculate_L_value(th.L_min, th.L_max),
+                skin_current=-1,
+                residual=-1
+            )
+        except Exception as e:
+            self.logger.error(f"Ошибка инициализации solver_state: {e}")
+            QMessageBox.warning(self, "Ошибка", f"Не удалось инициализировать solver_state:\n{str(e)}")
     
             
 
