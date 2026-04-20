@@ -662,23 +662,6 @@ class Ui_MainWindow(object):
         self.verticalLayout_8.addWidget(self.export_data_table_btn)
 
         self.tab_widget.addTab(self.data_tab, "")
-        self.type_curves_tab = QWidget()
-        self.type_curves_tab.setObjectName(u"type_curves_tab")
-        self.verticalLayout_9 = QVBoxLayout(self.type_curves_tab)
-        self.verticalLayout_9.setObjectName(u"verticalLayout_9")
-        self.horizontalLayout_4 = QHBoxLayout()
-        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
-
-        self.verticalLayout_9.addLayout(self.horizontalLayout_4)
-
-        self.type_curves_plot_placeholder = QWidget(self.type_curves_tab)
-        self.type_curves_plot_placeholder.setObjectName(u"type_curves_plot_placeholder")
-        sizePolicy5.setHeightForWidth(self.type_curves_plot_placeholder.sizePolicy().hasHeightForWidth())
-        self.type_curves_plot_placeholder.setSizePolicy(sizePolicy5)
-
-        self.verticalLayout_9.addWidget(self.type_curves_plot_placeholder)
-
-        self.tab_widget.addTab(self.type_curves_tab, "")
         self.results_tab = QWidget()
         self.results_tab.setObjectName(u"results_tab")
         self.vboxLayout = QVBoxLayout(self.results_tab)
@@ -709,7 +692,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.tab_widget.setCurrentIndex(0)
+        self.tab_widget.setCurrentIndex(2)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -767,7 +750,6 @@ class Ui_MainWindow(object):
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.timeseries_tab), QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
         self.export_data_table_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.data_tab), QCoreApplication.translate("MainWindow", u"\u0422\u0430\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435", None))
-        self.tab_widget.setTabText(self.tab_widget.indexOf(self.type_curves_tab), QCoreApplication.translate("MainWindow", u"\u042d\u0442\u0430\u043b\u043e\u043d\u043d\u044b\u0435 \u043a\u0440\u0438\u0432\u044b\u0435", None))
         self.export_report_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442 \u043e\u0442\u0447\u0435\u0442\u0430", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.results_tab), QCoreApplication.translate("MainWindow", u"\u0420\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u044b", None))
     # retranslateUi
