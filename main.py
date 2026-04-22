@@ -67,24 +67,38 @@ class MainWindow(QMainWindow):
 
         self.tabs.setCurrentIndex(i)
 
-
     def split_current_tab(self):
-
         from PySide6.QtWidgets import QSplitter
         from PySide6.QtCore import Qt
 
+        index = self.tabs.currentIndex()
+
+        current = self.tabs.widget(index)
+
+        if isinstance(current, QSplitter):
+            return
+
+        # удалить старую вкладку
+        self.tabs.removeTab(index)
+        current.deleteLater()
+
+        # создать splitter
         splitter = QSplitter(Qt.Horizontal)
 
-        splitter.addWidget(SessionWidget())
-        splitter.addWidget(SessionWidget())
+        left_session = SessionWidget()
+        right_session = SessionWidget()
 
-        i = self.tabs.addTab(
-            splitter,
-            f"Compare {self.tabs.count()+1}"
-        )
+        # вторую можно облегчить
+        right_session.ui.left_panel.hide()
 
-        self.tabs.setCurrentIndex(i)
+        splitter.addWidget(left_session)
+        splitter.addWidget(right_session)
 
+        splitter.setStretchFactor(0,1)
+        splitter.setStretchFactor(1,1)
+
+        self.tabs.insertTab(index, splitter, "Compare")
+        self.tabs.setCurrentIndex(index)
 
     def close_tab(self,index):
 
