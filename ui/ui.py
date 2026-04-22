@@ -682,10 +682,8 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_5.addWidget(self.tab_widget)
 
-        MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
-        MainWindow.setStatusBar(self.statusbar)
 #if QT_CONFIG(shortcut)
         self.load_file_label.setBuddy(self.preprocessing_groupBoxs)
 #endif // QT_CONFIG(shortcut)
