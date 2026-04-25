@@ -1,7 +1,7 @@
 import numpy as np
 
 
-DEFAULT_THRESHOLD = 10000
+DEFAULT_THRESHOLD = 5000
 
 
 def lttb_downsample(
@@ -10,7 +10,15 @@ def lttb_downsample(
     threshold: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Largest Triangle Three Buckets.
+    Largest Triangle Three Buckets (LTTB).
+
+    Parameters
+    ----------
+    x, y
+        Input series.
+
+    threshold
+        Number of points to keep.
 
     Returns
     -------
@@ -21,7 +29,7 @@ def lttb_downsample(
         Downsampled y
 
     indices
-        Indices chosen from original arrays
+        Selected indices from original arrays
     """
 
     n = len(x)
@@ -41,10 +49,12 @@ def lttb_downsample(
 
     for i in range(threshold - 2):
 
+        # next bucket average
+
         avg_start = int(np.floor((i + 1) * every)) + 1
         avg_end = int(np.floor((i + 2) * every)) + 1
 
-        if avg_end >= n:
+        if avg_end > n:
             avg_end = n
 
         if avg_start >= avg_end:
@@ -54,11 +64,15 @@ def lttb_downsample(
             avg_x = np.mean(x[avg_start:avg_end])
             avg_y = np.mean(y[avg_start:avg_end])
 
+        # ---------------------------------
+        # current bucket candidates
+        # ---------------------------------
+
         range_start = int(np.floor(i * every)) + 1
         range_end = int(np.floor((i + 1) * every)) + 1
 
-        if range_end >= n:
-            range_end = n - 1
+        if range_end > n:
+            range_end = n
 
         ax = x[a]
         ay = y[a]
@@ -66,19 +80,28 @@ def lttb_downsample(
         bx = x[range_start:range_end]
         by = y[range_start:range_end]
 
+        if len(bx) == 0:
+            sampled[i + 1] = a
+            continue
+
+        # triangle areas
         areas = np.abs(
             (ax - avg_x) * (by - ay)
             -
             (ax - bx) * (avg_y - ay)
         )
 
+        if len(areas) == 0:
+            sampled[i + 1] = a
+            continue
+
         selected = np.argmax(areas)
 
         a = range_start + selected
-
         sampled[i + 1] = a
 
     return x[sampled], y[sampled], sampled
+
 
 def downsample_for_plot(
     x: np.ndarray,
@@ -89,13 +112,19 @@ def downsample_for_plot(
     log_space: bool = False,
 ):
     """
-    Универсальный downsampling для графиков.
+    Prepare data for plotting with optional LTTB downsampling.
 
-    Возвращает:
-        x_ds
-        y_ds
-        interp_ds | None
-        extrap_ds | None
+    Supports:
+      - ordinary time series
+      - log-log XY curves
+      - optional interpolation / extrapolation masks
+
+    Returns
+    -------
+    x_ds
+    y_ds
+    interp_ds | None
+    extrap_ds | None
     """
 
     finite = np.isfinite(x) & np.isfinite(y)
@@ -118,7 +147,15 @@ def downsample_for_plot(
         else None
     )
 
-    # downsampling не нужен
+    if len(x_valid) == 0:
+        return (
+            x_valid,
+            y_valid,
+            interp_valid,
+            extrap_valid,
+        )
+
+    # No reduction needed
     if len(x_valid) <= threshold:
         return (
             x_valid,
@@ -127,10 +164,23 @@ def downsample_for_plot(
             extrap_valid,
         )
 
-    # пространство выбора для LTTB
+    # ---------------------------------
+    # LTTB selection space
+    # ---------------------------------
+
     if log_space:
-        x_work = np.log10(x_valid)
-        y_work = np.log10(y_valid)
+
+        # numerical protection for tiny values
+        eps = np.finfo(float).tiny
+
+        x_work = np.log10(
+            np.maximum(x_valid, eps)
+        )
+
+        y_work = np.log10(
+            np.maximum(y_valid, eps)
+        )
+
     else:
         x_work = x_valid
         y_work = y_valid
