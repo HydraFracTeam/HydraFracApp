@@ -2,42 +2,38 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import PlotItem
 
+from ui.downsampling import downsample_for_plot
+
 
 def plot_xy(
     plot: PlotItem,
     X: np.ndarray,
     Y: np.ndarray,
-    clear: bool = False,
+    clear: bool=False,
 ):
-    """
-    Универсальная функция построения XY кривых.
-
-    Подходит для:
-    - пользовательских XY
-    - reference curves
-    - solver iteration curves
-    """
-
     if clear:
         plot.clear()
-        
+
     plot.setLabel("bottom", "X")
     plot.setLabel("left", "Y")
-    plot.showGrid(x=True, y=True)
+    plot.showGrid(x=True,y=True)
+    plot.setLogMode(True,True)
 
-    plot.setLogMode(True, True)
-    
     if plot.legend is None:
         plot.addLegend()
 
-    mask = np.isfinite(X) & np.isfinite(Y)
+    X, Y, _, _ = downsample_for_plot(
+        X,
+        Y,
+        log_space=True,
+    )
 
-    if not mask.any():
+    if len(X) == 0:
         return
 
     plot.plot(
-        X[mask],
-        Y[mask],
-        pen=pg.mkPen(color=(50, 120, 220), width=2),
+        X,
+        Y,
+        pen=pg.mkPen(color=(50,120,220), width=2),
         name="Калькулированные XY",
     )

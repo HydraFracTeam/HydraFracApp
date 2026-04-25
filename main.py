@@ -35,6 +35,7 @@ from ui import (
     PasteDataDialog,
     fill_state_to_ui,
     )
+from ui.downsampling import downsample_for_plot
 import pyqtgraph as pg
 from core.app_state import AppState
 from core.reference_repo import ReferenceRepository
@@ -833,29 +834,36 @@ class MyApp(QMainWindow):
                 burde=self.app_state.processing_dynamic_data.burde,
             )
 
-    def _plot_reference_curve(self, plot: pg.PlotItem, X: np.ndarray, Y: np.ndarray, color: tuple, name: str):
+    def _plot_reference_curve(
+        self,
+        plot: pg.PlotItem,
+        X: np.ndarray,
+        Y: np.ndarray,
+        color: tuple,
+        name: str,
+    ):
         """
-        Plot a reference curve on the dimensionless plot.
-        
-        Args:
-            plot: The plot item to draw on
-            X: X coordinates of the reference curve
-            Y: Y coordinates of the reference curve
-            skin: Skin factor value
-            color: RGB color tuple
-            name: Name for the legend
+        Отрисовка эталонной/reference кривой.
         """
-        import pyqtgraph as pg
-        
-        mask = np.isfinite(X) & np.isfinite(Y)
-        
-        if not mask.any():
+
+        X, Y, _, _ = downsample_for_plot(
+            X,
+            Y,
+            threshold=3000,
+            log_space=True,
+        )
+
+        if len(X) == 0:
             return
-        
+
         plot.plot(
-            X[mask],
-            Y[mask],
-            pen=pg.mkPen(color=color, width=2, style=Qt.PenStyle.DashLine),
+            X,
+            Y,
+            pen=pg.mkPen(
+                color=color,
+                width=2,
+                style=Qt.PenStyle.DashLine,
+            ),
             name=name,
         )
     

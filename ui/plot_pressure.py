@@ -2,6 +2,8 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import PlotItem
 
+from ui.downsampling import downsample_for_plot
+
 
 def plot_pressure(
     plot: PlotItem,
@@ -10,8 +12,7 @@ def plot_pressure(
     P_interpolated_mask: np.ndarray | None = None,
     P_extrapolated_mask: np.ndarray | None = None,
     clear: bool = True,
-) -> None:
-
+):
     if clear:
         plot.clear()
 
@@ -19,7 +20,6 @@ def plot_pressure(
     plot.setLabel("bottom", "Время, ч")
     plot.setLabel("left", "Давление")
     plot.showGrid(x=True, y=True)
-    # plot.setLogMode(x=True, y=False)
 
     if plot.legend is None:
         plot.addLegend()
@@ -27,21 +27,22 @@ def plot_pressure(
     if len(t) == 0:
         return
 
-    # основная линия давления (с разрывами на NaN)
+    t, P, interp_mask, extra_mask = downsample_for_plot(
+        t,
+        P,
+        P_interpolated_mask,
+        P_extrapolated_mask,
+    )
+
     plot.plot(
         t,
         P,
-        pen=pg.mkPen(color=(200, 50, 50), width=2),
+        pen=pg.mkPen(color=(200,50,50), width=2),
         connect="finite",
         name="P(t)",
     )
 
-    finite_mask = np.isfinite(t) & np.isfinite(P)
-
-    # интерполированные точки
-    if P_interpolated_mask is not None and np.any(P_interpolated_mask):
-
-        interp_mask = P_interpolated_mask & finite_mask
+    if interp_mask is not None and np.any(interp_mask):
 
         plot.plot(
             t[interp_mask],
@@ -49,14 +50,11 @@ def plot_pressure(
             pen=None,
             symbol="o",
             symbolSize=2,
-            symbolBrush=(255, 165, 0),
+            symbolBrush=(255,165,0),
             name="Интерполировано",
         )
 
-    # экстраполированные точки
-    if P_extrapolated_mask is not None and np.any(P_extrapolated_mask):
-
-        extra_mask = P_extrapolated_mask & finite_mask
+    if extra_mask is not None and np.any(extra_mask):
 
         plot.plot(
             t[extra_mask],
@@ -64,6 +62,6 @@ def plot_pressure(
             pen=None,
             symbol="o",
             symbolSize=2,
-            symbolBrush=(80, 120, 255),
+            symbolBrush=(80,120,255),
             name="Экстраполировано",
         )
