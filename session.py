@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QLabel, QTableView, QApplication, QMainWindow, QF
                                QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, QHeaderView,                               
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout, QDialog,
                                QDialogButtonBox)
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 import sys
@@ -35,6 +35,7 @@ from ui import (
     PasteDataDialog,
     fill_state_to_ui,
     )
+from ui.downsampling import downsample_for_plot
 import pyqtgraph as pg
 from core.app_state import AppState
 from core.reference_repo import ReferenceRepository
@@ -77,6 +78,8 @@ from sessions import load_state, save_state
 
 
 class SessionWidget(QWidget):
+    solutions_ready = Signal(object)
+    
     def __init__(self):
         super().__init__()
         self.ui = Ui_MainWindow()
@@ -85,6 +88,7 @@ class SessionWidget(QWidget):
         self.logger = logging.getLogger(__name__)
         self._autosplit_info = None  # Информация о разделении КСД/КВД
         self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
+        
         
         self._load_controls: List[QWidget] = [
             self.ui.load_file_button,
@@ -535,16 +539,22 @@ class SessionWidget(QWidget):
             self.show_in_text_report("Запуск оптимизации...")
             solver = Solver()
             
-            result = solver.solve_from_dimensionless(
+            results = solver.solve_top5(
                 x_fact=x_fact,
                 y_fact=y_fact,
                 W_fixed=static_params.W,
                 h_known=static_params.h,
-                N_fixed=static_params.N if static_params.N > 0 else None,
-                k_bounds=(thresholds.k_min, thresholds.k_max),
-                L_bounds=(thresholds.L_min, thresholds.L_max),
-                beam_width=5,
+                N_fixed=static_params.N,
+                k_bounds=(
+                thresholds.k_min,
+                thresholds.k_max
+                ),
+                L_bounds=(
+                thresholds.L_min,
+                thresholds.L_max
+                )
             )
+            result = results[0]
             
             # Update UI with results
             self.ui.skin_result_spinbox.setValue(result.S_opt)
@@ -569,9 +579,11 @@ class SessionWidget(QWidget):
             #пересчитаем XY под найденные k и L
             self.recalculate_dimensionless()
             # Build reference curves from repo
-            self._build_reference_curves(result)
-            # Refresh the plot to show reference curves if checkboxes are already checked
+            for r in results:
+                self._build_reference_curves(r)
             self.update_dim_plots()
+            
+            self.solutions_ready.emit(results)
             
         except Exception as e:
             QMessageBox.critical(
@@ -692,15 +704,25 @@ class SessionWidget(QWidget):
                     skin_offset=skin_offset,
                 ))
 
-            self.app_state.reference_curves = ReferenceCurves(
+            curves = ReferenceCurves(
                 main=main_curve,
                 neighbours=neighbours if neighbours else None,
             )
 
+            result.reference_curves = curves
+
+            # для старого основного окна тоже можно оставить
+            self.app_state.reference_curves = curves
+
+            return curves
+
         except Exception as e:
+            result.reference_curves = None
             self.logger.warning(f"Не удалось собрать reference curves: {e}")
             QMessageBox.warning(self, "Ошибка", "Не удалось собрать создать отображения рефенсных кривых!")
             self.app_state.reference_curves = None
+            return None
+            
     
     def refresh_ui(self):
         self.update_data_table()
@@ -795,10 +817,10 @@ class SessionWidget(QWidget):
         # Соседние кривые
         if ref_curves and ref_curves.neighbours:
             neighbor_colors = {
-                -2: (0, 191, 255),
-                -1: (100, 200, 100),
-                +1: (255, 165, 0),
-                +2: (220, 20, 60),
+                -2: (0, 114, 178),   # синий
+                -1: (118, 171, 47),  # зелёный
+                +1: (230, 159, 0),   # оранжевый
+                +2: (204, 37, 41),   # красный (но ярче)
             }
             for nb in ref_curves.neighbours:
                 offset = nb.skin_offset
@@ -829,31 +851,38 @@ class SessionWidget(QWidget):
                 burde=self.app_state.processing_dynamic_data.burde,
             )
 
-    def _plot_reference_curve(self, plot: pg.PlotItem, X: np.ndarray, Y: np.ndarray, color: tuple, name: str):
+    def _plot_reference_curve(
+        self,
+        plot: pg.PlotItem,
+        X: np.ndarray,
+        Y: np.ndarray,
+        color: tuple,
+        name: str,
+    ):
         """
-        Plot a reference curve on the dimensionless plot.
-        
-        Args:
-            plot: The plot item to draw on
-            X: X coordinates of the reference curve
-            Y: Y coordinates of the reference curve
-            skin: Skin factor value
-            color: RGB color tuple
-            name: Name for the legend
+        Отрисовка эталонной/reference кривой.
         """
-        import pyqtgraph as pg
-        
-        mask = np.isfinite(X) & np.isfinite(Y)
-        
-        if not mask.any():
+
+        X, Y, _, _ = downsample_for_plot(
+            X,
+            Y,
+            log_space=True,
+        )
+
+        if len(X) == 0:
             return
-        
+
         plot.plot(
-            X[mask],
-            Y[mask],
-            pen=pg.mkPen(color=color, width=2, style=Qt.PenStyle.DashLine),
+            X,
+            Y,
+            pen=pg.mkPen(
+                color=color,
+                width=2,
+                style=Qt.PenStyle.DashLine,
+            ),
             name=name,
         )
+    
     
     # АВТОСПЛИТТЕР
     def _draw_autosplit_line(self):
