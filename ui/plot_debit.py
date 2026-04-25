@@ -2,6 +2,8 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import PlotItem
 
+from ui.downsampling import downsample_for_plot
+
 
 def plot_debit(
     plot: PlotItem,
@@ -10,8 +12,7 @@ def plot_debit(
     Q_interpolated_mask: np.ndarray | None = None,
     Q_extrapolated_mask: np.ndarray | None = None,
     clear: bool = True,
-) -> None:
-
+):
     if clear:
         plot.clear()
 
@@ -19,7 +20,6 @@ def plot_debit(
     plot.setLabel("bottom", "Время, ч")
     plot.setLabel("left", "Дебит, м³/сут")
     plot.showGrid(x=True, y=True)
-    # plot.setLogMode(x=True, y=False)
 
     if plot.legend is None:
         plot.addLegend()
@@ -27,21 +27,22 @@ def plot_debit(
     if len(t) == 0:
         return
 
-    # основная линия дебита (с разрывами на NaN)
+    t, Q, interp_mask, extra_mask = downsample_for_plot(
+        t,
+        Q,
+        Q_interpolated_mask,
+        Q_extrapolated_mask,
+    )
+
     plot.plot(
         t,
         Q,
-        pen=pg.mkPen(color=(50, 150, 50), width=2),
+        pen=pg.mkPen(color=(50,150,50), width=2),
         connect="finite",
         name="Q(t)",
     )
 
-    finite_mask = np.isfinite(t) & np.isfinite(Q)
-
-    # интерполированные точки
-    if Q_interpolated_mask is not None and np.any(Q_interpolated_mask):
-
-        interp_mask = Q_interpolated_mask & finite_mask
+    if interp_mask is not None and np.any(interp_mask):
 
         plot.plot(
             t[interp_mask],
@@ -49,14 +50,11 @@ def plot_debit(
             pen=None,
             symbol="o",
             symbolSize=2,
-            symbolBrush=(255, 165, 0),
+            symbolBrush=(255,165,0),
             name="Интерполировано",
         )
 
-    # экстраполированные точки
-    if Q_extrapolated_mask is not None and np.any(Q_extrapolated_mask):
-
-        extra_mask = Q_extrapolated_mask & finite_mask
+    if extra_mask is not None and np.any(extra_mask):
 
         plot.plot(
             t[extra_mask],
@@ -64,6 +62,6 @@ def plot_debit(
             pen=None,
             symbol="o",
             symbolSize=2,
-            symbolBrush=(80, 120, 255),
+            symbolBrush=(80,120,255),
             name="Экстраполировано",
         )
