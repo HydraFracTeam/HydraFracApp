@@ -125,19 +125,92 @@ class MainWindow(QMainWindow):
 
     def add_session_tab(self):
 
-        session=SessionWidget()
+        page = QWidget()
+        root = QHBoxLayout(page)
+        root.setContentsMargins(0,0,0,0)
+
+        splitter = QSplitter(Qt.Horizontal)
+
+        session = SessionWidget()
 
         session.solutions_ready.connect(
-            self.open_compare_tab
+            lambda sols, s=splitter:
+            self.populate_compare_panel(
+                s,
+                session,
+                sols
+            )
         )
 
+        splitter.addWidget(session)
+
+        # пустая правая часть
+        placeholder = QWidget()
+        placeholder.setMaximumWidth(10)
+
+        splitter.addWidget(
+            placeholder
+        )
+# 
+
+        root.addWidget(splitter)
+
         i=self.tabs.addTab(
-            session,
+            page,
             f"Сессия {self.tabs.count()+1}"
         )
 
         self.tabs.setCurrentIndex(i)
+    
+    def populate_compare_panel(
+        self,
+        splitter,
+        session,
+        solutions
+    ):
+        old_right = splitter.widget(1)
 
+        old_right.setParent(None)
+        old_right.deleteLater()
+
+
+        right_vertical = QSplitter(Qt.Vertical)
+
+        top_row = QSplitter(Qt.Horizontal)
+        bottom_row = QSplitter(Qt.Horizontal)
+
+
+        for sol in solutions[:2]:
+            top_row.addWidget(
+                SolutionView(
+                    sol,
+                    session.app_state
+                )
+            )
+
+        for sol in solutions[2:]:
+            bottom_row.addWidget(
+                SolutionView(
+                    sol,
+                    session.app_state
+                )
+            )
+
+        right_vertical.addWidget(top_row)
+        right_vertical.addWidget(bottom_row)
+
+        right_vertical.setSizes([500,500])
+
+
+        splitter.insertWidget(
+            1,
+            right_vertical
+        )
+
+        splitter.setSizes(
+            [1100,1500]
+        )
+        
     def open_compare_tab(self, solutions):
 
         idx = self.tabs.currentIndex()
@@ -153,23 +226,12 @@ class MainWindow(QMainWindow):
         main_splitter = QSplitter(Qt.Horizontal)
 
         # LEFT
-        left_container = QWidget()
-        left_layout = QVBoxLayout(left_container)
-        left_layout.setContentsMargins(0,0,0,0)
+        # вместо left_panel
+        session.ui.main_panel.setParent(None)
 
-        # session.ui.left_panel.setParent(None)
-        left_layout.addWidget(
-            session.ui.left_panel
-        )
-
-        main_splitter.addWidget(
-            left_container
-        )
-
-
-        # ---------------------------
+        main_splitter.addWidget(session)
+    
         # RIGHT SIDE
-        # ---------------------------
 
         right_vertical = QSplitter(
             Qt.Vertical
