@@ -141,53 +141,99 @@ class MainWindow(QMainWindow):
     def open_compare_tab(self, solutions):
 
         idx = self.tabs.currentIndex()
-
         session = self.tabs.widget(idx)
 
         compare_page = QWidget()
         root_layout = QHBoxLayout(compare_page)
         root_layout.setContentsMargins(0,0,0,0)
 
-        splitter = QSplitter(Qt.Horizontal)
 
+        # главный splitter
 
-        # ---- ЛЕВАЯ ПАНЕЛЬ УПРАВЛЕНИЯ ----
+        main_splitter = QSplitter(Qt.Horizontal)
 
+        # LEFT
         left_container = QWidget()
         left_layout = QVBoxLayout(left_container)
         left_layout.setContentsMargins(0,0,0,0)
 
-        session.ui.left_panel.setParent(None)
+        # session.ui.left_panel.setParent(None)
         left_layout.addWidget(
             session.ui.left_panel
         )
 
-        splitter.addWidget(left_container)
-
-
-        # ---- ПРАВАЯ СТОРОНА С 5 РЕШЕНИЯМИ ----
-
-        right_container = QWidget()
-        right_layout = QHBoxLayout(right_container)
-        right_layout.setContentsMargins(0,0,0,0)
-
-        for sol in solutions:
-
-            view = SolutionView(
-                sol,
-                session.app_state
-            )
-
-            right_layout.addWidget(view)
-
-        splitter.addWidget(right_container)
-
-
-        splitter.setSizes(
-            [450, 1400]
+        main_splitter.addWidget(
+            left_container
         )
 
-        root_layout.addWidget(splitter)
+
+        # ---------------------------
+        # RIGHT SIDE
+        # ---------------------------
+
+        right_vertical = QSplitter(
+            Qt.Vertical
+        )
+
+
+        top_row = QSplitter(
+            Qt.Horizontal
+        )
+
+        bottom_row = QSplitter(
+            Qt.Horizontal
+        )
+
+
+        # первые 2 сверху
+        for sol in solutions[:2]:
+
+            top_row.addWidget(
+                SolutionView(
+                    sol,
+                    session.app_state
+                )
+            )
+
+
+        # остальные снизу
+        for sol in solutions[2:]:
+            
+            bottom_row.addWidget(
+                SolutionView(
+                    sol,
+                    session.app_state
+                )
+            )
+
+
+        right_vertical.addWidget(
+            top_row
+        )
+
+        right_vertical.addWidget(
+            bottom_row
+        )
+
+
+        right_vertical.setSizes(
+            [500,500]
+        )
+
+
+        main_splitter.addWidget(
+            right_vertical
+        )
+
+
+        main_splitter.setSizes(
+            [450,1500]
+        )
+
+        root_layout.addWidget(
+            main_splitter
+        )
+
 
         self.tabs.removeTab(idx)
 
