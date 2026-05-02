@@ -2,6 +2,7 @@ import numpy as np
 
 
 DEFAULT_THRESHOLD = 5000
+DEFAULT_POINTS_PER_DECADE = 300
 
 
 def lttb_downsample(
@@ -9,28 +10,6 @@ def lttb_downsample(
     y: np.ndarray,
     threshold: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Largest Triangle Three Buckets (LTTB).
-
-    Parameters
-    ----------
-    x, y
-        Input series.
-
-    threshold
-        Number of points to keep.
-
-    Returns
-    -------
-    x_ds
-        Downsampled x
-
-    y_ds
-        Downsampled y
-
-    indices
-        Selected indices from original arrays
-    """
 
     n = len(x)
 
@@ -49,8 +28,6 @@ def lttb_downsample(
 
     for i in range(threshold - 2):
 
-        # next bucket average
-
         avg_start = int(np.floor((i + 1) * every)) + 1
         avg_end = int(np.floor((i + 2) * every)) + 1
 
@@ -63,10 +40,6 @@ def lttb_downsample(
         else:
             avg_x = np.mean(x[avg_start:avg_end])
             avg_y = np.mean(y[avg_start:avg_end])
-
-        # ---------------------------------
-        # current bucket candidates
-        # ---------------------------------
 
         range_start = int(np.floor(i * every)) + 1
         range_end = int(np.floor((i + 1) * every)) + 1
@@ -84,7 +57,6 @@ def lttb_downsample(
             sampled[i + 1] = a
             continue
 
-        # triangle areas
         areas = np.abs(
             (ax - avg_x) * (by - ay)
             -
@@ -108,25 +80,20 @@ def downsample_for_plot(
     y: np.ndarray,
     interp_mask: np.ndarray | None = None,
     extrap_mask: np.ndarray | None = None,
-    threshold: int = DEFAULT_THRESHOLD,
+    threshold: int | None = DEFAULT_THRESHOLD,
+    points_per_decade: int | None = None,
     log_space: bool = False,
 ):
     """
-    Prepare data for plotting with optional LTTB downsampling.
+    Downsampling with support for:
+      - fixed threshold
+      - points per decade (for log plots)
 
-    Supports:
-      - ordinary time series
-      - log-log XY curves
-      - optional interpolation / extrapolation masks
-
-    Returns
-    -------
-    x_ds
-    y_ds
-    interp_ds | None
-    extrap_ds | None
+    Priority:
+        points_per_decade > threshold
     """
 
+    # --- фильтрация ---
     finite = np.isfinite(x) & np.isfinite(y)
 
     if log_space:
@@ -135,56 +102,52 @@ def downsample_for_plot(
     x_valid = x[finite]
     y_valid = y[finite]
 
-    interp_valid = (
-        interp_mask[finite]
-        if interp_mask is not None
-        else None
-    )
-
-    extrap_valid = (
-        extrap_mask[finite]
-        if extrap_mask is not None
-        else None
-    )
+    interp_valid = interp_mask[finite] if interp_mask is not None else None
+    extrap_valid = extrap_mask[finite] if extrap_mask is not None else None
 
     if len(x_valid) == 0:
-        return (
-            x_valid,
-            y_valid,
-            interp_valid,
-            extrap_valid,
-        )
+        return x_valid, y_valid, interp_valid, extrap_valid
 
-    # No reduction needed
+    # --- вычисление threshold через декады ---
+    if log_space and points_per_decade is not None:
+
+        x_pos = x_valid[x_valid > 0]
+
+        if len(x_pos) > 0:
+
+            x_min = np.min(x_pos)
+            x_max = np.max(x_pos)
+
+            if x_min > 0 and x_max > x_min:
+
+                decades = np.log10(x_max) - np.log10(x_min)
+
+                threshold = int(decades * points_per_decade)
+
+                # защита от слишком маленького количества
+                threshold = max(threshold, 50)
+
+    # fallback если threshold None
+    if threshold is None:
+        threshold = DEFAULT_THRESHOLD
+
+    # --- если не нужно уменьшать ---
     if len(x_valid) <= threshold:
-        return (
-            x_valid,
-            y_valid,
-            interp_valid,
-            extrap_valid,
-        )
+        return x_valid, y_valid, interp_valid, extrap_valid
 
-    # ---------------------------------
-    # LTTB selection space
-    # ---------------------------------
-
+    # --- подготовка пространства для LTTB ---
     if log_space:
 
-        # numerical protection for tiny values
         eps = np.finfo(float).tiny
 
-        x_work = np.log10(
-            np.maximum(x_valid, eps)
-        )
-
-        y_work = np.log10(
-            np.maximum(y_valid, eps)
-        )
+        x_work = np.log10(np.maximum(x_valid, eps))
+        y_work = np.log10(np.maximum(y_valid, eps))
 
     else:
         x_work = x_valid
         y_work = y_valid
 
+    # --- LTTB ---
     _, _, selected_idx = lttb_downsample(
         x_work,
         y_work,
@@ -194,21 +157,7 @@ def downsample_for_plot(
     x_ds = x_valid[selected_idx]
     y_ds = y_valid[selected_idx]
 
-    interp_ds = (
-        interp_valid[selected_idx]
-        if interp_valid is not None
-        else None
-    )
+    interp_ds = interp_valid[selected_idx] if interp_valid is not None else None
+    extrap_ds = extrap_valid[selected_idx] if extrap_valid is not None else None
 
-    extrap_ds = (
-        extrap_valid[selected_idx]
-        if extrap_valid is not None
-        else None
-    )
-
-    return (
-        x_ds,
-        y_ds,
-        interp_ds,
-        extrap_ds,
-    )
+    return x_ds, y_ds, interp_ds, extrap_ds

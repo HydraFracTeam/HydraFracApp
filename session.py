@@ -516,10 +516,20 @@ class SessionWidget(QWidget):
             self.logger.error(f"Ошибка солвера: {e}", exc_info=True)
             
     def _on_solver_error(self, msg):
-        QMessageBox.critical(self, "Ошибка", msg)
+        QMessageBox.critical(self, "Ошибка расчёта", msg)
+        self.logger.error(f"Ошибка солвера: {msg}", exc_info=True)
     
     def _on_solver_done(self, results):
         self.ui.calculate_opt_parameters_button.setEnabled(True)
+        if not results:
+            QMessageBox.warning(
+                self,
+                "Нет решения",
+                "Не найдено ни одного подходящего решения.\n"
+                "Проверьте параметры (W, N, диапазоны)."
+            )
+            return
+
         result = results[0]
 
         self.ui.skin_result_spinbox.setValue(result.S_opt)

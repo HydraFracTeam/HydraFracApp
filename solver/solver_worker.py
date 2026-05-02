@@ -1,12 +1,14 @@
+# solver_worker.py
 from solver.solver_wrapper import Solver
 from PySide6.QtCore import QObject, Signal
+from core.app_state import AppState
 
 class SolverWorker(QObject):
 
     finished = Signal(object)
     error = Signal(str)
 
-    def __init__(self, app_state):
+    def __init__(self, app_state: AppState):
         super().__init__()
         self.app_state = app_state
 
