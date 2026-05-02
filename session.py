@@ -503,8 +503,9 @@ class SessionWidget(QWidget):
             self.solver_worker.finished.connect(self.solver_thread.quit)
             self.solver_worker.finished.connect(self.solver_worker.deleteLater)
             self.solver_thread.finished.connect(self.solver_thread.deleteLater)
-
+            
             self.solver_thread.start()
+            self.ui.calculate_opt_parameters_button.setEnabled(False)
             self.show_in_text_report("Солвер запущен, идет расчет...")
         except Exception as e:
             QMessageBox.critical(
@@ -518,6 +519,7 @@ class SessionWidget(QWidget):
         QMessageBox.critical(self, "Ошибка", msg)
     
     def _on_solver_done(self, results):
+        self.ui.calculate_opt_parameters_button.setEnabled(True)
         result = results[0]
 
         self.ui.skin_result_spinbox.setValue(result.S_opt)
