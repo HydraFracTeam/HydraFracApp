@@ -21,6 +21,7 @@ logging.basicConfig(
 )
 
 from ui.ui import Ui_MainWindow
+from ui.compare_dialog import CompareDialog
 from ui import ( 
     setup_dock_area, 
     update_data_table_view, 
@@ -550,6 +551,13 @@ class SessionWidget(QWidget):
 
         self.update_dim_plots()
 
+        dialog = CompareDialog(
+            results,
+            self.app_state,
+            self
+        )
+
+        dialog.exec() 
         self.solutions_ready.emit(results)
     
     ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
