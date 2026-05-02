@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QLabel, QTableView, QApplication, QMainWindow, QF
                                QComboBox, QSpinBox, QPushButton, QWidget, QVBoxLayout, QHeaderView,                               
                                QHBoxLayout, QTabWidget, QTextEdit, QGroupBox, QGridLayout, QDialog,
                                QDialogButtonBox)
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal, QThread
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 import sys
@@ -42,6 +42,7 @@ from core.reference_repo import ReferenceRepository
 from config import settings
 from solver.solver_wrapper import SolverResult
 from solver import Solver
+from solver.solver_worker import SolverWorker
 from core.dimensionless import calculate_x, calculate_y
 from utils import format_pydantic_error
 
@@ -76,7 +77,6 @@ from ui.autosplit_dialog import AutosplitDialog
 from sessions import load_state, save_state
 
 
-
 class SessionWidget(QWidget):
     solutions_ready = Signal(object)
     
@@ -87,6 +87,8 @@ class SessionWidget(QWidget):
         self.app_state = AppState()
         self.logger = logging.getLogger(__name__)
         self._autosplit_info = None  # Информация о разделении КСД/КВД
+        self.solver_thread = None # заготовки для вызова солвера при расчете параметров
+        self.solver_worker = None
         self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
         
         
@@ -488,103 +490,22 @@ class SessionWidget(QWidget):
             return
         
         try:
-            # Get data from app state
-            dynamic_data = self.app_state.processing_dynamic_data
-            static_params = self.app_state.static_params
-            thresholds = self.app_state.optimize_thresholds
-            
-            validate_pressure_and_debit(dynamic_data)
-            # We need to estimate initial k and L for X, Y calculation
-            # Use middle of bounds as initial estimate
-            k_init = (thresholds.k_min + thresholds.k_max) / 2
-            L_init = (thresholds.L_min + thresholds.L_max) / 2
-            
-            x_fact = calculate_x(
-                k=k_init,
-                h=static_params.h,
-                delta_p=dynamic_data.dP,
-                mu=static_params.mu,
-                B=static_params.B,
-                Q=dynamic_data.Q,
-            )
-            
-            y_fact = calculate_y(
-                Q=dynamic_data.Q,
-                B=static_params.B,
-                t=dynamic_data.t,
-                phi=static_params.phi,
-                ct=static_params.ct,
-                h=static_params.h,
-                delta_p=dynamic_data.dP,
-                L=L_init,
-            )
+            self.solver_thread = QThread()
+            self.solver_worker = SolverWorker(self.app_state)
 
-            # Ensure positive values for log-scale processing
-            mask = (x_fact > 0) & (y_fact > 0)
-            x_fact = x_fact[mask]
-            y_fact = y_fact[mask]
-            
-            if len(x_fact) < 10:
-                QMessageBox.warning(
-                    self, 
-                    "Ошибка", 
-                    "Недостаточно данных для расчёта. Проверьте входные данные."
-                )
-                return
-            
-            # Store dimensionless data in app state
-            self.app_state.dimensionless = DimensionlessData(X=x_fact, Y=y_fact)
-            
-            # Run solver
-            self.show_in_text_report("Запуск оптимизации...")
-            solver = Solver()
-            
-            results = solver.solve_top5(
-                x_fact=x_fact,
-                y_fact=y_fact,
-                W_fixed=static_params.W,
-                h_known=static_params.h,
-                N_fixed=static_params.N,
-                k_bounds=(
-                thresholds.k_min,
-                thresholds.k_max
-                ),
-                L_bounds=(
-                thresholds.L_min,
-                thresholds.L_max
-                )
-            )
-            result = results[0]
-            
-            # Update UI with results
-            self.ui.skin_result_spinbox.setValue(result.S_opt)
-            self.ui.permeability_result_spinbox.setValue(result.k_opt)
-            self.ui.frac_length_result_spinbox.setValue(result.L_opt)
-            
-            # Store result in app state
-            self.app_state.solver_state = SolverState(
-                k_current=result.k_opt,
-                L_current=result.L_opt,
-                skin_current=result.S_opt,
-                residual=result.error_value
-            )
+            self.solver_worker.moveToThread(self.solver_thread)
 
-            self.show_in_text_report(
-                f"Оптимизация завершена:\n"
-                f"  Скин-фактор S = {result.S_opt:.4f}\n"
-                f"  Проницаемость k = {result.k_opt:.6f} мД\n"
-                f"  Полудлина трещины L = {result.L_opt:.4f} м\n"
-                f"  Ошибка подбора = {result.error_value:.6f}"
-            )
-            #пересчитаем XY под найденные k и L
-            self.recalculate_dimensionless()
-            # Build reference curves from repo
-            for r in results:
-                self._build_reference_curves(r)
-            self.update_dim_plots()
-            
-            self.solutions_ready.emit(results)
-            
+            self.solver_thread.started.connect(self.solver_worker.run)
+
+            self.solver_worker.finished.connect(self._on_solver_done)
+            self.solver_worker.error.connect(self._on_solver_error)
+
+            self.solver_worker.finished.connect(self.solver_thread.quit)
+            self.solver_worker.finished.connect(self.solver_worker.deleteLater)
+            self.solver_thread.finished.connect(self.solver_thread.deleteLater)
+
+            self.solver_thread.start()
+            self.show_in_text_report("Солвер запущен, идет расчет...")
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -592,6 +513,32 @@ class SessionWidget(QWidget):
                 f"Ошибка при оптимизации параметров:\n{str(e)}"
             )
             self.logger.error(f"Ошибка солвера: {e}", exc_info=True)
+            
+    def _on_solver_error(self, msg):
+        QMessageBox.critical(self, "Ошибка", msg)
+    
+    def _on_solver_done(self, results):
+        result = results[0]
+
+        self.ui.skin_result_spinbox.setValue(result.S_opt)
+        self.ui.permeability_result_spinbox.setValue(result.k_opt)
+        self.ui.frac_length_result_spinbox.setValue(result.L_opt)
+
+        self.app_state.solver_state = SolverState(
+            k_current=result.k_opt,
+            L_current=result.L_opt,
+            skin_current=result.S_opt,
+            residual=result.error_value
+        )
+
+        self.recalculate_dimensionless()
+
+        for r in results:
+            self._build_reference_curves(r)
+
+        self.update_dim_plots()
+
+        self.solutions_ready.emit(results)
     
     ## ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ UI ЭЛЕМЕНТОВ
     def enable_load_controls(self) -> None:
