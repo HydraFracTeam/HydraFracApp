@@ -78,8 +78,7 @@ class AutosplitDialog(QDialog):
         
         info_text = (
             f"<b>Граница разделения:</b><br>"
-            f"КСД: t ≤ 50000.00<br>"
-            f"КВД: t > 50000.01<br><br>"
+            f"Определена автоматически по изменению тренда давления<br><br>"
             f"<b>Точка перехода:</b><br>"
             f"Время T = {split_time:.2f}<br>"
             f"Давление P = {split_pressure:.2f}<br><br>"

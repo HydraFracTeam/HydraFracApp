@@ -1,161 +1,178 @@
-"""
-Модуль автосплиттера для разделения КСД и КВД.
-
-Автоматически обнаруживает склейку КСД (кривая стабилизации давления) 
-и КВД (кривая восстановления давления) в одном временном ряду.
-
-Алгоритм:
-- Базовый критерий по времени:
-  t ≤ 50000 → КСД (кривая стабилизации давления)
-  t > 50000.01 → КВД (кривая восстановления давления)
-"""
-
 import numpy as np
 from typing import Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Пороговые значения
 MIN_POINTS = 50
-MIN_PRESSURE_RANGE = 1.0  # Минимальный размах давления для активации
+MIN_PRESSURE_RANGE = 1.0
 
-# Пороговое значение времени для разделения КСД/КВД
-# t ≤ 50000 - КСД (кривая стабилизации давления)
-# t > 50000.01 - КВД (кривая восстановления давления)
-SPLIT_TIME_KSD_END = 50000.0      # Последняя точка КСД
-SPLIT_TIME_KVD_START = 50000.01   # Первая точка КВД
 
+# UTILS
+
+def _smooth_signal(p: np.ndarray, window: int = 11) -> np.ndarray:
+    """Простое сглаживание."""
+    if window < 3:
+        return p
+
+    kernel = np.ones(window) / window
+    return np.convolve(p, kernel, mode="same")
+
+
+def _compute_slopes(t: np.ndarray, p: np.ndarray, window: int) -> np.ndarray:
+    """Slope через линейную регрессию."""
+    n = len(t)
+
+    if n < window:
+        return np.array([])
+
+    slopes = np.zeros(n - window + 1)
+
+    for i in range(n - window + 1):
+        t_w = t[i:i + window]
+        p_w = p[i:i + window]
+
+        # нормализация времени (ВАЖНО)
+        t_w = t_w - t_w[0]
+
+        if np.allclose(t_w, 0):
+            slopes[i] = 0.0
+            continue
+
+        slopes[i] = np.polyfit(t_w, p_w, 1)[0]
+
+    return slopes
+
+
+def _fallback_split(p: np.ndarray) -> int:
+    """Устойчивый fallback через минимум."""
+    p_smooth = _smooth_signal(p, window=21)
+
+    window = 10
+    means = np.array([
+        np.mean(p_smooth[i:i + window])
+        for i in range(len(p_smooth) - window)
+    ])
+
+    return int(np.argmin(means))
+
+
+# MAIN DETECTOR
 
 def detect_split_point(
-    t: np.ndarray, 
+    t: np.ndarray,
     p: np.ndarray,
     min_points: int = MIN_POINTS,
-    min_pressure_range: float = MIN_PRESSURE_RANGE
+    min_pressure_range: float = MIN_PRESSURE_RANGE,
+    window: int = 50,
+    stable_window: int = 20,
+    smooth: bool = True,
 ) -> Optional[int]:
     """
-    Определение точки разделения КСД и КВД.
-    
-    Базовый критерий:
-    - t ≤ 50000 → КСД (включительно)
-    - t > 50000.01 → КВД (строго больше)
-    
-    Args:
-        t: Время
-        p: Давление
-        min_points: Минимальное количество точек для анализа
-        min_pressure_range: Минимальный размах давления
-        
-    Returns:
-        Optional[int]: Индекс первой точки КВД или None если склейка не обнаружена
+    Детекция КСД/КВД через смену тренда давления.
     """
-    # Проверка условий активации
-    if len(t) < min_points:
-        logger.debug(f"Автосплиттер пропущен: недостаточно точек ({len(t)} < {min_points})")
+
+    if len(t) < max(min_points, window * 2):
         return None
-    
+
     pressure_range = np.max(p) - np.min(p)
     if pressure_range < min_pressure_range:
-        logger.debug(f"Автосплиттер пропущен: маленький размах давления ({pressure_range:.2f} < {min_pressure_range})")
         return None
-    
-    # Проверяем, есть ли данные за пределами порога
-    # (т.е. есть ли в данных и КСД и КВД)
-    has_ksd = np.any(t <= SPLIT_TIME_KSD_END)
-    has_kvd = np.any(t >= SPLIT_TIME_KVD_START)
-    
-    if not (has_ksd and has_kvd):
-        logger.debug("Склейка не обнаружена: отсутствуют данные КСД или КВД")
-        return None
-    
-    # Находим первый индекс где t >= 50000.01 (начало КВД)
-    for i in range(len(t)):
-        if t[i] >= SPLIT_TIME_KVD_START:
-            logger.info(f"Обнаружена точка разделения КСД/КВД на индексе {i} (t={t[i]:.2f})")
-            return i
-    
-    logger.debug("Точка разделения не обнаружена")
-    return None
 
+    # --- сглаживание ---
+    p_proc = _smooth_signal(p) if smooth else p
+
+    # --- slopes ---
+    slopes = _compute_slopes(t, p_proc, window)
+
+    if len(slopes) < stable_window * 2:
+        return None
+
+    # --- порог значимости ---
+    eps = max(np.std(slopes) * 0.1, 1e-8)
+
+    start = stable_window
+    end = len(slopes) - stable_window
+
+    for i in range(start, end):
+        left_mean = np.mean(slopes[i - stable_window:i])
+        right_mean = np.mean(slopes[i:i + stable_window])
+
+        if left_mean < -eps and right_mean > eps:
+            split_idx = i + window // 2
+            confidence = right_mean - left_mean
+
+            logger.info(
+                f"Split: idx={split_idx}, t={t[split_idx]:.2f}, conf={confidence:.4f}"
+            )
+            return split_idx
+
+    # --- fallback ---
+    idx = _fallback_split(p)
+    logger.info(f"Fallback split: idx={idx}, t={t[idx]:.2f}")
+    return idx
+
+
+# SPLIT DATA
 
 def split_data(
     t: np.ndarray,
     p: np.ndarray,
     q: Optional[np.ndarray] = None,
     split_idx: Optional[int] = None
-) -> Tuple[dict, dict]:
+) -> Tuple[dict, Optional[dict]]:
     """
-    Разделение данных на КСД и КВД.
-    
-    КСД: t <= 50000 (включительно)
-    КВД: t > 50000.01 (строго больше)
-    
-    Args:
-        t: Время
-        p: Давление
-        q: Дебит (опционально)
-        split_idx: Индекс точки разделения
-        
-    Returns:
-        Tuple[dict, dict]: (ksd_data, kvd_data)
+    Разделение данных:
+
+    КСД — участок с отрицательным трендом давления  
+    КВД — участок с положительным трендом
     """
+
     if split_idx is None:
         split_idx = detect_split_point(t, p)
-    
+
     if split_idx is None:
-        # Склейка не обнаружена - возвращаем пустой КВД
-        ksd_data = {
+        return {
             't': t,
             'p': p,
             'q': q,
             'name': 'КСД',
             'range': (0, len(t))
-        }
-        kvd_data = None
-    else:
-        # Разделяем данные
-        # КСД: от начала до split_idx (включая точку с t=50000)
-        # КВД: от split_idx до конца (начиная с точки t>50000.01)
-        ksd_data = {
-            't': t[:split_idx],
-            'p': p[:split_idx],
-            'q': q[:split_idx] if q is not None else None,
-            'name': 'КСД',
-            'range': (0, split_idx)
-        }
-        kvd_data = {
-            't': t[split_idx:],
-            'p': p[split_idx:],
-            'q': q[split_idx:] if q is not None else None,
-            'name': 'КВД',
-            'range': (split_idx, len(t))
-        }
-    
+        }, None
+
+    ksd_data = {
+        't': t[:split_idx],
+        'p': p[:split_idx],
+        'q': q[:split_idx] if q is not None else None,
+        'name': 'КСД',
+        'range': (0, split_idx)
+    }
+
+    kvd_data = {
+        't': t[split_idx:],
+        'p': p[split_idx:],
+        'q': q[split_idx:] if q is not None else None,
+        'name': 'КВД',
+        'range': (split_idx, len(t))
+    }
+
     return ksd_data, kvd_data
 
 
+# UI INFO
+
 def get_split_info(t: np.ndarray, p: np.ndarray) -> Optional[dict]:
-    """
-    Получение информации о разделении для UI.
-    
-    Args:
-        t: Время
-        p: Давление
-        
-    Returns:
-        Optional[dict]: Информация о разделении или None
-    """
     split_idx = detect_split_point(t, p)
-    
+
     if split_idx is None:
         return None
-    
+
     return {
         'index': split_idx,
-        'time': t[split_idx],  # Время первой точки КВД (> 50000.01)
-        'time_ksd_end': SPLIT_TIME_KSD_END,  # 50000 - конец КСД
-        'time_kvd_start': SPLIT_TIME_KVD_START,  # 50000.01 - начало КВД
+        'time': t[split_idx],
         'pressure': p[split_idx],
+        'time_ksd_end': t[split_idx - 1] if split_idx > 0 else t[0],
+        'time_kvd_start': t[split_idx],
         'ksd_points': split_idx,
         'kvd_points': len(t) - split_idx,
         'ksd_percent': (split_idx / len(t)) * 100,
