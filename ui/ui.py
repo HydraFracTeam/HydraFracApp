@@ -26,8 +26,8 @@ class Ui_MainWindow(object):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
         MainWindow.setWindowModality(Qt.WindowModality.NonModal)
-        MainWindow.resize(1920, 1080)
-        sizePolicy = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        MainWindow.resize(2898, 1841)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(MainWindow.sizePolicy().hasHeightForWidth())
@@ -36,26 +36,30 @@ class Ui_MainWindow(object):
         self.centralwidget.setObjectName(u"centralwidget")
         self.horizontalLayout_5 = QHBoxLayout(self.centralwidget)
         self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
-        self.left_panel = QGroupBox(self.centralwidget)
-        self.left_panel.setObjectName(u"left_panel")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.main_panel = QGroupBox(self.centralwidget)
+        self.main_panel.setObjectName(u"main_panel")
+        sizePolicy.setHeightForWidth(self.main_panel.sizePolicy().hasHeightForWidth())
+        self.main_panel.setSizePolicy(sizePolicy)
+        self.main_panel.setMinimumSize(QSize(1800, 960))
+        self.main_panel.setMaximumSize(QSize(16777215, 16777215))
+        self.horizontalLayout_4 = QHBoxLayout(self.main_panel)
+        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.scrollArea = QScrollArea(self.main_panel)
+        self.scrollArea.setObjectName(u"scrollArea")
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Expanding)
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.left_panel.sizePolicy().hasHeightForWidth())
-        self.left_panel.setSizePolicy(sizePolicy1)
-        self.left_panel.setMinimumSize(QSize(0, 0))
-        self.verticalLayout_3 = QVBoxLayout(self.left_panel)
-        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.scrollArea = QScrollArea(self.left_panel)
-        self.scrollArea.setObjectName(u"scrollArea")
+        sizePolicy1.setHeightForWidth(self.scrollArea.sizePolicy().hasHeightForWidth())
+        self.scrollArea.setSizePolicy(sizePolicy1)
         self.scrollArea.setMinimumSize(QSize(520, 0))
+        self.scrollArea.setMaximumSize(QSize(520, 16777215))
         self.scrollArea.setWidgetResizable(True)
-        self.scrollAreaWidgetContents = QWidget()
-        self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
-        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 504, 1102))
-        self.verticalLayout_14 = QVBoxLayout(self.scrollAreaWidgetContents)
-        self.verticalLayout_14.setObjectName(u"verticalLayout_14")
-        self.groupBox_3 = QGroupBox(self.scrollAreaWidgetContents)
+        self.scroll_panel = QWidget()
+        self.scroll_panel.setObjectName(u"scroll_panel")
+        self.scroll_panel.setGeometry(QRect(0, 0, 518, 1771))
+        self.verticalLayout = QVBoxLayout(self.scroll_panel)
+        self.verticalLayout.setObjectName(u"verticalLayout")
+        self.groupBox_3 = QGroupBox(self.scroll_panel)
         self.groupBox_3.setObjectName(u"groupBox_3")
         self.verticalLayout_11 = QVBoxLayout(self.groupBox_3)
         self.verticalLayout_11.setObjectName(u"verticalLayout_11")
@@ -116,9 +120,9 @@ class Ui_MainWindow(object):
         self.verticalLayout_11.addLayout(self.horizontalLayout_27)
 
 
-        self.verticalLayout_14.addWidget(self.groupBox_3)
+        self.verticalLayout.addWidget(self.groupBox_3)
 
-        self.static_params_group = QGroupBox(self.scrollAreaWidgetContents)
+        self.static_params_group = QGroupBox(self.scroll_panel)
         self.static_params_group.setObjectName(u"static_params_group")
         sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         sizePolicy3.setHorizontalStretch(0)
@@ -351,9 +355,9 @@ class Ui_MainWindow(object):
         self.verticalLayout_13.addWidget(self.insert_static_params_button)
 
 
-        self.verticalLayout_14.addWidget(self.static_params_group)
+        self.verticalLayout.addWidget(self.static_params_group)
 
-        self.optimize_params_block = QGroupBox(self.scrollAreaWidgetContents)
+        self.optimize_params_block = QGroupBox(self.scroll_panel)
         self.optimize_params_block.setObjectName(u"optimize_params_block")
         self.verticalLayout_12 = QVBoxLayout(self.optimize_params_block)
         self.verticalLayout_12.setObjectName(u"verticalLayout_12")
@@ -434,9 +438,9 @@ class Ui_MainWindow(object):
         self.verticalLayout_12.addWidget(self.insert_thresholds_button)
 
 
-        self.verticalLayout_14.addWidget(self.optimize_params_block)
+        self.verticalLayout.addWidget(self.optimize_params_block)
 
-        self.calculate_block = QGroupBox(self.scrollAreaWidgetContents)
+        self.calculate_block = QGroupBox(self.scroll_panel)
         self.calculate_block.setObjectName(u"calculate_block")
         self.calculate_block.setMinimumSize(QSize(0, 0))
         self.verticalLayout_10 = QVBoxLayout(self.calculate_block)
@@ -517,22 +521,19 @@ class Ui_MainWindow(object):
         self.verticalLayout_10.addWidget(self.groupBox_6)
 
 
-        self.verticalLayout_14.addWidget(self.calculate_block)
+        self.verticalLayout.addWidget(self.calculate_block)
 
-        self.report_group = QGroupBox(self.scrollAreaWidgetContents)
+        self.report_group = QGroupBox(self.scroll_panel)
         self.report_group.setObjectName(u"report_group")
-        sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        sizePolicy5.setHorizontalStretch(0)
-        sizePolicy5.setVerticalStretch(0)
-        sizePolicy5.setHeightForWidth(self.report_group.sizePolicy().hasHeightForWidth())
-        self.report_group.setSizePolicy(sizePolicy5)
+        sizePolicy.setHeightForWidth(self.report_group.sizePolicy().hasHeightForWidth())
+        self.report_group.setSizePolicy(sizePolicy)
         self.report_group.setMinimumSize(QSize(0, 180))
         self.verticalLayout_6 = QVBoxLayout(self.report_group)
         self.verticalLayout_6.setObjectName(u"verticalLayout_6")
         self.text_report = QTextEdit(self.report_group)
         self.text_report.setObjectName(u"text_report")
-        sizePolicy5.setHeightForWidth(self.text_report.sizePolicy().hasHeightForWidth())
-        self.text_report.setSizePolicy(sizePolicy5)
+        sizePolicy.setHeightForWidth(self.text_report.sizePolicy().hasHeightForWidth())
+        self.text_report.setSizePolicy(sizePolicy)
         self.text_report.setMinimumSize(QSize(0, 0))
         self.text_report.setMaximumSize(QSize(16777215, 16777215))
         self.text_report.setReadOnly(True)
@@ -540,24 +541,21 @@ class Ui_MainWindow(object):
         self.verticalLayout_6.addWidget(self.text_report)
 
 
-        self.verticalLayout_14.addWidget(self.report_group)
+        self.verticalLayout.addWidget(self.report_group)
 
-        self.scrollArea.setWidget(self.scrollAreaWidgetContents)
+        self.scrollArea.setWidget(self.scroll_panel)
 
-        self.verticalLayout_3.addWidget(self.scrollArea)
+        self.horizontalLayout_4.addWidget(self.scrollArea)
 
-
-        self.horizontalLayout_5.addWidget(self.left_panel)
-
-        self.tab_widget = QTabWidget(self.centralwidget)
+        self.tab_widget = QTabWidget(self.main_panel)
         self.tab_widget.setObjectName(u"tab_widget")
-        sizePolicy5.setHeightForWidth(self.tab_widget.sizePolicy().hasHeightForWidth())
-        self.tab_widget.setSizePolicy(sizePolicy5)
+        sizePolicy.setHeightForWidth(self.tab_widget.sizePolicy().hasHeightForWidth())
+        self.tab_widget.setSizePolicy(sizePolicy)
         self.tab_widget.setMinimumSize(QSize(0, 0))
         self.timeseries_tab = QWidget()
         self.timeseries_tab.setObjectName(u"timeseries_tab")
-        self.verticalLayout = QVBoxLayout(self.timeseries_tab)
-        self.verticalLayout.setObjectName(u"verticalLayout")
+        self.verticalLayout_3 = QVBoxLayout(self.timeseries_tab)
+        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
         self.preprocessing_groupBoxs = QGroupBox(self.timeseries_tab)
         self.preprocessing_groupBoxs.setObjectName(u"preprocessing_groupBoxs")
         sizePolicy4.setHeightForWidth(self.preprocessing_groupBoxs.sizePolicy().hasHeightForWidth())
@@ -568,44 +566,44 @@ class Ui_MainWindow(object):
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.interp_btn = QPushButton(self.preprocessing_groupBoxs)
         self.interp_btn.setObjectName(u"interp_btn")
-        sizePolicy6 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        sizePolicy6.setHorizontalStretch(0)
-        sizePolicy6.setVerticalStretch(0)
-        sizePolicy6.setHeightForWidth(self.interp_btn.sizePolicy().hasHeightForWidth())
-        self.interp_btn.setSizePolicy(sizePolicy6)
+        sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        sizePolicy5.setHorizontalStretch(0)
+        sizePolicy5.setVerticalStretch(0)
+        sizePolicy5.setHeightForWidth(self.interp_btn.sizePolicy().hasHeightForWidth())
+        self.interp_btn.setSizePolicy(sizePolicy5)
 
         self.horizontalLayout.addWidget(self.interp_btn)
 
         self.outlier_btn = QPushButton(self.preprocessing_groupBoxs)
         self.outlier_btn.setObjectName(u"outlier_btn")
-        sizePolicy6.setHeightForWidth(self.outlier_btn.sizePolicy().hasHeightForWidth())
-        self.outlier_btn.setSizePolicy(sizePolicy6)
+        sizePolicy5.setHeightForWidth(self.outlier_btn.sizePolicy().hasHeightForWidth())
+        self.outlier_btn.setSizePolicy(sizePolicy5)
 
         self.horizontalLayout.addWidget(self.outlier_btn)
 
         self.extrapolate_btn = QPushButton(self.preprocessing_groupBoxs)
         self.extrapolate_btn.setObjectName(u"extrapolate_btn")
-        sizePolicy6.setHeightForWidth(self.extrapolate_btn.sizePolicy().hasHeightForWidth())
-        self.extrapolate_btn.setSizePolicy(sizePolicy6)
+        sizePolicy5.setHeightForWidth(self.extrapolate_btn.sizePolicy().hasHeightForWidth())
+        self.extrapolate_btn.setSizePolicy(sizePolicy5)
 
         self.horizontalLayout.addWidget(self.extrapolate_btn)
 
         self.ml_filter_btn = QPushButton(self.preprocessing_groupBoxs)
         self.ml_filter_btn.setObjectName(u"ml_filter_btn")
-        sizePolicy6.setHeightForWidth(self.ml_filter_btn.sizePolicy().hasHeightForWidth())
-        self.ml_filter_btn.setSizePolicy(sizePolicy6)
+        sizePolicy5.setHeightForWidth(self.ml_filter_btn.sizePolicy().hasHeightForWidth())
+        self.ml_filter_btn.setSizePolicy(sizePolicy5)
 
         self.horizontalLayout.addWidget(self.ml_filter_btn)
 
         self.reset_plots_btn = QPushButton(self.preprocessing_groupBoxs)
         self.reset_plots_btn.setObjectName(u"reset_plots_btn")
-        sizePolicy6.setHeightForWidth(self.reset_plots_btn.sizePolicy().hasHeightForWidth())
-        self.reset_plots_btn.setSizePolicy(sizePolicy6)
+        sizePolicy5.setHeightForWidth(self.reset_plots_btn.sizePolicy().hasHeightForWidth())
+        self.reset_plots_btn.setSizePolicy(sizePolicy5)
 
         self.horizontalLayout.addWidget(self.reset_plots_btn)
 
 
-        self.verticalLayout.addWidget(self.preprocessing_groupBoxs)
+        self.verticalLayout_3.addWidget(self.preprocessing_groupBoxs)
 
         self.groupBox = QGroupBox(self.timeseries_tab)
         self.groupBox.setObjectName(u"groupBox")
@@ -634,17 +632,17 @@ class Ui_MainWindow(object):
         self.horizontalLayout_6.addWidget(self.cb_calc_XY_dock)
 
 
-        self.verticalLayout.addWidget(self.groupBox)
+        self.verticalLayout_3.addWidget(self.groupBox)
 
         self.plot_dock = QWidget(self.timeseries_tab)
         self.plot_dock.setObjectName(u"plot_dock")
-        sizePolicy7 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        sizePolicy7.setHorizontalStretch(0)
-        sizePolicy7.setVerticalStretch(0)
-        sizePolicy7.setHeightForWidth(self.plot_dock.sizePolicy().hasHeightForWidth())
-        self.plot_dock.setSizePolicy(sizePolicy7)
+        sizePolicy6 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        sizePolicy6.setHorizontalStretch(0)
+        sizePolicy6.setVerticalStretch(0)
+        sizePolicy6.setHeightForWidth(self.plot_dock.sizePolicy().hasHeightForWidth())
+        self.plot_dock.setSizePolicy(sizePolicy6)
 
-        self.verticalLayout.addWidget(self.plot_dock)
+        self.verticalLayout_3.addWidget(self.plot_dock)
 
         self.tab_widget.addTab(self.timeseries_tab, "")
         self.data_tab = QWidget()
@@ -668,8 +666,8 @@ class Ui_MainWindow(object):
         self.vboxLayout.setObjectName(u"vboxLayout")
         self.results_text = QTextEdit(self.results_tab)
         self.results_text.setObjectName(u"results_text")
-        sizePolicy7.setHeightForWidth(self.results_text.sizePolicy().hasHeightForWidth())
-        self.results_text.setSizePolicy(sizePolicy7)
+        sizePolicy6.setHeightForWidth(self.results_text.sizePolicy().hasHeightForWidth())
+        self.results_text.setSizePolicy(sizePolicy6)
 
         self.vboxLayout.addWidget(self.results_text)
 
@@ -680,19 +678,22 @@ class Ui_MainWindow(object):
 
         self.tab_widget.addTab(self.results_tab, "")
 
-        self.horizontalLayout_5.addWidget(self.tab_widget)
+        self.horizontalLayout_4.addWidget(self.tab_widget)
 
-        MainWindow.setCentralWidget(self.centralwidget)
+
+        self.horizontalLayout_5.addWidget(self.main_panel)
+
+        # MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
-        MainWindow.setStatusBar(self.statusbar)
+        # MainWindow.setStatusBar(self.statusbar)
 #if QT_CONFIG(shortcut)
         self.load_file_label.setBuddy(self.preprocessing_groupBoxs)
 #endif // QT_CONFIG(shortcut)
 
         self.retranslateUi(MainWindow)
 
-        self.tab_widget.setCurrentIndex(2)
+        self.tab_widget.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -700,7 +701,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"MainWindow", None))
-        self.left_panel.setTitle("")
+        self.main_panel.setTitle("")
         self.groupBox_3.setTitle(QCoreApplication.translate("MainWindow", u"\u0414\u0438\u043d\u0430\u043c\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0441\u043a\u0432\u0430\u0436\u0438\u043d\u044b", None))
         self.load_file_button.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c .csv/.las \u0444\u0430\u0439\u043b", None))
         self.load_file_label.setText(QCoreApplication.translate("MainWindow", u"\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u0444\u0430\u0439\u043b", None))

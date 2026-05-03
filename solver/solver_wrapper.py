@@ -1,3 +1,4 @@
+# solver/solver_wrapper.py
 import numpy as np
 from typing import Tuple, List, Optional
 import logging
@@ -139,3 +140,44 @@ class Solver:
             error_value=float(error_val),
             W_scale_factor=1.0,
         )
+    
+    def solve_top5(
+        self,
+        x_fact,
+        y_fact,
+        W_fixed,
+        k_bounds,
+        L_bounds,
+        N_fixed,
+        h_known
+    ) -> List[SolverResult]:
+
+        self._ensure_library_loaded()
+
+        raw = self._reservoir_solver.solve_top_candidates(
+            x_fact=x_fact,
+            y_fact=y_fact,
+            W_fixed=W_fixed,
+            k_bounds=k_bounds,
+            xf_bounds=L_bounds,
+            N_fixed=N_fixed,
+            h_known=h_known,
+            beam=5
+        )
+
+        out=[]
+
+        for r in raw:
+
+            out.append(
+                SolverResult(
+                    S_opt=r["skin"],
+                    k_opt=r["k"],
+                    L_opt=r["L"],
+                    aL_opt=r["aL"],
+                    N_opt=r["N"],
+                    error_value=r["misfit"]
+                )
+            )
+
+        return out

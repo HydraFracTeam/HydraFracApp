@@ -1,3 +1,5 @@
+# solver/solver_new.py
+
 import numpy as np
 import logging
 from scipy.interpolate import interp1d
@@ -671,4 +673,97 @@ class ReservoirSolver:
             "x_ref_matched": x_ref_f,
             "y_ref_matched": y_ref_f,
         }
+    
+    def solve_top_candidates(
+        self,
+        x_fact,
+        y_fact,
+        W_fixed=None,
+        N_fixed=None,
+        h_known=None,
+        k_bounds=(1e-5,100),
+        xf_bounds=(1e-3,100),
+        beam=5
+    ):
+        """
+        Возвращает top beam решений вместо одного.
+        """
 
+        self._prepare(x_fact,y_fact)
+
+        samples=self._filter_library(
+            W_fixed,
+            N_fixed
+        )
+
+        top_skins,_ = self.select_skin(
+            samples,
+            h_known=h_known,
+            beam=beam
+        )
+
+        results=[]
+
+        for skin in top_skins:
+
+            if N_fixed is not None:
+                N= N_fixed
+            else:
+                _,N,_ = self.select_N(
+                    samples,
+                    [skin],
+                    beam=beam
+                )
+
+            top_aL,_ = self.select_aL(
+                samples,
+                skin,
+                N,
+                beam=beam
+            )
+
+            L,aL,_,_,_,_,misfit = self.select_L(
+                samples,
+                skin,
+                N,
+                top_aL
+            )
+
+            if L is None:
+                continue
+
+
+            best_sample=None
+
+            for s in samples:
+                if (
+                s["skin"]==skin
+                and s["N"]==N
+                ):
+                    best_sample=s
+                    break
+
+
+            k=self.recover_k(
+                best_sample,
+                k_ref=5.0,
+                k_bounds=k_bounds
+            )
+
+            results.append(
+                {
+                "skin":skin,
+                "N":N,
+                "L":L,
+                "aL":aL,
+                "k":k,
+                "misfit":misfit
+                }
+            )
+
+
+        results.sort(
+            key=lambda x:x["misfit"]
+        )
+
+        return results[:beam]
