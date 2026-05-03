@@ -59,6 +59,7 @@ from helpers import (
 from utils import get_file_suffix, get_filename
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
+from processing.loaders.loader_worker import LoadWorker
 from processing import (
     rebuild_processing_dynamic,
     interpolate_pressure,
@@ -90,6 +91,8 @@ class SessionWidget(QWidget):
         self._autosplit_info = None  # Информация о разделении КСД/КВД
         self.solver_thread = None # заготовки для вызова солвера при расчете параметров
         self.solver_worker = None
+        self.load_thread = None # заготовки для вызова загрузки данных при расчете параметров
+        self.load_worker = None
         self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
         
         
@@ -131,7 +134,7 @@ class SessionWidget(QWidget):
         self.setup_preprocessing_controls()
         self.setup_data_table_elements()
         # Создаем интерфейс с DockArea
-        setup_dock_area(self)
+        setup_dock_area(self) 
 
    
     ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
@@ -195,71 +198,121 @@ class SessionWidget(QWidget):
                 )
                 
     def load_dynamic_data_from_file(self):
+        if getattr(self, "load_thread", None) is not None:
+            try:
+                if self.load_thread.isRunning():
+                    QMessageBox.warning(self, "Загрузка", "Загрузка уже выполняется")
+                    return
+            except RuntimeError:
+                self.load_thread = None
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Выберите файл с данным",
+            "Выберите файл",
             "",
-            "Файлы с данными (*.csv *.las)"
+            "Файлы (*.csv *.las)"
         )
-
-        # Если пользователь нажал "Отмена", file_path будет пустым
+        
         if not file_path:
             return
 
-        suffix = get_file_suffix(file_path)
-        try:
-            if suffix == ".csv":
-                raw_data = csv_loader.load_dynamic_data_from_csv(file_path)
+        # ---- UI блокировка ----
+        self._set_loading_state(True)
+        self._show_progress()
 
-            elif suffix == ".las":
-                raw_data = las_loader.load_dynamic_data_from_las(file_path)
-            else:
-                raise ValueError("Загружать можно только .csv или .las файлы.")
-        
-            # Автосплиттер
+        # ---- поток ----
+        self.load_thread = QThread()
+        self.load_worker = LoadWorker(file_path)
+
+        self.load_worker.moveToThread(self.load_thread)
+
+        self.load_thread.started.connect(self.load_worker.run)
+
+        self.load_worker.finished.connect(self._on_data_loaded)
+        self.load_worker.error.connect(self._on_data_load_error)
+
+        # завершение
+        self.load_worker.finished.connect(self.load_thread.quit)
+        self.load_worker.finished.connect(self.load_worker.deleteLater)
+
+        self.load_thread.finished.connect(self.load_thread.deleteLater)
+        self.load_thread.finished.connect(self._cleanup_loader)
+
+        self.load_thread.start()
+
+        self.show_in_text_report("Загрузка данных...")
+                
+    def _on_data_loaded(self, raw_data, file_path):
+        file_name = get_filename(file_path)
+        self.ui.load_file_label.setText(file_name)
+
+        try:
+            # autosplit (оставляем в UI потоке)
             try:
                 split_info = get_split_info(raw_data.t, raw_data.P)
             except Exception as e:
-                self.logger.warning(f"Ошибка автосплиттера: {e}")
+                self.logger.warning(f"Autosplit error: {e}")
                 split_info = None
 
-            if split_info is not None:
-                try:
-                    mode = AutosplitDialog.show_dialog(self, split_info)
-                    if mode:
-                        raw_data, msg, self._autosplit_info = apply_autosplit(raw_data, split_info, mode)
-                        if msg:
-                            self.show_in_text_report(msg)
-                    else:
-                        self.show_in_text_report("Выбор отменен. Использованы все данные.")
-                        self._autosplit_info = None
-                except Exception as e:
-                    self.logger.error(f"Ошибка в диалоге автосплиттера: {e}", exc_info=True)
-                    self.show_in_text_report(f"Ошибка обработки разделения: {e}. Использованы все данные.")
-                    self._autosplit_info = None
-            else:
-                self._autosplit_info = None
-            
+            if split_info:
+                mode = AutosplitDialog.show_dialog(self, split_info)
+
+                if mode:
+                    raw_data, msg, self._autosplit_info = apply_autosplit(
+                        raw_data,
+                        split_info,
+                        mode
+                    )
+                    if msg:
+                        self.show_in_text_report(msg)
+
             self.app_state.raw_dynamic_data = raw_data
-            
-            file_name = get_filename(file_path=file_path)
-            self.ui.load_file_label.setText(file_name)
-            self.show_in_text_report(f"Динамические данные успешны загружены из файла {file_name}.")
-            
-            # Отображаем линию разделения на графике если есть
-            if hasattr(self, '_autosplit_info') and self._autosplit_info is not None:
-                self._draw_autosplit_line()
-            
+
+            self.show_in_text_report("Данные успешно загружены")
+
             self.enable_static_controls()
             self.disable_load_controls()
+            
+            self._hide_progress()
+            self._set_loading_state(False)
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Ошибка загрузки динамических данных",
-                format_pydantic_error(e)
-            )
-            return
+            QMessageBox.critical(self, "Ошибка", str(e))
+
+
+    def _on_data_load_error(self, msg):
+        self._hide_progress()
+        self._set_loading_state(False)
+        QMessageBox.critical(self, "Ошибка загрузки", msg)
     
+    def _set_loading_state(self, is_loading: bool):
+        self.ui.load_file_button.setEnabled(not is_loading)
+        self.ui.insert_data_from_buffer_button.setEnabled(not is_loading)
+        self.ui.load_file_label.setText("Загрузка...")
+    
+    
+    def closeEvent(self, event):
+        self._stop_threads()
+        super().closeEvent(event)
+
+
+    def _stop_threads(self):
+        # остановка загрузки
+        if self.load_thread is not None:
+            try:
+                if self.load_thread.isRunning():
+                    self.load_thread.quit()
+                    self.load_thread.wait()
+            except RuntimeError:
+                pass
+
+        # остановка солвера
+        if self.solver_thread is not None:
+            try:
+                if self.solver_thread.isRunning():
+                    self.solver_thread.quit()
+                    self.solver_thread.wait()
+            except RuntimeError:
+                pass
+
     def export_session(self):
         if self.app_state.raw_dynamic_data is None:
             QMessageBox.warning(self, "Ошибка", "Нет данных для сохранения.")
@@ -322,6 +375,26 @@ class SessionWidget(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить:\n{str(e)}")
+    
+    def _cleanup_loader(self):
+        self.load_thread = None
+        self.load_worker = None
+
+    def _show_progress(self):
+        from PySide6.QtWidgets import QProgressDialog
+        self.progress = QProgressDialog(
+            "Загрузка данных...",
+            None,
+            0,
+            0,
+            self
+        )
+        self.progress.setWindowModality(Qt.WindowModal)
+        self.progress.show()
+
+    def _hide_progress(self):
+        if hasattr(self, "progress"):
+            self.progress.close()
      
     ## РАЗДЕЛ РАБОТЫ СО СТАТИЧНЫМИ ПАРАМЕТРАМИ
 

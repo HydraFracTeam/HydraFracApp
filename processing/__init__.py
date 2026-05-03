@@ -9,3 +9,4 @@ from .smooth_pressure import smooth_pressure
 from .remove_pressure_outliers import remove_pressure_outliers
 from .raw_to_processing import raw_to_processing
 from .validate_pressure_and_debit import validate_pressure_and_debit
+from .loaders.loader_worker import LoadWorker
