@@ -1,5 +1,6 @@
 import numpy as np
-from core.app_state import ProcessingDynamicData
+
+from core.models import ProcessingDynamicData, ProcessingOperationResult
 
 
 def _validate_input(data: ProcessingDynamicData) -> None:
@@ -14,14 +15,42 @@ def _validate_input(data: ProcessingDynamicData) -> None:
         raise ValueError("Массив Q пуст")
 
 
-def interpolate_debit(data: ProcessingDynamicData) -> ProcessingDynamicData:
+def _calculate_gap_segments(mask: np.ndarray) -> int:
+
+    if not np.any(mask):
+        return 0
+
+    diff = np.diff(mask.astype(int))
+
+    starts = np.sum(diff == 1)
+
+    if mask[0]:
+        starts += 1
+
+    return int(starts)
+
+
+def _calculate_max_gap(mask: np.ndarray) -> int:
+
+    max_gap = 0
+    current = 0
+
+    for val in mask:
+
+        if val:
+            current += 1
+            max_gap = max(max_gap, current)
+        else:
+            current = 0
+
+    return int(max_gap)
+
+
+def interpolate_debit(
+    data: ProcessingDynamicData
+) -> ProcessingOperationResult:
     """
     Восстановление дебита методом продолжения тренда (step interpolation).
-
-    Пример:
-    [nan,100,100,nan,nan,80,nan,60,nan]
-    ->
-    [100,100,100,100,100,80,80,60,60]
     """
 
     _validate_input(data)
@@ -58,4 +87,25 @@ def interpolate_debit(data: ProcessingDynamicData) -> ProcessingDynamicData:
     data.Q = Q
     data.is_Q_interpolated = True
 
-    return data
+    n_interpolated = int(mask_missing.sum())
+
+    restored_percent = (
+        n_interpolated / n * 100
+    )
+
+    gap_segments = _calculate_gap_segments(mask_missing)
+
+    max_gap = _calculate_max_gap(mask_missing)
+
+    details = [
+        f"Интерполяция дебита: восстановлено точек = {n_interpolated}",
+        f"Интерполяция дебита: восстановлено {restored_percent:.2f}% ряда",
+        f"Интерполяция дебита: количество gap-сегментов = {gap_segments}",
+        f"Интерполяция дебита: максимальный gap = {max_gap} точек",
+    ]
+
+    return ProcessingOperationResult(
+        data=data,
+        operation="debit_interpolation",
+        details=details,
+    )

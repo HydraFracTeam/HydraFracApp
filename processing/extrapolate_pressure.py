@@ -73,9 +73,7 @@ def fit_log_model(t: np.ndarray, P: np.ndarray, degree: int):
 
     return np.poly1d(coeff), eps
 
-# --------------------------------------------------
 # экстраполяция
-# --------------------------------------------------
 def extrapolate_pressure(
     data: ProcessingDynamicData,
     jump_threshold: float = 1.2,
@@ -91,7 +89,7 @@ def extrapolate_pressure(
     P = data.P
 
     if np.isnan(P).any():
-        raise ValueError("Pressure contains NaN")
+        raise ValueError("Значения ряда давления содержат NaN")
 
     # расширение массива давления
     if len(P) < len(t):

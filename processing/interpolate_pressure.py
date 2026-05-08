@@ -2,10 +2,10 @@ import numpy as np
 from scipy.interpolate import PchipInterpolator
 
 from core.app_state import ProcessingDynamicData
+from core.models import ProcessingDynamicData, ProcessingOperationResult
 
 
 def _validate_input(data: ProcessingDynamicData) -> None:
-    
 
     if data.is_P_interpolated:
         raise RuntimeError("Интерполяция уже выполнена")
@@ -23,10 +23,44 @@ def _validate_input(data: ProcessingDynamicData) -> None:
         raise ValueError("Недостаточно точек")
 
 
-def interpolate_pressure(data: ProcessingDynamicData) -> ProcessingDynamicData:
+def _calculate_gap_segments(mask: np.ndarray) -> int:
+
+    if not np.any(mask):
+        return 0
+
+    diff = np.diff(mask.astype(int))
+
+    starts = np.sum(diff == 1)
+
+    if mask[0]:
+        starts += 1
+
+    return int(starts)
+
+
+def _calculate_max_gap(mask: np.ndarray) -> int:
+
+    max_gap = 0
+    current = 0
+
+    for val in mask:
+
+        if val:
+            current += 1
+            max_gap = max(max_gap, current)
+        else:
+            current = 0
+
+    return int(max_gap)
+
+
+def interpolate_pressure(
+    data: ProcessingDynamicData
+) -> ProcessingOperationResult:
+
     if data is None:
-        raise ValueError("ProcessingDynamicData is None")
-            
+        raise ValueError("ProcessingDynamicData равна None")
+
     _validate_input(data)
 
     t = data.t
@@ -41,7 +75,11 @@ def interpolate_pressure(data: ProcessingDynamicData) -> ProcessingDynamicData:
     t_known = t[mask_valid]
     P_known = P[mask_valid]
 
-    interpolator = PchipInterpolator(t_known, P_known, extrapolate=False)
+    interpolator = PchipInterpolator(
+        t_known,
+        P_known,
+        extrapolate=False,
+    )
 
     P_full = interpolator(t)
 
@@ -57,4 +95,26 @@ def interpolate_pressure(data: ProcessingDynamicData) -> ProcessingDynamicData:
     data.P_interpolated_mask = mask_missing
     data.is_P_interpolated = True
 
-    return data
+    n_interpolated = int(mask_missing.sum())
+    total_points = len(P)
+
+    restored_percent = (
+        n_interpolated / total_points * 100
+    )
+
+    gap_segments = _calculate_gap_segments(mask_missing)
+
+    max_gap = _calculate_max_gap(mask_missing)
+
+    details = [
+        f"Интерполяция давления: восстановлено точек = {n_interpolated}",
+        f"Интерполяция давления: восстановлено {restored_percent:.2f}% ряда",
+        f"Интерполяция давления: количество gap-сегментов = {gap_segments}",
+        f"Интерполяция давления: максимальный gap = {max_gap} точек",
+    ]
+
+    return ProcessingOperationResult(
+        data=data,
+        operation="pressure_interpolation",
+        details=details,
+    )

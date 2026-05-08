@@ -1,39 +1,90 @@
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List
+from enum import Enum
 
-class ProcessingReportService:
-    def __init__(self):
-        self.metrics_history: List[Dict] = []
-    
-    def add_metrics(self, operation: str, metrics: Dict):
-        """Добавляет метрики операции в историю"""
-        self.metrics_history.append({
-            'timestamp': datetime.now(),
-            'operation': operation,
-            'metrics': metrics
-        })
-    
-    def generate_report(self) -> str:
-        """Формирует текстовый отчет"""
-        report_lines = []
-        
-        for entry in self.metrics_history:
-            timestamp = entry['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
-            operation = entry['operation']
-            metrics = entry['metrics']
-            
-            report_lines.append(f"{timestamp}: {operation}")
-            
-            for key, value in metrics.items():
-                if key not in ['operation', 'timestamp']:
-                    report_lines.append(f"  {key}: {value}")
-            
-            report_lines.append("")  # пустая строка между операциями
-        
-        return "\n".join(report_lines)
-    
-    def get_last_operation_metrics(self) -> Dict:
-        """Возвращает метрики последней операции"""
-        if self.metrics_history:
-            return self.metrics_history[-1]['metrics']
-        return {}
+from PySide6.QtWidgets import QTextEdit
+
+
+class ReportLevel(str, Enum):
+    INFO = "INFO"
+    SUCCESS = "SUCCESS"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    SOLVER = "SOLVER"
+
+
+@dataclass(slots=True)
+class ReportEntry:
+    timestamp: datetime
+    level: ReportLevel
+    message: str
+
+
+class ReportService:
+
+    def __init__(self, text_widget: QTextEdit):
+        self.text_widget = text_widget
+
+    def info(self, message: str):
+        self._append(
+            ReportEntry(
+                timestamp=datetime.now(),
+                level=ReportLevel.INFO,
+                message=message,
+            )
+        )
+
+    def success(self, message: str):
+        self._append(
+            ReportEntry(
+                timestamp=datetime.now(),
+                level=ReportLevel.SUCCESS,
+                message=message,
+            )
+        )
+
+    def warning(self, message: str):
+        self._append(
+            ReportEntry(
+                timestamp=datetime.now(),
+                level=ReportLevel.WARNING,
+                message=message,
+            )
+        )
+
+    def error(self, message: str):
+        self._append(
+            ReportEntry(
+                timestamp=datetime.now(),
+                level=ReportLevel.ERROR,
+                message=message,
+            )
+        )
+
+    def solver(self, message: str):
+        self._append(
+            ReportEntry(
+                timestamp=datetime.now(),
+                level=ReportLevel.SOLVER,
+                message=message,
+            )
+        )
+
+    def clear(self):
+        self.text_widget.clear()
+
+    def _append(self, entry: ReportEntry):
+
+        ts = entry.timestamp.strftime("%H:%M:%S")
+
+        prefix = {
+            ReportLevel.INFO: "[INFO]",
+            ReportLevel.SUCCESS: "[ OK ]",
+            ReportLevel.WARNING: "[WARN]",
+            ReportLevel.ERROR: "[ERR ]",
+            ReportLevel.SOLVER: "[SOLV]",
+        }[entry.level]
+
+        line = f"{ts} {prefix} {entry.message}"
+
+        self.text_widget.append(line)

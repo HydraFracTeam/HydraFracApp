@@ -59,6 +59,7 @@ from helpers import (
 from utils import get_file_suffix, get_filename
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
+from processing.report_service import ReportService
 from processing import (
     rebuild_processing_dynamic,
     interpolate_pressure,
@@ -86,6 +87,7 @@ class SessionWidget(QWidget):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.app_state = AppState()
+        self.report = ReportService(self.ui.text_report)
         self.logger = logging.getLogger(__name__)
         self._autosplit_info = None  # Информация о разделении КСД/КВД
         self.solver_thread = None # заготовки для вызова солвера при расчете параметров
@@ -156,7 +158,7 @@ class SessionWidget(QWidget):
                 try:
                     split_info = get_split_info(raw.t, raw.P)
                 except Exception as e:
-                    self.logger.warning(f"Ошибка автосплиттера: {e}")
+                    self.report.warning(f"Ошибка автосплиттера: {e}")
                     split_info = None
 
                 if split_info is not None:
@@ -165,11 +167,11 @@ class SessionWidget(QWidget):
                         if mode:
                             raw, msg, self._autosplit_info = apply_autosplit(raw, split_info, mode)
                             if msg:
-                                self.show_in_text_report(msg)
+                                self.report.info(msg)
                         else:
                             self._autosplit_info = None
                     except Exception as e:
-                        self.logger.error(f"Ошибка в диалоге автосплиттера: {e}")
+                        self.report.error(f"Ошибка в диалоге автосплиттера: {e}")
                         self._autosplit_info = None
                 else:
                     self._autosplit_info = None
@@ -179,9 +181,7 @@ class SessionWidget(QWidget):
                 if self._autosplit_info is not None:
                     self._draw_autosplit_line()
 
-                self.show_in_text_report(
-                    "Динамические данные успешно вставлены из буфера."
-                )
+                self.report.success("Динамические данные успешно вставлены из буфера.")
 
                 self.enable_static_controls()
                 self.disable_load_controls()
@@ -220,7 +220,7 @@ class SessionWidget(QWidget):
             try:
                 split_info = get_split_info(raw_data.t, raw_data.P)
             except Exception as e:
-                self.logger.warning(f"Ошибка автосплиттера: {e}")
+                self.report.warning(f"Ошибка автосплиттера: {e}")
                 split_info = None
 
             if split_info is not None:
@@ -229,13 +229,12 @@ class SessionWidget(QWidget):
                     if mode:
                         raw_data, msg, self._autosplit_info = apply_autosplit(raw_data, split_info, mode)
                         if msg:
-                            self.show_in_text_report(msg)
+                            self.report.info(msg)
                     else:
-                        self.show_in_text_report("Выбор отменен. Использованы все данные.")
+                        self.report.info("Выбор отменен. Использованы все данные.")
                         self._autosplit_info = None
                 except Exception as e:
-                    self.logger.error(f"Ошибка в диалоге автосплиттера: {e}", exc_info=True)
-                    self.show_in_text_report(f"Ошибка обработки разделения: {e}. Использованы все данные.")
+                    self.report.error(f"Ошибка обработки разделения: {e}. Использованы все данные.")
                     self._autosplit_info = None
             else:
                 self._autosplit_info = None
@@ -244,7 +243,7 @@ class SessionWidget(QWidget):
             
             file_name = get_filename(file_path=file_path)
             self.ui.load_file_label.setText(file_name)
-            self.show_in_text_report(f"Динамические данные успешны загружены из файла {file_name}.")
+            self.report.success(f"Динамические данные успешны загружены из файла {file_name}.")
             
             # Отображаем линию разделения на графике если есть
             if hasattr(self, '_autosplit_info') and self._autosplit_info is not None:
@@ -277,7 +276,7 @@ class SessionWidget(QWidget):
 
         try:
             save_state(self.app_state, path)
-            self.show_in_text_report(f"Сессия сохранена: {path}")
+            self.report.success(f"Сессия сохранена: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить:\n{str(e)}")
     
@@ -318,7 +317,7 @@ class SessionWidget(QWidget):
                 self.disable_threshold_controls()
                 self.enable_calculation_controls()
 
-            self.show_in_text_report(f"Сессия загружена: {path}")
+            self.report.success(f"Сессия загружена: {path}")
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить:\n{str(e)}")
@@ -371,7 +370,7 @@ class SessionWidget(QWidget):
                 dtype=float
             )
 
-        self.show_in_text_report("Статические параметры успешно введены.")
+        self.report.success("Статические параметры успешно введены.")
     
         self.disable_static_controls()
         self.enable_threshold_controls()
@@ -421,9 +420,9 @@ class SessionWidget(QWidget):
         # расчитаем промежуточные XY после ввода
         self.recalculate_dimensionless()
         
-        self.show_in_text_report("Границы оптимизации успешно заданы.")
+        self.report.success("Границы оптимизации успешно заданы.")
         self.refresh_ui() # обновление таблицы
-        self.show_in_text_report("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
+        self.report.success("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
         
         self.disable_threshold_controls()
         self.enable_calculation_controls()
@@ -458,16 +457,79 @@ class SessionWidget(QWidget):
         self._apply_preprocessing(remove_pressure_outliers)
    
     def _apply_preprocessing(self, *actions):
-        """Pipeline: deepcopy → apply actions → save → recalc → refresh UI."""
+        """
+        Pipeline:
+        deepcopy -> apply actions -> save -> recalc -> refresh UI
+
+        Любая ошибка:
+        - останавливает pipeline
+        - пишет в report
+        - показывает QMessageBox
+        """
+
         from copy import deepcopy
-        processing = deepcopy(self.app_state.processing_dynamic_data)
-        for action in actions:
-            processing = action(processing)
-        self.app_state.processing_dynamic_data = processing
-        self.recalculate_processing_dynamic_data()
-        self.recalculate_dimensionless()
-        self.refresh_ui() 
-        
+        import traceback
+
+        processing = deepcopy(
+            self.app_state.processing_dynamic_data
+        )
+
+        try:
+
+            for action in actions:
+
+                result = action(processing)
+
+                # новый ProcessingOperationResult
+                if hasattr(result, "data"):
+
+                    processing = result.data
+
+                    for detail in result.details:
+                        self.report.info(detail)
+
+                # backward compatibility
+                else:
+                    processing = result
+
+            self.app_state.processing_dynamic_data = processing
+
+            self.recalculate_processing_dynamic_data()
+            self.recalculate_dimensionless()
+
+            self.refresh_ui()
+
+        except Exception as e:
+
+            action_name = getattr(
+                action,
+                "__name__",
+                "unknown_operation",
+            )
+
+            error_text = (
+                f"Ошибка предобработки "
+                f"({action_name}): {str(e)}"
+            )
+
+            # UI report
+            self.report.error(error_text)
+
+            # developer log
+            self.logger.error(
+                error_text,
+                exc_info=True,
+            )
+            # popup
+            QMessageBox.critical(
+                self,
+                "Ошибка предобработки",
+                error_text,
+            )
+
+            # optional full traceback
+            traceback.print_exc()
+            
     def reset_preprocessing_dynamic_data(self):
         self.app_state.processing_dynamic_data = raw_to_processing(self.app_state.raw_dynamic_data)
         self.recalculate_processing_dynamic_data()
@@ -507,18 +569,18 @@ class SessionWidget(QWidget):
             
             self.solver_thread.start()
             self.ui.calculate_opt_parameters_button.setEnabled(False)
-            self.show_in_text_report("Солвер запущен, идет расчет...")
+            self.report.solver("Солвер запущен, идет расчет...")
         except Exception as e:
             QMessageBox.critical(
                 self,
                 "Ошибка расчёта",
                 f"Ошибка при оптимизации параметров:\n{str(e)}"
             )
-            self.logger.error(f"Ошибка солвера: {e}", exc_info=True)
+            self.report.error(f"Ошибка солвера: {e}", exc_info=True)
             
     def _on_solver_error(self, msg):
         QMessageBox.critical(self, "Ошибка расчёта", msg)
-        self.logger.error(f"Ошибка солвера: {msg}", exc_info=True)
+        self.report.error(f"Ошибка солвера: {msg}", exc_info=True)
     
     def _on_solver_done(self, results):
         self.ui.calculate_opt_parameters_button.setEnabled(True)
@@ -685,7 +747,7 @@ class SessionWidget(QWidget):
 
         except Exception as e:
             result.reference_curves = None
-            self.logger.warning(f"Не удалось собрать reference curves: {e}")
+            self.report.warning(f"Не удалось собрать референсные кривые: {e}")
             QMessageBox.warning(self, "Ошибка", "Не удалось собрать создать отображения рефенсных кривых!")
             self.app_state.reference_curves = None
             return None
@@ -875,9 +937,9 @@ class SessionWidget(QWidget):
                 split_pressure=split_pressure,
             )
             
-            self.logger.info(f"Отображена линия AUTO SPLIT: t={split_time:.2f}, P={split_pressure:.2f}")
+            self.report.info(f"Отображена линия AUTO SPLIT: t={split_time:.2f}, P={split_pressure:.2f}")
         except Exception as e:
-            self.logger.warning(f"Не удалось отрисовать линию разделения: {e}")
+            self.report.warning(f"Не удалось отрисовать линию разделения: {e}")
     
     ## ВЫЗОВ РАСЧЕТОВ
     def recalculate_dimensionless(self):
@@ -927,14 +989,11 @@ class SessionWidget(QWidget):
         self.disable_static_controls()
         self.disable_threshold_controls()
         self.disable_calculation_controls()
-        self.ui.text_report.clear()
+        self.report.clear()
         self.reset_data_table()
         self.reset_plots()
         self.ui.load_file_label.setText("Файл не загружен")
         
-    def show_in_text_report(self, text: str) -> None:
-        self.ui.text_report.append(text)
-    
     def _init_solver_state(self):
         th = self.app_state.optimize_thresholds
 

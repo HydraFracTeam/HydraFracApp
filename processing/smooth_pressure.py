@@ -49,7 +49,6 @@ def smooth_pressure(
 
     if window_length <= polyorder:
         return data
-    print(window_length)
 
     # --------------------------
 
