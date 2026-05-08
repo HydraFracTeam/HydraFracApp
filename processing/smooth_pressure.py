@@ -1,56 +1,76 @@
 import numpy as np
 from scipy.signal import savgol_filter
 
-from core.models import ProcessingDynamicData
+from core.models import (
+    ProcessingDynamicData,
+    ProcessingOperationResult,
+)
 
 
 def smooth_pressure(
     data: ProcessingDynamicData,
     window_length: int | None = None,
     polyorder: int = 3,
-) -> ProcessingDynamicData:
+) -> ProcessingOperationResult:
     """
-    Savitzky–Golay smoothing
-    с динамическим окном.
+    Savitzky–Golay smoothing.
     """
 
     if data is None:
-        raise ValueError("ProcessingDynamicData is None")
+        raise ValueError(
+            "ProcessingDynamicData is None"
+        )
 
     P = data.P
+
     t = data.t
 
     if P is None:
-        raise ValueError("Pressure array is None")
+        raise ValueError(
+            "Pressure array is None"
+        )
 
     mask = np.isfinite(P) & (t > 1)
 
     if mask.sum() < polyorder + 2:
-        return data
+
+        return ProcessingOperationResult(
+            data=data,
+            operation="pressure_smoothing",
+            details=[
+                "Сглаживание давления: недостаточно точек для обработки",
+            ],
+        )
 
     P_valid = P[mask]
-
-    # динамическое окно
 
     if window_length is None:
 
         n = len(P_valid)
 
-        window_length = int(max(9,n * 0.01))
+        window_length = int(
+            max(9, n * 0.01)
+        )
 
         if window_length % 2 == 0:
             window_length += 1
 
     if window_length >= len(P_valid):
+
         window_length = len(P_valid) - 1
 
         if window_length % 2 == 0:
             window_length -= 1
 
     if window_length <= polyorder:
-        return data
 
-    # --------------------------
+        return ProcessingOperationResult(
+            data=data,
+            operation="pressure_smoothing",
+            details=[
+                "Сглаживание давления: окно сглаживания слишком мало",
+            ],
+        )
 
     P_valid_smooth = savgol_filter(
         P_valid,
@@ -59,8 +79,21 @@ def smooth_pressure(
     )
 
     P_smooth = P.copy()
+
     P_smooth[mask] = P_valid_smooth
 
     data.P = P_smooth
 
-    return data
+    details = [
+        (
+            "Сглаживание давления: "
+            f"window={window_length}, "
+            f"polyorder={polyorder}"
+        ),
+    ]
+
+    return ProcessingOperationResult(
+        data=data,
+        operation="pressure_smoothing",
+        details=details,
+    )

@@ -527,7 +527,7 @@ class Ui_MainWindow(object):
         self.report_group.setObjectName(u"report_group")
         sizePolicy.setHeightForWidth(self.report_group.sizePolicy().hasHeightForWidth())
         self.report_group.setSizePolicy(sizePolicy)
-        self.report_group.setMinimumSize(QSize(0, 180))
+        self.report_group.setMinimumSize(QSize(0, 360))
         self.verticalLayout_6 = QVBoxLayout(self.report_group)
         self.verticalLayout_6.setObjectName(u"verticalLayout_6")
         self.text_report = QTextEdit(self.report_group)

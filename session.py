@@ -59,7 +59,7 @@ from helpers import (
 from utils import get_file_suffix, get_filename
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
-from processing.report_service import ReportService
+from ui.report_service import ReportService
 from processing import (
     rebuild_processing_dynamic,
     interpolate_pressure,
@@ -535,6 +535,9 @@ class SessionWidget(QWidget):
         self.recalculate_processing_dynamic_data()
         self.recalculate_dimensionless()
         self.refresh_ui()
+        self.report.info(
+            "\nПредобработка сброшена. Восстановлены исходные динамические данные.\n"
+        )
 
     ## РАЗДЕЛ РАСЧЁТА ОПТИМАЛЬНЫХ ПАРАМЕТРОВ
     def calculate_optimal_parameters(self):

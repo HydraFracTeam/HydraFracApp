@@ -1,57 +1,92 @@
 import numpy as np
 
-from core.models import ProcessingDynamicData
+from core.models import (
+    ProcessingDynamicData,
+    ProcessingOperationResult,
+)
 
 
 def extrapolate_debit(
     data: ProcessingDynamicData,
-) -> ProcessingDynamicData:
+) -> ProcessingOperationResult:
     """
-    Экстраполирует дебит, продлевая последнее известное значение
-    на новые точки времени.
+    Экстраполяция дебита
+    продолжением последнего значения.
     """
 
     if data is None:
-        raise ValueError("ProcessingDynamicData is None")
+        raise ValueError(
+            "ProcessingDynamicData равна None"
+        )
 
     if data.is_Q_extrapolated:
-        raise RuntimeError("Debit already extrapolated")
+        raise RuntimeError(
+            "Экстраполяция дебита уже выполнена"
+        )
 
     if not data.is_t_extrapolated:
-        raise RuntimeError("Time must be extrapolated first")
+        raise RuntimeError(
+            "Сначала необходимо экстраполировать время"
+        )
 
     t = data.t
+
     Q = data.Q
 
     if Q is None:
-        raise ValueError("Debit array is None")
+        raise ValueError(
+            "Массив дебита отсутствует"
+        )
 
-    # число исходных точек
-    n_original = np.sum(~data.t_extrapolated_mask)
+    n_original = int(
+        np.sum(~data.t_extrapolated_mask)
+    )
 
     Q_train = Q[:n_original]
 
     if np.isnan(Q_train).any():
-        raise ValueError("Training debit contains NaN")
+        raise ValueError(
+            "Обучающий ряд дебита содержит NaN"
+        )
 
-    # если время расширено — расширяем Q
     if len(Q) < len(t):
 
         Q_ext = np.full(len(t), np.nan)
+
         Q_ext[:len(Q)] = Q
 
         Q = Q_ext
 
-    # последнее значение дебита
-    Q_last = Q_train[-1]
+    Q_last = float(Q_train[-1])
 
-    # будущие точки
     future_mask = data.t_extrapolated_mask
 
     Q[future_mask] = Q_last
 
     data.Q = Q
+
     data.Q_extrapolated_mask = future_mask
+
     data.is_Q_extrapolated = True
 
-    return data
+    n_extrapolated = int(
+        np.sum(future_mask)
+    )
+
+    total_points = len(Q)
+
+    extrapolated_percent = (
+        n_extrapolated / total_points * 100
+    )
+
+    details = [
+        f"Экстраполяция дебита: добавлено точек = {n_extrapolated}",
+        f"Экстраполяция дебита: добавлено {extrapolated_percent:.2f}% ряда",
+        f"Экстраполяция дебита: последнее значение дебита = {Q_last:.4f}",
+    ]
+
+    return ProcessingOperationResult(
+        data=data,
+        operation="debit_extrapolation",
+        details=details,
+    )
