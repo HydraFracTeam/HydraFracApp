@@ -1,5 +1,5 @@
 # core/models.py
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 from typing import Optional, List
 
@@ -68,6 +68,12 @@ class SolverState:
     L_current: float
     skin_current: float
     residual: float
+
+@dataclass(slots=True)
+class ProcessingOperationResult:
+    data: ProcessingDynamicData
+    operation: str
+    details: List[str] = field(default_factory=list)
 
 
 @dataclass
