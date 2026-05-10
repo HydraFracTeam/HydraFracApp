@@ -51,10 +51,18 @@ from utils import format_pydantic_error
 from schemas import StaticParams
 from schemas.optimize_thresholds import OptimizeThresholds
 # модельки
-from core.models import DimensionlessData, SolverState, MainRefCurve, NeighbourRefCurve, ReferenceCurves, RefStaticParams
+from core.models import (DimensionlessData,
+                         SolverState,
+                         MainRefCurve,
+                         NeighbourRefCurve,
+                         ReferenceCurves,
+                         RefStaticParams,
+                         ProcessingOperationResult,
+)                        
 from helpers import (
     calculate_L_value, 
     calculate_k_value,
+    copy_processing_data,
     )
 from utils import get_file_suffix, get_filename
 # загрузки данных
@@ -459,7 +467,7 @@ class SessionWidget(QWidget):
     def _apply_preprocessing(self, *actions):
         """
         Pipeline:
-        deepcopy -> apply actions -> save -> recalc -> refresh UI
+        data copy -> apply actions -> save -> recalc -> refresh UI
 
         Любая ошибка:
         - останавливает pipeline
@@ -467,22 +475,14 @@ class SessionWidget(QWidget):
         - показывает QMessageBox
         """
 
-        from copy import deepcopy
         import traceback
 
-        processing = deepcopy(
-            self.app_state.processing_dynamic_data
-        )
+        processing = copy_processing_data(self.app_state.processing_dynamic_data)
 
         try:
-
-            for action in actions:
-
+            for action in actions:     
                 result = action(processing)
-
-                # новый ProcessingOperationResult
-                if hasattr(result, "data"):
-
+                if isinstance(result, ProcessingOperationResult):
                     processing = result.data
 
                     for detail in result.details:
