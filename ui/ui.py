@@ -660,33 +660,14 @@ class Ui_MainWindow(object):
         self.verticalLayout_8.addWidget(self.export_data_table_btn)
 
         self.tab_widget.addTab(self.data_tab, "")
-        self.results_tab = QWidget()
-        self.results_tab.setObjectName(u"results_tab")
-        self.vboxLayout = QVBoxLayout(self.results_tab)
-        self.vboxLayout.setObjectName(u"vboxLayout")
-        self.results_text = QTextEdit(self.results_tab)
-        self.results_text.setObjectName(u"results_text")
-        sizePolicy6.setHeightForWidth(self.results_text.sizePolicy().hasHeightForWidth())
-        self.results_text.setSizePolicy(sizePolicy6)
-
-        self.vboxLayout.addWidget(self.results_text)
-
-        self.export_report_btn = QPushButton(self.results_tab)
-        self.export_report_btn.setObjectName(u"export_report_btn")
-
-        self.vboxLayout.addWidget(self.export_report_btn)
-
-        self.tab_widget.addTab(self.results_tab, "")
 
         self.horizontalLayout_4.addWidget(self.tab_widget)
 
 
         self.horizontalLayout_5.addWidget(self.main_panel)
 
-        # MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
-        # MainWindow.setStatusBar(self.statusbar)
 #if QT_CONFIG(shortcut)
         self.load_file_label.setBuddy(self.preprocessing_groupBoxs)
 #endif // QT_CONFIG(shortcut)
@@ -751,7 +732,5 @@ class Ui_MainWindow(object):
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.timeseries_tab), QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
         self.export_data_table_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.data_tab), QCoreApplication.translate("MainWindow", u"\u0422\u0430\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435", None))
-        self.export_report_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442 \u043e\u0442\u0447\u0435\u0442\u0430", None))
-        self.tab_widget.setTabText(self.tab_widget.indexOf(self.results_tab), QCoreApplication.translate("MainWindow", u"\u0420\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u044b", None))
     # retranslateUi
 
