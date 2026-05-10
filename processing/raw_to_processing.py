@@ -12,6 +12,15 @@ def raw_to_processing(raw: RawDynamicData) -> ProcessingDynamicData:
     if raw is None:
         raise ValueError("RawDynamicData is None")
 
+    if raw.t is None or raw.P is None:
+        raise ValueError("t и P должны быть определены")
+
+    if raw.Q is not None and len(raw.P) != len(raw.Q):
+        raise ValueError(
+            f"P и Q должны иметь одинаковую длину: "
+            f"len(P)={len(raw.P)}, len(Q)={len(raw.Q)}"
+        )
+
     return ProcessingDynamicData(
         t=raw.t.copy(),
         P=raw.P.copy(),

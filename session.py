@@ -79,7 +79,6 @@ from processing import (
     remove_pressure_outliers,
     smooth_pressure,
     raw_to_processing,
-    validate_pressure_and_debit,
     )
 from processing.autosplitter import get_split_info
 from processing.autosplit_service import apply_autosplit
