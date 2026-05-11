@@ -1,4 +1,5 @@
 alembic==1.18.4
+altgraph==0.17.5
 annotated-types==0.7.0
 colorama==0.4.6
 colorlog==6.10.1
@@ -10,19 +11,22 @@ iniconfig==2.3.0
 joblib==1.5.3
 kiwisolver==1.4.9
 lasio==0.32
+lttb==0.3.2
 Mako==1.3.10
 MarkupSafe==3.0.3
 matplotlib==3.10.8
-numpy==2.4.2
+numpy==1.26.4
 optuna==4.7.0
-SQLAlchemy==2.0.48
 packaging==26.0
 pandas==3.0.1
 pillow==12.1.1
 pluggy==1.6.0
+pyarrow==23.0.1
 pydantic==2.12.5
 pydantic_core==2.41.5
 Pygments==2.19.2
+pyinstaller==6.19.0
+pyinstaller-hooks-contrib==2026.3
 pyparsing==3.3.2
 pyqtgraph==0.14.0
 PySide6==6.10.2
@@ -41,3 +45,4 @@ threadpoolctl==3.6.0
 tqdm==4.67.3
 typing-inspection==0.4.2
 typing_extensions==4.15.0
+zstandard==0.25.0
