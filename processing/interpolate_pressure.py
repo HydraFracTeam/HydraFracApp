@@ -78,7 +78,7 @@ def interpolate_pressure(
     interpolator = PchipInterpolator(
         t_known,
         P_known,
-        extrapolate=False,
+        extrapolate=True,
     )
 
     P_full = interpolator(t)
