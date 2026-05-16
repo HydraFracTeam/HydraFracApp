@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QMainWindow,
-    QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QMainWindow, QPushButton, QScrollArea, QSizePolicy,
     QStatusBar, QTabWidget, QTableView, QTextEdit,
     QVBoxLayout, QWidget)
 
@@ -26,7 +26,7 @@ class Ui_MainWindow(object):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
         MainWindow.setWindowModality(Qt.WindowModality.NonModal)
-        MainWindow.resize(2898, 1841)
+        MainWindow.resize(1833, 1041)
         sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -40,7 +40,7 @@ class Ui_MainWindow(object):
         self.main_panel.setObjectName(u"main_panel")
         sizePolicy.setHeightForWidth(self.main_panel.sizePolicy().hasHeightForWidth())
         self.main_panel.setSizePolicy(sizePolicy)
-        self.main_panel.setMinimumSize(QSize(1800, 960))
+        self.main_panel.setMinimumSize(QSize(1775, 950))
         self.main_panel.setMaximumSize(QSize(16777215, 16777215))
         self.horizontalLayout_4 = QHBoxLayout(self.main_panel)
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
@@ -56,7 +56,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scroll_panel = QWidget()
         self.scroll_panel.setObjectName(u"scroll_panel")
-        self.scroll_panel.setGeometry(QRect(0, 0, 518, 1771))
+        self.scroll_panel.setGeometry(QRect(0, 0, 504, 1282))
         self.verticalLayout = QVBoxLayout(self.scroll_panel)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.groupBox_3 = QGroupBox(self.scroll_panel)
@@ -254,15 +254,11 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_8.addWidget(self.frac_amount_label)
 
-        self.frac_amount_spinBox = QSpinBox(self.static_params_group)
-        self.frac_amount_spinBox.setObjectName(u"frac_amount_spinBox")
-        self.frac_amount_spinBox.setEnabled(False)
-        self.frac_amount_spinBox.setReadOnly(False)
-        self.frac_amount_spinBox.setMinimum(2)
-        self.frac_amount_spinBox.setMaximum(1000)
-        self.frac_amount_spinBox.setValue(10)
+        self.frac_amount_combobox = QComboBox(self.static_params_group)
+        self.frac_amount_combobox.setObjectName(u"frac_amount_combobox")
+        self.frac_amount_combobox.setEnabled(False)
 
-        self.horizontalLayout_8.addWidget(self.frac_amount_spinBox)
+        self.horizontalLayout_8.addWidget(self.frac_amount_combobox)
 
 
         self.horizontalLayout_16.addLayout(self.horizontalLayout_8)

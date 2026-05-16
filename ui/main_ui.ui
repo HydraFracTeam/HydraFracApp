@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>2898</width>
-    <height>1841</height>
+    <width>1833</width>
+    <height>1041</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -34,8 +34,8 @@
       </property>
       <property name="minimumSize">
        <size>
-        <width>1800</width>
-        <height>960</height>
+        <width>1775</width>
+        <height>950</height>
        </size>
       </property>
       <property name="maximumSize">
@@ -76,8 +76,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>518</width>
-            <height>1771</height>
+            <width>504</width>
+            <height>1282</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout">
@@ -357,21 +357,9 @@
                    </widget>
                   </item>
                   <item>
-                   <widget class="QSpinBox" name="frac_amount_spinBox">
+                   <widget class="QComboBox" name="frac_amount_combobox">
                     <property name="enabled">
                      <bool>false</bool>
-                    </property>
-                    <property name="readOnly">
-                     <bool>false</bool>
-                    </property>
-                    <property name="minimum">
-                     <number>2</number>
-                    </property>
-                    <property name="maximum">
-                     <number>1000</number>
-                    </property>
-                    <property name="value">
-                     <number>10</number>
                     </property>
                    </widget>
                   </item>

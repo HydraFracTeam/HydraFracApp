@@ -101,6 +101,8 @@ class SessionWidget(QWidget):
         self.solver_worker = None
         self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
         
+        # Заполняем комбобокс количества трещин из БД
+        self._populate_N_combobox()
         
         self._load_controls: List[QWidget] = [
             self.ui.load_file_button,
@@ -112,7 +114,7 @@ class SessionWidget(QWidget):
             self.ui.viscosity_spinBox,
             self.ui.volume_coef_spinBox,
             self.ui.porosity_spinBox,
-            self.ui.frac_amount_spinBox,
+            self.ui.frac_amount_combobox,
             self.ui.compressibility_spinBox,
             self.ui.reservoir_pressure_spinbox,
             self.ui.insert_static_params_button,
@@ -141,6 +143,17 @@ class SessionWidget(QWidget):
         self.setup_data_table_elements()
         # Создаем интерфейс с DockArea
         setup_dock_area(self)
+    
+    # ЗАПОЛНЕНИЕ КОМБОБОКСОВ
+    def _populate_N_combobox(self):
+        """Заполнить комбобокс количества трещин из БД."""
+        try:
+            n_values = self.ref_repo.get_available_N_values()
+            self.ui.frac_amount_combobox.clear()
+            for n in n_values:
+                self.ui.frac_amount_combobox.addItem(str(n), n)
+        except Exception as e:
+            self.report.warning(f"Не удалось загрузить список N: {e}")
 
    
     ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
@@ -342,7 +355,7 @@ class SessionWidget(QWidget):
             "phi": self.ui.porosity_spinBox.value(),
             "B": self.ui.volume_coef_spinBox.value(),
             "ct": self.ui.compressibility_spinBox.value(),
-            "N": self.ui.frac_amount_spinBox.value(),
+            "N": int(self.ui.frac_amount_combobox.currentText()),
             "P0": self.ui.reservoir_pressure_spinbox.value(),
         }
 
