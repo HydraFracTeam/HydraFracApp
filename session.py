@@ -36,7 +36,6 @@ from ui import (
     PasteDataDialog,
     fill_state_to_ui,
     )
-from ui.downsampling import downsample_for_plot
 import pyqtgraph as pg
 from core.app_state import AppState
 from core.reference_repo import ReferenceRepository
@@ -58,6 +57,7 @@ from core.models import (DimensionlessData,
                          ReferenceCurves,
                          RefStaticParams,
                          ProcessingOperationResult,
+                         RuntimeSettings,
 )                        
 from helpers import (
     calculate_L_value, 
@@ -89,7 +89,7 @@ from sessions import load_state, save_state
 class SessionWidget(QWidget):
     solutions_ready = Signal(object)
     
-    def __init__(self):
+    def __init__(self, session_number: int):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
@@ -100,7 +100,9 @@ class SessionWidget(QWidget):
         self.solver_thread = None # заготовки для вызова солвера при расчете параметров
         self.solver_worker = None
         self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
-        
+        self.session_number = session_number
+        # Заполняем комбобокс количества трещин из БД
+        self._populate_N_combobox()
         
         self._load_controls: List[QWidget] = [
             self.ui.load_file_button,
@@ -112,7 +114,7 @@ class SessionWidget(QWidget):
             self.ui.viscosity_spinBox,
             self.ui.volume_coef_spinBox,
             self.ui.porosity_spinBox,
-            self.ui.frac_amount_spinBox,
+            self.ui.frac_amount_combobox,
             self.ui.compressibility_spinBox,
             self.ui.reservoir_pressure_spinbox,
             self.ui.insert_static_params_button,
@@ -139,8 +141,20 @@ class SessionWidget(QWidget):
         self.setup_dock_visibility_checkboxes()
         self.setup_preprocessing_controls()
         self.setup_data_table_elements()
+        self.ui.add_settings_button.clicked.connect(self.on_runtime_settings_changed)
         # Создаем интерфейс с DockArea
         setup_dock_area(self)
+    
+    # ЗАПОЛНЕНИЕ КОМБОБОКСОВ
+    def _populate_N_combobox(self):
+        """Заполнить комбобокс количества трещин из БД."""
+        try:
+            n_values = self.ref_repo.get_available_N_values()
+            self.ui.frac_amount_combobox.clear()
+            for n in n_values:
+                self.ui.frac_amount_combobox.addItem(str(n), n)
+        except Exception as e:
+            self.report.warning(f"Не удалось загрузить список N: {e}")
 
    
     ## РАЗДЕЛ ЗАГРУЗКИ ДИНАМИЧЕСКИХ ДАННЫХ
@@ -342,7 +356,7 @@ class SessionWidget(QWidget):
             "phi": self.ui.porosity_spinBox.value(),
             "B": self.ui.volume_coef_spinBox.value(),
             "ct": self.ui.compressibility_spinBox.value(),
-            "N": self.ui.frac_amount_spinBox.value(),
+            "N": int(self.ui.frac_amount_combobox.currentText()),
             "P0": self.ui.reservoir_pressure_spinbox.value(),
         }
 
@@ -377,9 +391,28 @@ class SessionWidget(QWidget):
                 dtype=float
             )
 
-        self.report.success("Статические параметры успешно введены.")
+        msg = (
+            f"Статические параметры: W={static_params.W}, h={static_params.h}, "
+            f"μ={static_params.mu}, φ={static_params.phi}, B={static_params.B}, "
+            f"ct={static_params.ct}, N={static_params.N}, P0={static_params.P0}"
+        )
+        if static_params.Q_constant is not None:
+            msg += f", Q={static_params.Q_constant}"
+
+        # пересчитываем dP, burde, нормализацию Q — нужно всегда
+        self.recalculate_processing_dynamic_data()
+
+        if self.app_state.optimize_thresholds is not None:
+            # границы уже введены — пересчитываем XY и обновляем графики/таблицу
+            self.recalculate_dimensionless()
+            self.refresh_ui()
+            self.report.success(msg)
+            self.report.success("Данные пересчитаны с новыми статическими параметрами. Проверьте графики и таблицу.")
+        else:
+            self.report.success(msg)
+            self.report.success("Статические параметры сохранены. После ввода границ данные будут пересчитаны.")
     
-        self.disable_static_controls()
+        # self.disable_static_controls()
         self.enable_threshold_controls()
 
     ## РАЗДЕЛ ГРАНИЦ ОПТИМИЗАЦИИ
@@ -427,11 +460,14 @@ class SessionWidget(QWidget):
         # расчитаем промежуточные XY после ввода
         self.recalculate_dimensionless()
         
-        self.report.success("Границы оптимизации успешно заданы.")
-        self.refresh_ui() # обновление таблицы
+        self.report.success(
+            f"Границы оптимизации: L [{thresholds.L_min}..{thresholds.L_max}] м, "
+            f"k [{thresholds.k_min}..{thresholds.k_max}] мД"
+        )
         self.report.success("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
+        self.refresh_ui() # обновление таблицы
         
-        self.disable_threshold_controls()
+        # self.disable_threshold_controls()
         self.enable_calculation_controls()
         
     ## Предобработка данных через UI
@@ -570,7 +606,10 @@ class SessionWidget(QWidget):
             self.solver_thread.finished.connect(self.solver_thread.deleteLater)
             
             self.solver_thread.start()
-            self.ui.calculate_opt_parameters_button.setEnabled(False)
+            self.disable_load_controls()
+            self.disable_static_controls()
+            self.disable_threshold_controls()
+            self.disable_calculation_controls()
             self.report.solver("Солвер запущен, идет расчет...")
         except Exception as e:
             QMessageBox.critical(
@@ -585,18 +624,22 @@ class SessionWidget(QWidget):
         self.report.error(f"Ошибка солвера: {msg}", exc_info=True)
     
     def _on_solver_done(self, results):
+        self.enable_load_controls()
+        self.enable_static_controls()
+        self.enable_threshold_controls()
+        self.enable_calculation_controls()
         self.ui.calculate_opt_parameters_button.setEnabled(True)
         if not results:
             QMessageBox.warning(
                 self,
                 "Нет решения",
                 "Не найдено ни одного подходящего решения.\n"
-                "Проверьте параметры (W, N, диапазоны)."
+                "Проверьте параметры (длину скважины, кол-во трещин, диапазоны ограничений)."
             )
             return
 
         result = results[0]
-
+        
         self.ui.skin_result_spinbox.setValue(result.S_opt)
         self.ui.permeability_result_spinbox.setValue(result.k_opt)
         self.ui.frac_length_result_spinbox.setValue(result.L_opt)
@@ -609,16 +652,19 @@ class SessionWidget(QWidget):
         )
 
         self.recalculate_dimensionless()
-
-        for r in results:
-            self._build_reference_curves(r)
+        for i, r in enumerate(results):
+            self._build_reference_curves(
+                r,
+                update_global=(i == 0)
+            )
 
         self.update_dim_plots()
 
         dialog = CompareDialog(
             results,
             self.app_state,
-            self
+            self,
+            session_number=self.session_number,
         )
 
         dialog.exec() 
@@ -671,17 +717,12 @@ class SessionWidget(QWidget):
         self.ui.cb_debit_dock.stateChanged.connect(
             lambda state: self._toggle_dock(self.ui.dock_debit, state)
         )
-        self.ui.cb_calc_XY_dock.stateChanged.connect(self._on_xy_dock_toggle)
+        self.ui.cb_calc_XY_dock.stateChanged.connect(
+            lambda state: self._toggle_dock(self.ui.dock_xy, state)
+        )
         self.ui.cb_burde_curve_dock.stateChanged.connect(
             lambda state: self._toggle_dock(self.ui.dock_burde, state)
         )
-
-    def _on_xy_dock_toggle(self, state):
-        """Показать/скрыть XY-док и перерисовать при включении."""
-        self._toggle_dock(self.ui.dock_xy, state)
-        from PySide6.QtCore import Qt
-        if state == Qt.CheckState.Checked.value:
-            self.update_xy_plot()
 
     def _toggle_dock(self, dock: Dock, state):
         """Показать/скрыть док по состоянию чекбокса."""
@@ -691,9 +732,13 @@ class SessionWidget(QWidget):
         else:
             dock.hide()
 
-    def _build_reference_curves(self, result: SolverResult):
+    def _build_reference_curves(
+        self,
+        result: SolverResult,
+        update_global: bool = False,
+    ):
         """
-        Собирает ReferenceCurves из результата солвера и сохраняет в AppState.
+        Собирает ReferenceCurves из результата солвера.
         """
         try:
             static_params = self.app_state.static_params
@@ -703,8 +748,15 @@ class SessionWidget(QWidget):
             L_opt = result.L_opt
 
             # Главная кривая
-            main_dict = self.ref_repo.find_best_curve(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            main_dict = self.ref_repo.find_best_curve(
+                skin_opt,
+                L_opt,
+                N=N_fixed,
+                W=W_fixed
+            )
+
             main_curve = None
+
             if main_dict is not None:
                 main_curve = MainRefCurve(
                     dimensionless=DimensionlessData(
@@ -722,39 +774,63 @@ class SessionWidget(QWidget):
                 )
 
             # Соседи
-            neighbors_list = self.ref_repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            neighbors_list = self.ref_repo.find_neighbor_curves(
+                skin_opt,
+                L_opt,
+                N=N_fixed,
+                W=W_fixed
+            )
+
             neighbours = []
+
             for nb in neighbors_list:
+
                 skin_diff = nb['Skin'] - skin_opt
                 skin_offset = int(round(skin_diff))
-                neighbours.append(NeighbourRefCurve(
-                    dimensionless=DimensionlessData(
-                        X=nb['X'],
-                        Y=nb['Y'],
-                    ),
-                    skin_offset=skin_offset,
-                ))
+
+                neighbours.append(
+                    NeighbourRefCurve(
+                        dimensionless=DimensionlessData(
+                            X=nb['X'],
+                            Y=nb['Y'],
+                        ),
+                        skin_offset=skin_offset,
+                    )
+                )
 
             curves = ReferenceCurves(
                 main=main_curve,
                 neighbours=neighbours if neighbours else None,
             )
 
+            # сохраняем ВНУТРЬ конкретного результата
             result.reference_curves = curves
 
-            # для старого основного окна тоже можно оставить
-            self.app_state.reference_curves = curves
+            # обновляем главное окно только если нужно
+            if update_global:
+                self.app_state.reference_curves = curves
 
             return curves
 
         except Exception as e:
+
             result.reference_curves = None
-            self.report.warning(f"Не удалось собрать референсные кривые: {e}")
-            QMessageBox.warning(self, "Ошибка", "Не удалось собрать создать отображения рефенсных кривых!")
-            self.app_state.reference_curves = None
+
+            self.report.warning(
+                f"Не удалось собрать референсные кривые: {e}"
+            )
+
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                "Не удалось собрать отображение референсных кривых!"
+            )
+
+            if update_global:
+                self.app_state.reference_curves = None
+
             return None
             
-    
     def refresh_ui(self):
         self.update_data_table()
         self.update_dim_plots()
@@ -807,6 +883,7 @@ class SessionWidget(QWidget):
             P=self.app_state.processing_dynamic_data.P,
             P_interpolated_mask=self.app_state.processing_dynamic_data.P_interpolated_mask,
             P_extrapolated_mask=self.app_state.processing_dynamic_data.P_extrapolated_mask,
+            runtime_settings=self.app_state.runtime_settings,
         )
         plot_debit(
             plot=self.ui.plot_debit,
@@ -814,6 +891,7 @@ class SessionWidget(QWidget):
             Q=self.app_state.processing_dynamic_data.Q,
             Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
             Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
+            runtime_settings=self.app_state.runtime_settings,
         )
         self.update_xy_plot()
         self.update_burde_plot()
@@ -830,6 +908,7 @@ class SessionWidget(QWidget):
                 plot=plot,
                 X=self.app_state.dimensionless.X,
                 Y=self.app_state.dimensionless.Y,
+                runtime_settings=self.app_state.runtime_settings,
             )
 
         # Эталонная кривая
@@ -837,12 +916,14 @@ class SessionWidget(QWidget):
         if ref_curves and ref_curves.main:
             main = ref_curves.main
             skin_val = main.static_params.Skin or 0
-            self._plot_reference_curve(
+            plot_xy(
                 plot=plot,
                 X=main.dimensionless.X,
                 Y=main.dimensionless.Y,
                 color=(255, 0, 0),
+                style=Qt.PenStyle.DashLine,
                 name=f"Эталонная кривая (S={skin_val:.1f})",
+                runtime_settings=self.app_state.runtime_settings,
             )
 
         # Соседние кривые
@@ -863,12 +944,14 @@ class SessionWidget(QWidget):
                 else:
                     name_suffix = f"(Skin+{offset})"
 
-                self._plot_reference_curve(
+                plot_xy(
                     plot=plot,
                     X=nb.dimensionless.X,
                     Y=nb.dimensionless.Y,
                     color=color,
+                    style=Qt.PenStyle.DashLine,
                     name=f"Сосед {name_suffix} (S={offset:+d})",
+                    runtime_settings=self.app_state.runtime_settings,
                 )
 
     def update_burde_plot(self):
@@ -880,40 +963,8 @@ class SessionWidget(QWidget):
                 plot=plot,
                 t=self.app_state.processing_dynamic_data.t,
                 burde=self.app_state.processing_dynamic_data.burde,
+                runtime_settings=self.app_state.runtime_settings,
             )
-
-    def _plot_reference_curve(
-        self,
-        plot: pg.PlotItem,
-        X: np.ndarray,
-        Y: np.ndarray,
-        color: tuple,
-        name: str,
-    ):
-        """
-        Отрисовка эталонной/reference кривой.
-        """
-
-        X, Y, _, _ = downsample_for_plot(
-            X,
-            Y,
-            log_space=True,
-        )
-
-        if len(X) == 0:
-            return
-
-        plot.plot(
-            X,
-            Y,
-            pen=pg.mkPen(
-                color=color,
-                width=2,
-                style=Qt.PenStyle.DashLine,
-            ),
-            name=name,
-        )
-    
     
     # АВТОСПЛИТТЕР
     def _draw_autosplit_line(self):
@@ -1005,3 +1056,21 @@ class SessionWidget(QWidget):
             skin_current=-1,
             residual=-1
         )
+        
+    # ДОП. НАСТРОЙКИ
+    def sync_runtime_settings_from_ui(self):
+        rs = self.app_state.runtime_settings
+        rs.downsample_threshold = self.ui.downsample_treshold_spinbox.value()
+        rs.downsample_points_per_decade = self.ui.downsample_points_per_decade_spinbox.value()
+
+    def on_runtime_settings_changed(self):
+
+        self.sync_runtime_settings_from_ui()
+
+        self.report.info(
+            "Runtime settings обновлены"
+        )
+        try:
+            self.refresh_ui()
+        except:
+            pass

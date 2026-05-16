@@ -7,6 +7,7 @@ from core.models import (
     SolverState,
     ProcessingDynamicData,
     DimensionlessData,
+    RuntimeSettings,
 )
 from schemas import (
     StaticParams,
@@ -16,6 +17,8 @@ from schemas import (
 
 @dataclass
 class AppState:
+    def __init__(self):
+        self.runtime_settings = RuntimeSettings()
     """
     Central application state container.
     Stores all runtime data used by UI and solver.
@@ -35,3 +38,4 @@ class AppState:
 
     solver_state: Optional[SolverState] = None # параметры солвера, хранит данные решения и невязку
 
+    runtime_settings: Optional[RuntimeSettings] = RuntimeSettings

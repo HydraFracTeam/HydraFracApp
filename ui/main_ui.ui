@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>2898</width>
-    <height>1841</height>
+    <width>1833</width>
+    <height>1041</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -34,8 +34,8 @@
       </property>
       <property name="minimumSize">
        <size>
-        <width>1800</width>
-        <height>960</height>
+        <width>1775</width>
+        <height>950</height>
        </size>
       </property>
       <property name="maximumSize">
@@ -75,9 +75,9 @@
           <property name="geometry">
            <rect>
             <x>0</x>
-            <y>0</y>
-            <width>518</width>
-            <height>1771</height>
+            <y>-458</y>
+            <width>504</width>
+            <height>1429</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout">
@@ -357,21 +357,9 @@
                    </widget>
                   </item>
                   <item>
-                   <widget class="QSpinBox" name="frac_amount_spinBox">
+                   <widget class="QComboBox" name="frac_amount_combobox">
                     <property name="enabled">
                      <bool>false</bool>
-                    </property>
-                    <property name="readOnly">
-                     <bool>false</bool>
-                    </property>
-                    <property name="minimum">
-                     <number>2</number>
-                    </property>
-                    <property name="maximum">
-                     <number>1000</number>
-                    </property>
-                    <property name="value">
-                     <number>10</number>
                     </property>
                    </widget>
                   </item>
@@ -523,13 +511,16 @@
                     <bool>false</bool>
                    </property>
                    <property name="decimals">
-                    <number>2</number>
+                    <number>1</number>
+                   </property>
+                   <property name="minimum">
+                    <double>0.100000000000000</double>
                    </property>
                    <property name="maximum">
                     <double>10000.000000000000000</double>
                    </property>
                    <property name="value">
-                    <double>0.010000000000000</double>
+                    <double>0.100000000000000</double>
                    </property>
                   </widget>
                  </item>
@@ -545,11 +536,14 @@
                    <property name="enabled">
                     <bool>false</bool>
                    </property>
+                   <property name="decimals">
+                    <number>0</number>
+                   </property>
                    <property name="maximum">
-                    <double>10000.000000000000000</double>
+                    <double>1000.000000000000000</double>
                    </property>
                    <property name="value">
-                    <double>10000.000000000000000</double>
+                    <double>1000.000000000000000</double>
                    </property>
                   </widget>
                  </item>
@@ -581,13 +575,16 @@
                     <bool>false</bool>
                    </property>
                    <property name="decimals">
-                    <number>4</number>
+                    <number>2</number>
+                   </property>
+                   <property name="minimum">
+                    <double>0.010000000000000</double>
                    </property>
                    <property name="maximum">
                     <double>1000.000000000000000</double>
                    </property>
                    <property name="value">
-                    <double>0.000100000000000</double>
+                    <double>0.010000000000000</double>
                    </property>
                   </widget>
                  </item>
@@ -604,13 +601,13 @@
                     <bool>false</bool>
                    </property>
                    <property name="decimals">
-                    <number>4</number>
+                    <number>2</number>
                    </property>
                    <property name="maximum">
-                    <double>1000.000000000000000</double>
+                    <double>10.000000000000000</double>
                    </property>
                    <property name="value">
-                    <double>100.000000000000000</double>
+                    <double>10.000000000000000</double>
                    </property>
                   </widget>
                  </item>
@@ -755,7 +752,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QGroupBox" name="report_group">
+            <widget class="QGroupBox" name="report_block">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                <horstretch>0</horstretch>
@@ -794,6 +791,88 @@
                 </property>
                 <property name="readOnly">
                  <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="add_settings_block">
+             <property name="title">
+              <string>Дополнительные настройки</string>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_4">
+              <item>
+               <layout class="QHBoxLayout" name="horizontalLayout_28">
+                <item>
+                 <widget class="QLabel" name="downsample_treshold_label">
+                  <property name="text">
+                   <string>Кол-во точек для отображения графика</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QDoubleSpinBox" name="downsample_treshold_spinbox">
+                  <property name="enabled">
+                   <bool>true</bool>
+                  </property>
+                  <property name="readOnly">
+                   <bool>false</bool>
+                  </property>
+                  <property name="decimals">
+                   <number>0</number>
+                  </property>
+                  <property name="minimum">
+                   <double>20.000000000000000</double>
+                  </property>
+                  <property name="maximum">
+                   <double>1000000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>5000.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <layout class="QHBoxLayout" name="horizontalLayout_21">
+                <item>
+                 <widget class="QLabel" name="downsample_points_per_decade_label">
+                  <property name="text">
+                   <string>Кол-во точек на декаде log-log графика</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QDoubleSpinBox" name="downsample_points_per_decade_spinbox">
+                  <property name="enabled">
+                   <bool>true</bool>
+                  </property>
+                  <property name="readOnly">
+                   <bool>false</bool>
+                  </property>
+                  <property name="decimals">
+                   <number>0</number>
+                  </property>
+                  <property name="minimum">
+                   <double>20.000000000000000</double>
+                  </property>
+                  <property name="maximum">
+                   <double>1000000.000000000000000</double>
+                  </property>
+                  <property name="value">
+                   <double>400.000000000000000</double>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <widget class="QPushButton" name="add_settings_button">
+                <property name="text">
+                 <string>Применить настройки</string>
                 </property>
                </widget>
               </item>
@@ -944,6 +1023,9 @@
                <widget class="QCheckBox" name="cb_debit_dock">
                 <property name="text">
                  <string>График дебита</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
                 </property>
                </widget>
               </item>

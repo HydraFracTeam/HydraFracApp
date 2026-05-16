@@ -116,6 +116,13 @@ class ReferenceRepository:
         skins = [row[0] for row in cursor.fetchall()]
         # Не закрываем соединение - оставляем для повторного использования
         return skins
+
+    def get_available_N_values(self) -> List[int]:
+        """Get sorted list of unique N values from database."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT N FROM statics WHERE N IS NOT NULL ORDER BY N")
+        return [int(row[0]) for row in cursor.fetchall()]
     
     def get_curves_by_skin(self, skin: float) -> List[int]:
         """Get curve IDs for a specific skin value."""

@@ -57,6 +57,12 @@ class SolutionView(QWidget):
             offset=(10,10)
         )
 
+        self.plot.setLabel('bottom', 'X')
+        self.plot.setLabel('left', 'Y')
+
+        self.plot.getAxis("bottom").enableAutoSIPrefix(False)
+        self.plot.getAxis("left").enableAutoSIPrefix(False)
+
         layout.addWidget(
             self.plot
         )
@@ -73,10 +79,14 @@ class SolutionView(QWidget):
         x = self.app_state.dimensionless.X
         y = self.app_state.dimensionless.Y
 
+        threshold = self.app_state.runtime_settings.downsample_threshold
+        points_per_decade = self.app_state.runtime_settings.downsample_points_per_decade
+        
         x,y,_,_ = downsample_for_plot(
-            x,
-            y,
-            threshold=5000,
+            x=x,
+            y=y,
+            threshold=threshold,
+            points_per_decade=points_per_decade,
             log_space=True
         )
 
@@ -105,7 +115,8 @@ class SolutionView(QWidget):
             xr,yr,_,_ = downsample_for_plot(
                 xr,
                 yr,
-                threshold=2000,
+                threshold=threshold,
+                points_per_decade=points_per_decade,
                 log_space=True
             )
 
@@ -143,7 +154,8 @@ class SolutionView(QWidget):
                 xn,yn,_,_ = downsample_for_plot(
                     xn,
                     yn,
-                    threshold=1500,
+                    threshold=threshold,
+                    points_per_decade=points_per_decade,
                     log_space=True
                 )
 
