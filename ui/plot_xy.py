@@ -16,6 +16,8 @@ def plot_xy(
 
     plot.setLabel("bottom", "X")
     plot.setLabel("left", "Y")
+    plot.getAxis("bottom").enableAutoSIPrefix(False)
+    plot.getAxis("left").enableAutoSIPrefix(False)
     plot.showGrid(x=True,y=True)
     plot.setLogMode(True,True)
 

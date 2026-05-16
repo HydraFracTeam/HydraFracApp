@@ -16,6 +16,8 @@ def plot_burde(
 
     plot.setLabel("bottom","t")
     plot.setLabel("left","dP/dln(t)")
+    plot.getAxis("bottom").enableAutoSIPrefix(False)
+    plot.getAxis("left").enableAutoSIPrefix(False)
     plot.showGrid(x=True,y=True)
     plot.setLogMode(True,True)
 

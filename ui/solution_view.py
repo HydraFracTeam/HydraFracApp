@@ -60,6 +60,9 @@ class SolutionView(QWidget):
         self.plot.setLabel('bottom', 'X')
         self.plot.setLabel('left', 'Y')
 
+        self.plot.getAxis("bottom").enableAutoSIPrefix(False)
+        self.plot.getAxis("left").enableAutoSIPrefix(False)
+
         layout.addWidget(
             self.plot
         )

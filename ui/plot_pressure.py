@@ -19,6 +19,8 @@ def plot_pressure(
     plot.setTitle("Давление во времени")
     plot.setLabel("bottom", "Время, ч")
     plot.setLabel("left", "Давление, кгс/см²")
+    plot.getAxis("bottom").enableAutoSIPrefix(False)
+    plot.getAxis("left").enableAutoSIPrefix(False)
     plot.showGrid(x=True, y=True)
 
     if plot.legend is None:
