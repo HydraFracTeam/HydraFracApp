@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from session import SessionWidget
-
+from config import settings
 
 class MainWindow(QMainWindow):
 
@@ -41,6 +41,8 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.tabs)
 
+        self._session_counter = 0
+
         # signals
         self.new_tab_btn.clicked.connect(self.add_session_tab)
         self.tabs.tabCloseRequested.connect(self.close_tab)
@@ -48,14 +50,17 @@ class MainWindow(QMainWindow):
         # first tab
         self.add_session_tab()
 
-    # Tabs logic
     def add_session_tab(self):
 
+        if self.tabs.count() >= settings.MAX_SESSIONS:
+            return
+
+        self._session_counter += 1
         session = SessionWidget()
 
         index = self.tabs.addTab(
             session,
-            f"Сессия {self.tabs.count() + 1}"
+            f"Сессия {self._session_counter}"
         )
 
         self.tabs.setCurrentIndex(index)
