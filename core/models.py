@@ -95,3 +95,8 @@ class ReferenceCurves:
     """Коллекция референсных кривых: лучшая + соседи."""
     main: Optional[MainRefCurve] = None
     neighbours: Optional[List[NeighbourRefCurve]] = None
+
+@dataclass
+class RuntimeSettings:
+    downsample_threshold: int = 5000
+    downsample_points_per_decade: int = 100

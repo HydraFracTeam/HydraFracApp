@@ -57,6 +57,7 @@ from core.models import (DimensionlessData,
                          ReferenceCurves,
                          RefStaticParams,
                          ProcessingOperationResult,
+                         RuntimeSettings,
 )                        
 from helpers import (
     calculate_L_value, 
@@ -140,6 +141,7 @@ class SessionWidget(QWidget):
         self.setup_dock_visibility_checkboxes()
         self.setup_preprocessing_controls()
         self.setup_data_table_elements()
+        self.ui.add_settings_button.clicked.connect(self.on_runtime_settings_changed)
         # Создаем интерфейс с DockArea
         setup_dock_area(self)
     
@@ -881,6 +883,7 @@ class SessionWidget(QWidget):
             P=self.app_state.processing_dynamic_data.P,
             P_interpolated_mask=self.app_state.processing_dynamic_data.P_interpolated_mask,
             P_extrapolated_mask=self.app_state.processing_dynamic_data.P_extrapolated_mask,
+            runtime_settings=self.app_state.runtime_settings,
         )
         plot_debit(
             plot=self.ui.plot_debit,
@@ -888,6 +891,7 @@ class SessionWidget(QWidget):
             Q=self.app_state.processing_dynamic_data.Q,
             Q_interpolated_mask=self.app_state.processing_dynamic_data.Q_interpolated_mask,
             Q_extrapolated_mask=self.app_state.processing_dynamic_data.Q_extrapolated_mask,
+            runtime_settings=self.app_state.runtime_settings,
         )
         self.update_xy_plot()
         self.update_burde_plot()
@@ -904,6 +908,7 @@ class SessionWidget(QWidget):
                 plot=plot,
                 X=self.app_state.dimensionless.X,
                 Y=self.app_state.dimensionless.Y,
+                runtime_settings=self.app_state.runtime_settings,
             )
 
         # Эталонная кривая
@@ -918,6 +923,7 @@ class SessionWidget(QWidget):
                 color=(255, 0, 0),
                 style=Qt.PenStyle.DashLine,
                 name=f"Эталонная кривая (S={skin_val:.1f})",
+                runtime_settings=self.app_state.runtime_settings,
             )
 
         # Соседние кривые
@@ -945,6 +951,7 @@ class SessionWidget(QWidget):
                     color=color,
                     style=Qt.PenStyle.DashLine,
                     name=f"Сосед {name_suffix} (S={offset:+d})",
+                    runtime_settings=self.app_state.runtime_settings,
                 )
 
     def update_burde_plot(self):
@@ -956,6 +963,7 @@ class SessionWidget(QWidget):
                 plot=plot,
                 t=self.app_state.processing_dynamic_data.t,
                 burde=self.app_state.processing_dynamic_data.burde,
+                runtime_settings=self.app_state.runtime_settings,
             )
     
     # АВТОСПЛИТТЕР
@@ -1048,3 +1056,21 @@ class SessionWidget(QWidget):
             skin_current=-1,
             residual=-1
         )
+        
+    # ДОП. НАСТРОЙКИ
+    def sync_runtime_settings_from_ui(self):
+        rs = self.app_state.runtime_settings
+        rs.downsample_threshold = self.ui.downsample_treshold_spinbox.value()
+        rs.downsample_points_per_decade = self.ui.downsample_points_per_decade_spinbox.value()
+
+    def on_runtime_settings_changed(self):
+
+        self.sync_runtime_settings_from_ui()
+
+        self.report.info(
+            "Runtime settings обновлены"
+        )
+        try:
+            self.refresh_ui()
+        except:
+            pass
