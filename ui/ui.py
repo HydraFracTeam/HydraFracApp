@@ -617,6 +617,7 @@ class Ui_MainWindow(object):
 
         self.cb_debit_dock = QCheckBox(self.groupBox)
         self.cb_debit_dock.setObjectName(u"cb_debit_dock")
+        self.cb_debit_dock.setChecked(True)
 
         self.horizontalLayout_6.addWidget(self.cb_debit_dock)
 
