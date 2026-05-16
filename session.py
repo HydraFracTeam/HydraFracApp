@@ -708,17 +708,12 @@ class SessionWidget(QWidget):
         self.ui.cb_debit_dock.stateChanged.connect(
             lambda state: self._toggle_dock(self.ui.dock_debit, state)
         )
-        self.ui.cb_calc_XY_dock.stateChanged.connect(self._on_xy_dock_toggle)
+        self.ui.cb_calc_XY_dock.stateChanged.connect(
+            lambda state: self._toggle_dock(self.ui.dock_xy, state)
+        )
         self.ui.cb_burde_curve_dock.stateChanged.connect(
             lambda state: self._toggle_dock(self.ui.dock_burde, state)
         )
-
-    def _on_xy_dock_toggle(self, state):
-        """Показать/скрыть XY-док и перерисовать при включении."""
-        self._toggle_dock(self.ui.dock_xy, state)
-        from PySide6.QtCore import Qt
-        if state == Qt.CheckState.Checked.value:
-            self.update_xy_plot()
 
     def _toggle_dock(self, dock: Dock, state):
         """Показать/скрыть док по состоянию чекбокса."""
