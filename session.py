@@ -89,7 +89,7 @@ from sessions import load_state, save_state
 class SessionWidget(QWidget):
     solutions_ready = Signal(object)
     
-    def __init__(self):
+    def __init__(self, session_number: int):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
@@ -100,7 +100,7 @@ class SessionWidget(QWidget):
         self.solver_thread = None # заготовки для вызова солвера при расчете параметров
         self.solver_worker = None
         self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
-        
+        self.session_number = session_number
         # Заполняем комбобокс количества трещин из БД
         self._populate_N_combobox()
         
@@ -631,7 +631,8 @@ class SessionWidget(QWidget):
         dialog = CompareDialog(
             results,
             self.app_state,
-            self
+            self,
+            session_number=self.session_number,
         )
 
         dialog.exec() 

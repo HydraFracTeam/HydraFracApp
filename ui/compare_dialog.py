@@ -12,10 +12,10 @@ from ui.solution_view import SolutionView
 
 class CompareDialog(QDialog):
 
-    def __init__(self, solutions, app_state, parent=None):
+    def __init__(self, solutions, app_state, parent=None, session_number=0):
         super().__init__(parent)
 
-        self.setWindowTitle("Сравнение решений")
+        self.setWindowTitle(f"Сравнение решений — Сессия {session_number}")
         self.resize(1600, 900)
 
         layout = QVBoxLayout(self)

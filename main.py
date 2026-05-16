@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
             return
 
         self._session_counter += 1
-        session = SessionWidget()
+        session = SessionWidget(session_number = self._session_counter)
 
         index = self.tabs.addTab(
             session,

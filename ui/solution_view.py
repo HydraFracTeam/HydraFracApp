@@ -57,6 +57,9 @@ class SolutionView(QWidget):
             offset=(10,10)
         )
 
+        self.plot.setLabel('bottom', 'X')
+        self.plot.setLabel('left', 'Y')
+
         layout.addWidget(
             self.plot
         )
