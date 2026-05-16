@@ -916,7 +916,6 @@ class SessionWidget(QWidget):
                 color=(255, 0, 0),
                 style=Qt.PenStyle.DashLine,
                 name=f"Эталонная кривая (S={skin_val:.1f})",
-                setup_plot=False,
             )
 
         # Соседние кривые
@@ -944,7 +943,6 @@ class SessionWidget(QWidget):
                     color=color,
                     style=Qt.PenStyle.DashLine,
                     name=f"Сосед {name_suffix} (S={offset:+d})",
-                    setup_plot=False,
                 )
 
     def update_burde_plot(self):

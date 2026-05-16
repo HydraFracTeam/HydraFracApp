@@ -17,7 +17,6 @@ def plot_xy(
     width: int = 2,
     style = Qt.PenStyle.SolidLine,
     name: str = "Калькулированные XY",
-    setup_plot: bool = True,
 ):
     """
     Универсальная отрисовка XY-кривой.
@@ -26,20 +25,18 @@ def plot_xy(
     if clear:
         plot.clear()
 
-    if setup_plot:
+    plot.setLabel("bottom", "X")
+    plot.setLabel("left", "Y")
 
-        plot.setLabel("bottom", "X")
-        plot.setLabel("left", "Y")
+    plot.getAxis("bottom").enableAutoSIPrefix(False)
+    plot.getAxis("left").enableAutoSIPrefix(False)
 
-        plot.getAxis("bottom").enableAutoSIPrefix(False)
-        plot.getAxis("left").enableAutoSIPrefix(False)
+    plot.showGrid(x=True, y=True)
 
-        plot.showGrid(x=True, y=True)
+    plot.setLogMode(True, True)
 
-        plot.setLogMode(True, True)
-
-        if plot.legend is None:
-            plot.addLegend()
+    if plot.legend is None:
+        plot.addLegend()
 
     X, Y, _, _ = downsample_for_plot(
         X,
