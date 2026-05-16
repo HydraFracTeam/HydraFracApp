@@ -390,9 +390,28 @@ class SessionWidget(QWidget):
                 dtype=float
             )
 
-        self.report.success("Статические параметры успешно введены.")
+        msg = (
+            f"Статические параметры: W={static_params.W}, h={static_params.h}, "
+            f"μ={static_params.mu}, φ={static_params.phi}, B={static_params.B}, "
+            f"ct={static_params.ct}, N={static_params.N}, P0={static_params.P0}"
+        )
+        if static_params.Q_constant is not None:
+            msg += f", Q={static_params.Q_constant}"
+
+        # пересчитываем dP, burde, нормализацию Q — нужно всегда
+        self.recalculate_processing_dynamic_data()
+
+        if self.app_state.optimize_thresholds is not None:
+            # границы уже введены — пересчитываем XY и обновляем графики/таблицу
+            self.recalculate_dimensionless()
+            self.refresh_ui()
+            self.report.success(msg)
+            self.report.success("Данные пересчитаны с новыми статическими параметрами. Проверьте графики и таблицу.")
+        else:
+            self.report.success(msg)
+            self.report.success("Статические параметры сохранены. После ввода границ данные будут пересчитаны.")
     
-        self.disable_static_controls()
+        # self.disable_static_controls()
         self.enable_threshold_controls()
 
     ## РАЗДЕЛ ГРАНИЦ ОПТИМИЗАЦИИ
@@ -440,11 +459,14 @@ class SessionWidget(QWidget):
         # расчитаем промежуточные XY после ввода
         self.recalculate_dimensionless()
         
-        self.report.success("Границы оптимизации успешно заданы.")
-        self.refresh_ui() # обновление таблицы
+        self.report.success(
+            f"Границы оптимизации: L [{thresholds.L_min}..{thresholds.L_max}] м, "
+            f"k [{thresholds.k_min}..{thresholds.k_max}] мД"
+        )
         self.report.success("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
+        self.refresh_ui() # обновление таблицы
         
-        self.disable_threshold_controls()
+        # self.disable_threshold_controls()
         self.enable_calculation_controls()
         
     ## Предобработка данных через UI
@@ -609,7 +631,8 @@ class SessionWidget(QWidget):
             return
 
         result = results[0]
-
+        print(x.error_value for x in results)
+        
         self.ui.skin_result_spinbox.setValue(result.S_opt)
         self.ui.permeability_result_spinbox.setValue(result.k_opt)
         self.ui.frac_length_result_spinbox.setValue(result.L_opt)
@@ -622,9 +645,11 @@ class SessionWidget(QWidget):
         )
 
         self.recalculate_dimensionless()
-
-        for r in results:
-            self._build_reference_curves(r)
+        for i, r in enumerate(results):
+            self._build_reference_curves(
+                r,
+                update_global=(i == 0)
+            )
 
         self.update_dim_plots()
 
@@ -705,9 +730,13 @@ class SessionWidget(QWidget):
         else:
             dock.hide()
 
-    def _build_reference_curves(self, result: SolverResult):
+    def _build_reference_curves(
+        self,
+        result: SolverResult,
+        update_global: bool = False,
+    ):
         """
-        Собирает ReferenceCurves из результата солвера и сохраняет в AppState.
+        Собирает ReferenceCurves из результата солвера.
         """
         try:
             static_params = self.app_state.static_params
@@ -717,8 +746,15 @@ class SessionWidget(QWidget):
             L_opt = result.L_opt
 
             # Главная кривая
-            main_dict = self.ref_repo.find_best_curve(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            main_dict = self.ref_repo.find_best_curve(
+                skin_opt,
+                L_opt,
+                N=N_fixed,
+                W=W_fixed
+            )
+
             main_curve = None
+
             if main_dict is not None:
                 main_curve = MainRefCurve(
                     dimensionless=DimensionlessData(
@@ -736,39 +772,63 @@ class SessionWidget(QWidget):
                 )
 
             # Соседи
-            neighbors_list = self.ref_repo.find_neighbor_curves(skin_opt, L_opt, N=N_fixed, W=W_fixed)
+            neighbors_list = self.ref_repo.find_neighbor_curves(
+                skin_opt,
+                L_opt,
+                N=N_fixed,
+                W=W_fixed
+            )
+
             neighbours = []
+
             for nb in neighbors_list:
+
                 skin_diff = nb['Skin'] - skin_opt
                 skin_offset = int(round(skin_diff))
-                neighbours.append(NeighbourRefCurve(
-                    dimensionless=DimensionlessData(
-                        X=nb['X'],
-                        Y=nb['Y'],
-                    ),
-                    skin_offset=skin_offset,
-                ))
+
+                neighbours.append(
+                    NeighbourRefCurve(
+                        dimensionless=DimensionlessData(
+                            X=nb['X'],
+                            Y=nb['Y'],
+                        ),
+                        skin_offset=skin_offset,
+                    )
+                )
 
             curves = ReferenceCurves(
                 main=main_curve,
                 neighbours=neighbours if neighbours else None,
             )
 
+            # сохраняем ВНУТРЬ конкретного результата
             result.reference_curves = curves
 
-            # для старого основного окна тоже можно оставить
-            self.app_state.reference_curves = curves
+            # обновляем главное окно только если нужно
+            if update_global:
+                self.app_state.reference_curves = curves
 
             return curves
 
         except Exception as e:
+
             result.reference_curves = None
-            self.report.warning(f"Не удалось собрать референсные кривые: {e}")
-            QMessageBox.warning(self, "Ошибка", "Не удалось собрать создать отображения рефенсных кривых!")
-            self.app_state.reference_curves = None
+
+            self.report.warning(
+                f"Не удалось собрать референсные кривые: {e}"
+            )
+
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                "Не удалось собрать отображение референсных кривых!"
+            )
+
+            if update_global:
+                self.app_state.reference_curves = None
+
             return None
             
-    
     def refresh_ui(self):
         self.update_data_table()
         self.update_dim_plots()
