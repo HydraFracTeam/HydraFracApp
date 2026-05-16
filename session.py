@@ -604,7 +604,10 @@ class SessionWidget(QWidget):
             self.solver_thread.finished.connect(self.solver_thread.deleteLater)
             
             self.solver_thread.start()
-            self.ui.calculate_opt_parameters_button.setEnabled(False)
+            self.disable_load_controls()
+            self.disable_static_controls()
+            self.disable_threshold_controls()
+            self.disable_calculation_controls()
             self.report.solver("Солвер запущен, идет расчет...")
         except Exception as e:
             QMessageBox.critical(
@@ -619,6 +622,10 @@ class SessionWidget(QWidget):
         self.report.error(f"Ошибка солвера: {msg}", exc_info=True)
     
     def _on_solver_done(self, results):
+        self.enable_load_controls()
+        self.enable_static_controls()
+        self.enable_threshold_controls()
+        self.enable_calculation_controls()
         self.ui.calculate_opt_parameters_button.setEnabled(True)
         if not results:
             QMessageBox.warning(
