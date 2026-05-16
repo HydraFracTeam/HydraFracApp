@@ -36,7 +36,6 @@ from ui import (
     PasteDataDialog,
     fill_state_to_ui,
     )
-from ui.downsampling import downsample_for_plot
 import pyqtgraph as pg
 from core.app_state import AppState
 from core.reference_repo import ReferenceRepository
@@ -631,7 +630,6 @@ class SessionWidget(QWidget):
             return
 
         result = results[0]
-        print(x.error_value for x in results)
         
         self.ui.skin_result_spinbox.setValue(result.S_opt)
         self.ui.permeability_result_spinbox.setValue(result.k_opt)
@@ -911,12 +909,14 @@ class SessionWidget(QWidget):
         if ref_curves and ref_curves.main:
             main = ref_curves.main
             skin_val = main.static_params.Skin or 0
-            self._plot_reference_curve(
+            plot_xy(
                 plot=plot,
                 X=main.dimensionless.X,
                 Y=main.dimensionless.Y,
                 color=(255, 0, 0),
+                style=Qt.PenStyle.DashLine,
                 name=f"Эталонная кривая (S={skin_val:.1f})",
+                setup_plot=False,
             )
 
         # Соседние кривые
@@ -937,12 +937,14 @@ class SessionWidget(QWidget):
                 else:
                     name_suffix = f"(Skin+{offset})"
 
-                self._plot_reference_curve(
+                plot_xy(
                     plot=plot,
                     X=nb.dimensionless.X,
                     Y=nb.dimensionless.Y,
                     color=color,
+                    style=Qt.PenStyle.DashLine,
                     name=f"Сосед {name_suffix} (S={offset:+d})",
+                    setup_plot=False,
                 )
 
     def update_burde_plot(self):
@@ -955,39 +957,6 @@ class SessionWidget(QWidget):
                 t=self.app_state.processing_dynamic_data.t,
                 burde=self.app_state.processing_dynamic_data.burde,
             )
-
-    def _plot_reference_curve(
-        self,
-        plot: pg.PlotItem,
-        X: np.ndarray,
-        Y: np.ndarray,
-        color: tuple,
-        name: str,
-    ):
-        """
-        Отрисовка эталонной/reference кривой.
-        """
-
-        X, Y, _, _ = downsample_for_plot(
-            X,
-            Y,
-            log_space=True,
-        )
-
-        if len(X) == 0:
-            return
-
-        plot.plot(
-            X,
-            Y,
-            pen=pg.mkPen(
-                color=color,
-                width=2,
-                style=Qt.PenStyle.DashLine,
-            ),
-            name=name,
-        )
-    
     
     # АВТОСПЛИТТЕР
     def _draw_autosplit_line(self):
