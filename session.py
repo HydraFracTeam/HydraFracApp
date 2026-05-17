@@ -932,6 +932,7 @@ class SessionWidget(QWidget):
                 plot=plot,
                 X=self.app_state.dimensionless.X,
                 Y=self.app_state.dimensionless.Y,
+                color=(255, 255, 255),
                 runtime_settings=self.app_state.runtime_settings,
             )
 

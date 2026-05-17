@@ -4,10 +4,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QLabel
 )
- 
 from PySide6.QtCore import Qt
 import pyqtgraph as pg
 
+from ui import plot_xy
 from solver.solver_wrapper import SolverResult
 from core.app_state import AppState
 
@@ -90,17 +90,15 @@ class SolutionView(QWidget):
             log_space=True
         )
 
-        self.plot.plot(
-            x,
-            y,
+        plot_xy(
+            plot=self.plot,
+            X=x,
+            Y=y,
+            color=(255,255,255),
+            width=2,
             name="Фактическая кривая",
-            pen=pg.mkPen(
-                color=(30,30,30),
-                width=2
-            ),
-            symbol='o',
-            symbolSize=4,
-            symbolBrush=(30,30,30)
+            runtime_settings=self.app_state.runtime_settings,
+            symbol_size=5,
         )
 
         ref = self.solution.reference_curves
@@ -120,15 +118,16 @@ class SolutionView(QWidget):
                 log_space=True
             )
 
-            self.plot.plot(
-                xr,
-                yr,
+            plot_xy(
+                plot=self.plot,
+                X=xr,
+                Y=yr,
+                color=(220,50,47),
+                width=3,
+                style=Qt.DashLine,
                 name="Эталонная кривая",
-                pen=pg.mkPen(
-                    color=(220,50,47),
-                    width=3,
-                    style=Qt.DashLine
-                )
+                runtime_settings=self.app_state.runtime_settings,
+                symbol_size=3,
             )
 
 
@@ -164,12 +163,13 @@ class SolutionView(QWidget):
                     (120,120,120)
                 )
 
-                self.plot.plot(
-                    xn,
-                    yn,
+                plot_xy(
+                    plot=self.plot,
+                    X=xn,
+                    Y=yn,
+                    color=c,
+                    width=1.5,
                     name=f"Сосед: Skin {n.skin_offset:+d}",
-                    pen=pg.mkPen(
-                        color=c,
-                        width=1.5
-                    )
+                    runtime_settings=self.app_state.runtime_settings,
+                    symbol_size=2,
                 )

@@ -4,6 +4,7 @@ import numpy as np
 from typing import Optional, List
 
 from schemas.static_params import StaticParams
+from config import settings
 
 
 @dataclass
@@ -98,5 +99,5 @@ class ReferenceCurves:
 
 @dataclass
 class RuntimeSettings:
-    downsample_threshold: int = 5000
-    downsample_points_per_decade: int = 100
+    downsample_threshold: int = settings.DOWNSAMPLE_THRESHOLD
+    downsample_points_per_decade: int = settings.DOWNSAMPLE_POINTS_PER_DECADE
