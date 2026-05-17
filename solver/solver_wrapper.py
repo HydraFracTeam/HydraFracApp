@@ -4,6 +4,11 @@ from typing import Tuple, List, Optional
 import logging
 
 from .solver_new import ReservoirSolver
+from .vectorized_solver import (
+    VectorizedReservoirSolver,
+    build_vectorized_library,
+    VectorizedLibrary,
+)
 from core.reference_repo import ReferenceRepository
 from core.models import ReferenceCurves
 
@@ -44,29 +49,41 @@ class SolverResult:
 
 class Solver:
     """
-    Обёртка над ReservoirSolver.
+    Обёртка над ReservoirSolver / VectorizedReservoirSolver.
 
-    Ступенчатый алгоритм подбора параметров трещины по совпадению
-    формы кривой dY/dX (безразмерные X-Y):
+    Поддерживает два режима работы:
+      - ``use_vectorized=False`` (по умолчанию): оригинальный последовательный ReservoirSolver
+      - ``use_vectorized=True``: векторизованный солвер с предвычисленной библиотекой
 
-      Шаг 0: фильтрация библиотеки по W + N (если задан)
-      Шаг 1: select_skin   — beam search по форме, h-взвешивание
-      Шаг 2: select_N      — если N не задан
-      Шаг 3: select_aL     — перебор a/L при зафиксированных Skin, N
-      Шаг 4: select_L      — перебор L + интерполяция между соседями
-      Шаг 5: recover_k     — аналитически из уровня Y
+    Векторизованный режим значительно ускоряет шаги 1–3 (поиск Skin, N, a/L),
+    так как невязка считается сразу для всех подходящих образцов библиотеки,
+    без Python-циклов. Шаг 4 (L) и шаг 5 (k) остаются с тем же качеством
+    что и в оригинале.
     """
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, use_vectorized: bool = False):
         self.reference_repo = ReferenceRepository(db_path)
+        self.use_vectorized = use_vectorized
         self._reservoir_solver: Optional[ReservoirSolver] = None
+        self._vectorized_lib: Optional[VectorizedLibrary] = None
+        self._vectorized_solver: Optional[VectorizedReservoirSolver] = None
 
     def _ensure_library_loaded(self):
-        if self._reservoir_solver is None:
-            skin_library = self.reference_repo.get_skin_library()
-            if not skin_library:
-                raise ValueError("Библиотека референсных кривых пуста")
-            self._reservoir_solver = ReservoirSolver(skin_library)
+        if self.use_vectorized:
+            if self._vectorized_lib is None:
+                skin_library = self.reference_repo.get_skin_library()
+                if not skin_library:
+                    raise ValueError("Библиотека референсных кривых пуста")
+                logger.info("Сборка векторизованной библиотеки…")
+                self._vectorized_lib = build_vectorized_library(skin_library)
+                self._vectorized_solver = VectorizedReservoirSolver(self._vectorized_lib)
+                logger.info("Векторизованная библиотека готова.")
+        else:
+            if self._reservoir_solver is None:
+                skin_library = self.reference_repo.get_skin_library()
+                if not skin_library:
+                    raise ValueError("Библиотека референсных кривых пуста")
+                self._reservoir_solver = ReservoirSolver(skin_library)
 
     def solve_from_dimensionless(
         self,
@@ -86,37 +103,63 @@ class Solver:
         найденной кривой библиотеки — так же как Skin подбирается
         по форме, так и остальные из совпадения.
 
-        k пока не восстанавливается (result.k_opt = None).
+        k не восстанавливается автоматически; используется значение по умолчанию
+        или задаётся явно. Для восстановления k используйте recover_k_step.
+
+        Args:
+            x_fact: массив безразмерных X (фактические)
+            y_fact: массив безразмерных Y (фактические)
+            W_fixed: фиксированная ширина трещины (м) или 0/None для любого W
+            k_bounds: (min, max) границы проницаемости, мД
+            L_bounds: (min, max) границы полудлины трещины, м
+            N_fixed: фиксированное количество трещин или None для автоматического подбора
+            h_known: известная толщина пласта (м) для взвешивания по h или None
+            beam_width: ширина beam-search (количество топ-кандидатов на каждом шаге)
         """
         self._ensure_library_loaded()
+
+        x_fact = np.asarray(x_fact, dtype=float)
+        y_fact = np.asarray(y_fact, dtype=float)
 
         logger.info(f"solve_from_dimensionless: {len(x_fact)} точек, "
                     f"W={W_fixed}, N={N_fixed}, h={h_known}")
         logger.info(f"  X=[{np.min(x_fact):.4f}, {np.max(x_fact):.4f}], "
                     f"Y=[{np.min(y_fact):.4f}, {np.max(y_fact):.4f}]")
 
-        # Сброс кэша перед новым решением
-        self._reservoir_solver._x_grid = None
-        self._reservoir_solver._y_fact = None
-        self._reservoir_solver._x_fact_raw = None
-        self._reservoir_solver._y_fact_raw = None
-        self._reservoir_solver._alpha_fact = None  # сброс предпосчитанной производной
+        if self.use_vectorized:
+            result = self._vectorized_solver.solve(
+                x_fact=x_fact,
+                y_fact=y_fact,
+                W_fixed=W_fixed,
+                N_fixed=N_fixed,
+                h_known=h_known,
+                k_bounds=k_bounds,
+                xf_bounds=L_bounds,
+                beam=beam_width,
+            )
+        else:
+            # Сброс кэша перед новым решением
+            self._reservoir_solver._x_grid = None
+            self._reservoir_solver._y_fact = None
+            self._reservoir_solver._x_fact_raw = None
+            self._reservoir_solver._y_fact_raw = None
+            self._reservoir_solver._alpha_fact = None
 
-        result = self._reservoir_solver.solve(
-            x_fact=np.asarray(x_fact, dtype=float),
-            y_fact=np.asarray(y_fact, dtype=float),
-            W_fixed=W_fixed,
-            N_fixed=N_fixed,
-            h_known=h_known,
-            k_bounds=k_bounds,
-            xf_bounds=L_bounds,
-            beam=beam_width,
-        )
+            result = self._reservoir_solver.solve(
+                x_fact=x_fact,
+                y_fact=y_fact,
+                W_fixed=W_fixed,
+                N_fixed=N_fixed,
+                h_known=h_known,
+                k_bounds=k_bounds,
+                xf_bounds=L_bounds,
+                beam=beam_width,
+            )
 
         # L из найденной кривой библиотеки, clipped по bounds
         L_opt = float(np.clip(result["L"], L_bounds[0], L_bounds[1]))
 
-        # k пока не восстанавливается — используем значение по умолчанию 5.0
+        # k получается из recover_k на шаге 5, но пока используем значение по умолчанию
         k_raw = result["params"].get("k")
         if k_raw is not None:
             k_opt = float(np.clip(k_raw, k_bounds[0], k_bounds[1]))
@@ -140,7 +183,7 @@ class Solver:
             error_value=float(error_val),
             W_scale_factor=1.0,
         )
-    
+
     def solve_top5(
         self,
         x_fact,
@@ -149,26 +192,38 @@ class Solver:
         k_bounds,
         L_bounds,
         N_fixed,
-        h_known
+        h_known,
     ) -> List[SolverResult]:
-
+        """
+        Возвращает top-5 решений (использует тот же солвер что и solve_from_dimensionless).
+        """
         self._ensure_library_loaded()
 
-        raw = self._reservoir_solver.solve_top_candidates(
-            x_fact=x_fact,
-            y_fact=y_fact,
-            W_fixed=W_fixed,
-            k_bounds=k_bounds,
-            xf_bounds=L_bounds,
-            N_fixed=N_fixed,
-            h_known=h_known,
-            beam=5
-        )
+        if self.use_vectorized:
+            raw = self._vectorized_solver.solve_top_candidates(
+                x_fact=x_fact,
+                y_fact=y_fact,
+                W_fixed=W_fixed,
+                k_bounds=k_bounds,
+                xf_bounds=L_bounds,
+                N_fixed=N_fixed,
+                h_known=h_known,
+                beam=5,
+            )
+        else:
+            raw = self._reservoir_solver.solve_top_candidates(
+                x_fact=x_fact,
+                y_fact=y_fact,
+                W_fixed=W_fixed,
+                k_bounds=k_bounds,
+                xf_bounds=L_bounds,
+                N_fixed=N_fixed,
+                h_known=h_known,
+                beam=5,
+            )
 
-        out=[]
-
+        out = []
         for r in raw:
-
             out.append(
                 SolverResult(
                     S_opt=r["skin"],
@@ -176,8 +231,16 @@ class Solver:
                     L_opt=r["L"],
                     aL_opt=r["aL"],
                     N_opt=r["N"],
-                    error_value=r["misfit"]
+                    error_value=r["misfit"],
                 )
             )
-
         return out
+
+    def set_vectorized(self, enabled: bool):
+        """Переключает режим векторизованного солвера."""
+        self.use_vectorized = enabled
+        # Сброс кэша при переключении
+        self._reservoir_solver = None
+        self._vectorized_lib = None
+        self._vectorized_solver = None
+        logger.info(f"Режим солвера: {'векторизованный' if enabled else 'последовательный'}")

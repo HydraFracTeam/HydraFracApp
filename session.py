@@ -578,11 +578,11 @@ class SessionWidget(QWidget):
                 "Ошибка расчёта",
                 f"Ошибка при оптимизации параметров:\n{str(e)}"
             )
-            self.report.error(f"Ошибка солвера: {e}", exc_info=True)
+            self.report.error(f"Ошибка солвера: {e}")
             
     def _on_solver_error(self, msg):
         QMessageBox.critical(self, "Ошибка расчёта", msg)
-        self.report.error(f"Ошибка солвера: {msg}", exc_info=True)
+        self.report.error(f"Ошибка солвера: {msg}")
     
     def _on_solver_done(self, results):
         self.ui.calculate_opt_parameters_button.setEnabled(True)

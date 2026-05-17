@@ -1,0 +1,209 @@
+
+> 22:26:54 [INFO] __main__: Files: ['case_9507_S5.0_N13.0_L32.0.csv', 'scada_noisy.csv', 'test_cases_1.csv', 'test_export.csv', 'test_file.csv', 'user_input.csv', 'user_input_empty.csv', 'user_input_n
+o_debit.csv', 'user_input_with_noise.csv', 'well_data_0.1.csv', 'well_data_test_min.csv', 'well_data_test_nan.csv']
+  22:26:54 [INFO] __main__: 
+  ======================================================================
+> 22:26:54 [INFO] __main__: TEST: case_9507_S5.0_N13.0_L32.0.csv
+  22:26:54 [INFO] __main__: ======================================================================
+  22:26:54 [INFO] __main__: Loaded 176 rows, columns: ['t', 'P', 'Skin', 'h', 'N', 'W', 'L', 'a/L']
+  22:26:54 [INFO] __main__: Ground truth: Skin=5.0, h=10.0, N=13.0, W=3072.0, L=32.0, a/L=8.0
+  22:26:54 [INFO] __main__: Dimensionless: 175 points, X=[0.5515, 0.77], Y=[0.06527, 2.338e+04]
+  22:26:54 [INFO] core.reference_repo: Loaded 12415 static records
+  22:26:59 [INFO] core.reference_repo: Built skin library with 20 skin values
+  22:27:00 [INFO] solver.solver_new: ¦õôøðýð ÿõ¨òv¿ X ñøñûøþªõúø: 1.0000
+  22:27:00 [INFO] solver.solver_wrapper: solve_from_dimensionless: 175 ªþ¢õú, W=3072.0, N=13, h=10.0
+  22:27:00 [INFO] solver.solver_wrapper:   X=[0.5515, 0.7700], Y=[0.0653, 23375.5509]
+  22:27:00 [INFO] solver.solver_new: ============================================================
+  22:27:00 [INFO] solver.solver_new: =L+LT+ +¦TL¦L¦LãLL
+  22:27:00 [INFO] solver.solver_new:   W=3072.0, N=13, h=10.0
+  22:27:00 [INFO] solver.solver_new: ¦¨þø÷òþôýð  ¯ðúªð ÿ¨õôÿþ¸¢øªðýð: 200 ªþ¢õú
+  22:27:00 [INFO] solver.solver_new: ¦þôóþªþòúð: 175 \u2192 200 ªþ¢õú, X=[0.5515, 0.7700], Y=[6.5270e-02, 2.3376e+04]
+  22:27:00 [INFO] solver.solver_new: Løû¹ª¨ð¡ø  W=3072.0, N=13: 180 þñ¨ð÷¡þò
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 1: Skin ---
+  22:27:00 [INFO] solver.solver_new: +ðó 1 × Skin. ¦¨þòõ¨õýþ: 20 ÷ýð¢õýøù (TT+ ú¨øòvõ)
+  22:27:00 [INFO] solver.solver_new:   Skin=0.000 \u2192 misfit=10.000762, scale_x=0.0391, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.050 \u2192 misfit=9.502183, scale_x=0.0540, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.100 \u2192 misfit=8.819148, scale_x=0.0689, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.150 \u2192 misfit=7.670414, scale_x=0.0838, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.200 \u2192 misfit=6.255896, scale_x=0.0987, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.250 \u2192 misfit=4.457105, scale_x=0.1137, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.300 \u2192 misfit=1.849311, scale_x=0.1286, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.350 \u2192 misfit=1.134207, scale_x=0.1317, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.400 \u2192 misfit=0.678764, scale_x=0.1311, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.450 \u2192 misfit=1.585563, scale_x=0.1434, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.500 \u2192 misfit=2.985036, scale_x=0.1583, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=1.000 \u2192 misfit=2.760199, scale_x=0.3087, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=1.500 \u2192 misfit=2.851942, scale_x=0.4863, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=2.000 \u2192 misfit=3.166738, scale_x=0.6354, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=2.500 \u2192 misfit=3.325338, scale_x=0.7845, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=3.000 \u2192 misfit=3.014400, scale_x=0.9336, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=3.500 \u2192 misfit=2.478319, scale_x=1.0826, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=4.000 \u2192 misfit=1.585522, scale_x=1.2317, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=4.500 \u2192 misfit=0.466433, scale_x=1.3808, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=5.000 \u2192 misfit=0.000000, scale_x=1.5000, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new: Tþÿ-5 ôû  ôðû¹ýõù°õóþ þªñþ¨ð: [5.0, 4.5, 0.4, 0.35, 4.0]
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 2: N ÷ð¯øú¸ø¨þòðý=13 ---
+  22:27:00 [INFO] solver.solver_new:   \u2192 Skin=5.000, N=13
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 3: a/L ---
+  22:27:00 [INFO] solver.solver_new: +ðó 3 × a/L ÿ¨ø Skin=5.000, N=13. ¦¨þòõ¨õýþ: 9 ÷ýð¢õýøù
+  22:27:00 [INFO] solver.solver_new:   a/L=8.0000 \u2192 misfit=0.000000
+  22:27:00 [INFO] solver.solver_new:   a/L=9.1429 \u2192 misfit=0.078191
+  22:27:00 [INFO] solver.solver_new:   a/L=10.6667 \u2192 misfit=0.186161
+  22:27:00 [INFO] solver.solver_new:   a/L=12.8000 \u2192 misfit=0.287284
+  22:27:00 [INFO] solver.solver_new:   a/L=16.0000 \u2192 misfit=0.398197
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 4: L ---
+  22:27:00 [INFO] solver.solver_new: +ðó 4 × L. ¦¨þòõ¨õýþ: 5 ÷ýð¢õýøù
+  22:27:00 [INFO] solver.solver_new:   L=32.00 \u2192 misfit=0.000000
+  22:27:00 [INFO] solver.solver_new:   L=28.00 \u2192 misfit=0.078191
+  22:27:00 [INFO] solver.solver_new:   L=24.00 \u2192 misfit=0.186161
+  22:27:00 [INFO] solver.solver_new:   L=20.00 \u2192 misfit=0.287284
+  22:27:00 [INFO] solver.solver_new:   L=16.00 \u2192 misfit=0.398197
+  E:\prog\T¦¦\new_gui\HydraFracApp\solver\solver_new.py:440: RuntimeWarning: divide by zero encountered in log10
+    np.log10(max(x1.min(), x2.min())),
+  D:\Python\Lib\site-packages\numpy\core\function_base.py:158: RuntimeWarning: invalid value encountered in multiply
+    y *= step
+  D:\Python\Lib\site-packages\numpy\core\function_base.py:168: RuntimeWarning: invalid value encountered in add
+    y += start
+  22:27:00 [INFO] solver.solver_new:   Lýªõ¨ÿþû ¡ø  L=32.0+28.0, alpha=0.50 \u2192 L=30.00, F=inf
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 5: k ---
+  22:27:00 [INFO] solver.solver_new: +ðó 5 × k: median(X_fact)=0.6755, median(X_ref)=1.0133, k_ref=5.0 \u2192 k_real=3.333337 ü-
+  22:27:00 [INFO] solver.solver_new: 
+  ============================================================
+  22:27:00 [INFO] solver.solver_new: ¦+¦LT-TLT (ÿð¨ðüõª¨v ýðùôõýýþù ú¨øòþù):
+  22:27:00 [INFO] solver.solver_new:   Skin (S)   = 5.0000
+  22:27:00 [INFO] solver.solver_new:   N (¢ø¸ûþ ª¨õ•øý) = 13
+  22:27:00 [INFO] solver.solver_new:   L (ÿþûºôûøýð) = 32.0000 ü
+  22:27:00 [INFO] solver.solver_new:   a/L         = 8.0000
+  22:27:00 [INFO] solver.solver_new:   k           = 3.333337 ü-
+  22:27:00 [INFO] solver.solver_new:   h (ªþû•øýð ÿûð¸ªð) = 10.0000 ü
+  22:27:00 [INFO] solver.solver_new:   W (°ø¨øýð ª¨õ•øýv) = 3072.0000 ü
+  22:27:00 [INFO] solver.solver_new:   Misfit     = 0.000000
+  22:27:00 [INFO] solver.solver_new: ============================================================
+  22:27:00 [INFO] solver.solver_wrapper: ¦õ÷ºû¹ªðª: S=5.0000, k=3.3333366666666664, L=32.0000, a/L=8.0000, N=13, error=0.000000
+  22:27:00 [INFO] __main__: Solver: S=5.0000, k=3.333337, L=32.0000, a/L=8.0000, N=13.0, misfit=0.000000
+  22:27:00 [DEBUG] __main__: Y_adjusted median=9122, Y_ref median=0.1594
+  22:27:00 [INFO] __main__: Curve metrics (Y scaled to L_est): R2=-0.6517, RMSE=18932.864174, MAPE=5529500.00%, integral=4283.015503
+  22:27:00 [INFO] __main__: 
+  ======================================================================
+  22:27:00 [INFO] __main__: TEST: scada_noisy.csv
+  22:27:00 [INFO] __main__: ======================================================================
+  22:27:00 [INFO] __main__: Loaded 176 rows, columns: ['Skin', 'h', 'N', 'W', 'L', 'a/L', 'ElemIdx', 'X', 'Y', 't', 'P', 'dP', 'Q']
+  22:27:00 [INFO] __main__: Ground truth: Skin=0.05, h=10.0, N=10.0, W=1350.0, L=240.0, a/L=0.625
+  22:27:00 [INFO] __main__: Dimensionless: 175 points, X=[0.04138, 4.13], Y=[0.2085, 4425]
+  22:27:00 [INFO] core.reference_repo: Using cached skin library
+  22:27:00 [INFO] solver.solver_new: ¦õôøðýð ÿõ¨òv¿ X ñøñûøþªõúø: 1.0000
+  22:27:00 [INFO] solver.solver_wrapper: solve_from_dimensionless: 175 ªþ¢õú, W=1350.0, N=10, h=10.0
+  22:27:00 [INFO] solver.solver_wrapper:   X=[0.0414, 4.1296], Y=[0.2085, 4424.5147]
+  22:27:00 [INFO] solver.solver_new: ============================================================
+  22:27:00 [INFO] solver.solver_new: =L+LT+ +¦TL¦L¦LãLL
+  22:27:00 [INFO] solver.solver_new:   W=1350.0, N=10, h=10.0
+  22:27:00 [INFO] solver.solver_new: ¦¨þø÷òþôýð  ¯ðúªð ÿ¨õôÿþ¸¢øªðýð: 200 ªþ¢õú
+  22:27:00 [INFO] solver.solver_new: ¦þôóþªþòúð: 175 \u2192 200 ªþ¢õú, X=[0.0414, 4.1296], Y=[1.0828e+00, 4.3587e+03]
+  22:27:00 [INFO] solver.solver_new: Løû¹ª¨ð¡ø  W=1350.0, N=10: 15 þñ¨ð÷¡þò
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 1: Skin ---
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.53% ôû  3.0/10.0: x_al=[0.1185, 11.8244], x_ref=[0.4943, 0.9074]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.65% ôû  4.0/10.0: x_al=[0.1579, 15.7578], x_ref=[0.6588, 1.0721]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.12% ôû  5.0/10.0: x_al=[0.1973, 19.6913], x_ref=[0.8232, 1.2368]
+  22:27:00 [INFO] solver.solver_new: +ðó 1 × Skin. ¦¨þòõ¨õýþ: 15 ÷ýð¢õýøù (TT+ ú¨øòvõ)
+  22:27:00 [INFO] solver.solver_new:   Skin=0.000 \u2192 misfit=52.152859, scale_x=0.0058, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.050 \u2192 misfit=41.791991, scale_x=0.0534, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.150 \u2192 misfit=124.307782, scale_x=0.1487, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.200 \u2192 misfit=200.239983, scale_x=0.1963, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.250 \u2192 misfit=303.265527, scale_x=0.2439, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.300 \u2192 misfit=393.803609, scale_x=0.2916, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.350 \u2192 misfit=595.298682, scale_x=0.3392, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.400 \u2192 misfit=789.179323, scale_x=0.3868, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.450 \u2192 misfit=1099.478544, scale_x=0.4344, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=0.500 \u2192 misfit=1558.661557, scale_x=0.4821, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=1.000 \u2192 misfit=1495273.046439, scale_x=0.9583, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=2.000 \u2192 misfit=3007008.017823, scale_x=1.9108, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=3.000 \u2192 misfit=4104904.061451, scale_x=2.8633, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=4.000 \u2192 misfit=4916904.404442, scale_x=3.8159, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new:   Skin=5.000 \u2192 misfit=5543528.210018, scale_x=4.7684, scale_y=1.0000
+  22:27:00 [INFO] solver.solver_new: Tþÿ-5 ôû  ôðû¹ýõù°õóþ þªñþ¨ð: [0.05, 0.0, 0.15, 0.2, 0.25]
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 2: N ÷ð¯øú¸ø¨þòðý=10 ---
+  22:27:00 [INFO] solver.solver_new:   \u2192 Skin=0.050, N=10
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 3: a/L ---
+  22:27:00 [INFO] solver.solver_new: +ðó 3 × a/L ÿ¨ø Skin=0.050, N=10. ¦¨þòõ¨õýþ: 1 ÷ýð¢õýøù
+  22:27:00 [INFO] solver.solver_new:   a/L=0.6250 \u2192 misfit=41.791991
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 4: L ---
+  22:27:00 [INFO] solver.solver_new: +ðó 4 × L. ¦¨þòõ¨õýþ: 1 ÷ýð¢õýøù
+  22:27:00 [INFO] solver.solver_new:   L=240.00 \u2192 misfit=41.791991
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 5: k ---
+  22:27:00 [INFO] solver.solver_new: +ðó 5 × k: median(X_fact)=2.5412, median(X_ref)=0.2571, k_ref=5.0 \u2192 k_real=10.000000 ü-
+  22:27:00 [INFO] solver.solver_new: 
+  ============================================================
+  22:27:00 [INFO] solver.solver_new: ¦+¦LT-TLT (ÿð¨ðüõª¨v ýðùôõýýþù ú¨øòþù):
+  22:27:00 [INFO] solver.solver_new:   Skin (S)   = 0.0500
+  22:27:00 [INFO] solver.solver_new:   N (¢ø¸ûþ ª¨õ•øý) = 10
+  22:27:00 [INFO] solver.solver_new:   L (ÿþûºôûøýð) = 240.0000 ü
+  22:27:00 [INFO] solver.solver_new:   a/L         = 0.6250
+  22:27:00 [INFO] solver.solver_new:   k           = 10.000000 ü-
+  22:27:00 [INFO] solver.solver_new:   h (ªþû•øýð ÿûð¸ªð) = 10.0000 ü
+  22:27:00 [INFO] solver.solver_new:   W (°ø¨øýð ª¨õ•øýv) = 1350.0000 ü
+  22:27:00 [INFO] solver.solver_new:   Misfit     = 41.791991
+  22:27:00 [INFO] solver.solver_new: ============================================================
+  22:27:00 [INFO] solver.solver_wrapper: ¦õ÷ºû¹ªðª: S=0.0500, k=10.0, L=100.0000, a/L=0.6250, N=10, error=41.791991
+  22:27:00 [INFO] __main__: Solver: S=0.0500, k=10.000000, L=100.0000, a/L=0.6250, N=10.0, misfit=41.791991
+  22:27:00 [DEBUG] __main__: Y_adjusted median=248.3, Y_ref median=3.28
+  22:27:00 [INFO] __main__: Curve metrics (Y scaled to L_est): R2=-0.2342, RMSE=211.627484, MAPE=120377.46%, integral=61.648979
+  22:27:00 [INFO] __main__: 
+  ======================================================================
+  22:27:00 [INFO] __main__: TEST: test_cases_1.csv
+  22:27:00 [INFO] __main__: ======================================================================
+  22:27:00 [INFO] __main__: Loaded 390 rows, columns: ['t', 'P']
+  22:27:00 [INFO] __main__: Ground truth: None (partial test)
+  22:27:00 [INFO] __main__: Dimensionless: 389 points, X=[0.001044, 0.3204], Y=[3.447, 9.376e+05]
+  22:27:00 [INFO] core.reference_repo: Using cached skin library
+  22:27:00 [INFO] solver.solver_new: ¦õôøðýð ÿõ¨òv¿ X ñøñûøþªõúø: 1.0000
+  22:27:00 [INFO] solver.solver_wrapper: solve_from_dimensionless: 389 ªþ¢õú, W=2304.0, N=10, h=10.0
+  22:27:00 [INFO] solver.solver_wrapper:   X=[0.0010, 0.3204], Y=[3.4468, 937596.2162]
+  22:27:00 [INFO] solver.solver_new: ============================================================
+  22:27:00 [INFO] solver.solver_new: =L+LT+ +¦TL¦L¦LãLL
+  22:27:00 [INFO] solver.solver_new:   W=2304.0, N=10, h=10.0
+  22:27:00 [INFO] solver.solver_new: ¦¨þø÷òþôýð  ¯ðúªð ÿ¨õôÿþ¸¢øªðýð: 200 ªþ¢õú
+  22:27:00 [INFO] solver.solver_new: ¦þôóþªþòúð: 389 \u2192 200 ªþ¢õú, X=[0.0010, 0.3204], Y=[3.4468e+00, 9.0447e+05]
+  22:27:00 [INFO] solver.solver_new: Løû¹ª¨ð¡ø  W=2304.0, N=10: 180 þñ¨ð÷¡þò
+  22:27:00 [INFO] solver.solver_new: 
+  --- +ðó 1: Skin ---
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.37% ôû  0.05/10.0: x_al=[0.0363, 11.1260], x_ref=[0.0363, 0.4105]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 4.36% ôû  0.05/10.0: x_al=[0.0278, 8.5299], x_ref=[0.0278, 0.3989]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 4.36% ôû  0.0/10.0: x_al=[0.0280, 8.6037], x_ref=[0.0280, 0.4019]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.52% ôû  0.15/10.0: x_al=[0.0347, 10.6362], x_ref=[0.0347, 0.4078]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.66% ôû  0.15/10.0: x_al=[0.0332, 10.1751], x_ref=[0.0332, 0.4048]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.75% ôû  0.15/10.0: x_al=[0.0322, 9.8908], x_ref=[0.0322, 0.4020]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.85% ôû  0.15/10.0: x_al=[0.0313, 9.6020], x_ref=[0.0313, 0.3999]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.33% ôû  0.15/10.0: x_al=[0.0527, 16.1706], x_ref=[0.0527, 0.4275]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.75% ôû  0.15/10.0: x_al=[0.0442, 13.5744], x_ref=[0.0442, 0.4161]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.15% ôû  0.15/10.0: x_al=[0.0392, 12.0327], x_ref=[0.0392, 0.4169]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.25% ôû  0.15/10.0: x_al=[0.0378, 11.6051], x_ref=[0.0378, 0.4139]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.34% ôû  0.15/10.0: x_al=[0.0367, 11.2688], x_ref=[0.0367, 0.4119]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 4.61% ôû  0.1/10.0: x_al=[0.0264, 8.1139], x_ref=[0.0264, 0.3991]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 4.87% ôû  0.1/10.0: x_al=[0.0249, 7.6528], x_ref=[0.0249, 0.3961]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.75% ôû  0.1/10.0: x_al=[0.0445, 13.6483], x_ref=[0.0445, 0.4190]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.37% ôû  0.1/10.0: x_al=[0.0360, 11.0521], x_ref=[0.0360, 0.4075]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 3.98% ôû  0.1/10.0: x_al=[0.0310, 9.5103], x_ref=[0.0310, 0.4083]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 4.15% ôû  0.1/10.0: x_al=[0.0296, 9.0829], x_ref=[0.0296, 0.4053]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 4.30% ôû  0.1/10.0: x_al=[0.0285, 8.7464], x_ref=[0.0285, 0.4032]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.39% ôû  0.25/10.0: x_al=[0.0511, 15.6807], x_ref=[0.0511, 0.4250]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.45% ôû  0.25/10.0: x_al=[0.0496, 15.2196], x_ref=[0.0496, 0.4220]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.49% ôû  0.25/10.0: x_al=[0.0487, 14.9354], x_ref=[0.0487, 0.4192]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.53% ôû  0.25/10.0: x_al=[0.0477, 14.6467], x_ref=[0.0477, 0.4171]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 1.77% ôû  0.25/10.0: x_al=[0.0692, 21.2152], x_ref=[0.0692, 0.4445]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.01% ôû  0.25/10.0: x_al=[0.0607, 18.6191], x_ref=[0.0607, 0.4331]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.22% ôû  0.25/10.0: x_al=[0.0557, 17.0773], x_ref=[0.0557, 0.4339]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.27% ôû  0.25/10.0: x_al=[0.0543, 16.6494], x_ref=[0.0543, 0.4310]
+  22:27:00 [DEBUG] solver.solver_new: ¦ðûþõ ÿõ¨õú¨vªøõ 2.31% ôû  0.25/10.0: x_al=[0.0532, 16.3133], x_ref=[0.0532, 0.4290]
+
+
+
