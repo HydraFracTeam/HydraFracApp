@@ -1,3 +1,4 @@
+# ui/plot_xy.py
 import numpy as np
 import pyqtgraph as pg
 

@@ -629,6 +629,7 @@ class SessionWidget(QWidget):
         self.enable_threshold_controls()
         self.enable_calculation_controls()
         self.ui.calculate_opt_parameters_button.setEnabled(True)
+        
         if not results:
             QMessageBox.warning(
                 self,
@@ -638,7 +639,8 @@ class SessionWidget(QWidget):
             )
             return
 
-        result = results[0]
+        result: SolverResult = results[0]
+        self.report.solver(f"Результат солвера получены. \nЛучшее решение: \nSkin-фактор: {result.S_opt};\nПроницаемость k: {result.k_opt};\nПолудлина трещины: {result.L_opt}.")
         
         self.ui.skin_result_spinbox.setValue(result.S_opt)
         self.ui.permeability_result_spinbox.setValue(result.k_opt)
