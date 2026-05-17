@@ -7,11 +7,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 import pyqtgraph as pg
 
-from ui import plot_xy
 from solver.solver_wrapper import SolverResult
 from core.app_state import AppState
 
-from ui.downsampling import downsample_for_plot
+from ui import plot_reference_family
 
 class SolutionView(QWidget):
 
@@ -71,105 +70,9 @@ class SolutionView(QWidget):
 
 
     def draw(self):
-
-        self.plot.clear()
-
-        # factual curve
-
-        x = self.app_state.dimensionless.X
-        y = self.app_state.dimensionless.Y
-
-        threshold = self.app_state.runtime_settings.downsample_threshold
-        points_per_decade = self.app_state.runtime_settings.downsample_points_per_decade
-        
-        x,y,_,_ = downsample_for_plot(
-            x=x,
-            y=y,
-            threshold=threshold,
-            points_per_decade=points_per_decade,
-            log_space=True
-        )
-
-        plot_xy(
+        plot_reference_family(
             plot=self.plot,
-            X=x,
-            Y=y,
-            color=(255,255,255),
-            width=2,
-            name="Фактическая кривая",
+            factual_dimensionless=self.app_state.dimensionless,
+            reference_curves=self.solution.reference_curves,
             runtime_settings=self.app_state.runtime_settings,
-            symbol_size=5,
         )
-
-        ref = self.solution.reference_curves
-
-        # best fit
-
-        if ref and ref.main:
-
-            xr = ref.main.dimensionless.X
-            yr = ref.main.dimensionless.Y
-
-            xr,yr,_,_ = downsample_for_plot(
-                xr,
-                yr,
-                threshold=threshold,
-                points_per_decade=points_per_decade,
-                log_space=True
-            )
-
-            plot_xy(
-                plot=self.plot,
-                X=xr,
-                Y=yr,
-                color=(220,50,47),
-                width=3,
-                style=Qt.DashLine,
-                name="Эталонная кривая",
-                runtime_settings=self.app_state.runtime_settings,
-                symbol_size=3,
-            )
-
-
-        # ----------------------
-        # neighbours
-        # ----------------------
-
-        colors = {
-            -2: (38,139,210),
-            -1: (133,153,0),
-            1: (181,137,0),
-            2: (108,113,196)
-        }
-
-
-        if ref and ref.neighbours:
-
-            for n in ref.neighbours:
-
-                xn = n.dimensionless.X
-                yn = n.dimensionless.Y
-
-                xn,yn,_,_ = downsample_for_plot(
-                    xn,
-                    yn,
-                    threshold=threshold,
-                    points_per_decade=points_per_decade,
-                    log_space=True
-                )
-
-                c = colors.get(
-                    n.skin_offset,
-                    (120,120,120)
-                )
-
-                plot_xy(
-                    plot=self.plot,
-                    X=xn,
-                    Y=yn,
-                    color=c,
-                    width=1.5,
-                    name=f"Сосед: Skin {n.skin_offset:+d}",
-                    runtime_settings=self.app_state.runtime_settings,
-                    symbol_size=2,
-                )

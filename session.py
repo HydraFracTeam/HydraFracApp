@@ -26,12 +26,12 @@ from ui import (
     setup_dock_area, 
     plot_pressure, 
     plot_debit,
-    plot_xy,
     plot_burde,
     clear_plot,
     plot_autosplit_line,
     PasteDataDialog,
     fill_state_to_ui,
+    plot_reference_family,
     )
 from ui.table_data_builder import (
     build_dimensional_dataframe,
@@ -922,62 +922,12 @@ class SessionWidget(QWidget):
 
     def update_xy_plot(self):
         """Перерисовка XY-дока: факт + опционально эталон + соседи."""
-        plot: pg.PlotItem = self.ui.plot_xy
-        plot.clear()
-        plot.setLogMode(True, True)
-
-        # Фактические данные — всегда
-        if self.app_state.dimensionless:
-            plot_xy(
-                plot=plot,
-                X=self.app_state.dimensionless.X,
-                Y=self.app_state.dimensionless.Y,
-                color=(255, 255, 255),
-                runtime_settings=self.app_state.runtime_settings,
-            )
-
-        # Эталонная кривая
-        ref_curves = self.app_state.reference_curves
-        if ref_curves and ref_curves.main:
-            main = ref_curves.main
-            skin_val = main.static_params.Skin or 0
-            plot_xy(
-                plot=plot,
-                X=main.dimensionless.X,
-                Y=main.dimensionless.Y,
-                color=(255, 0, 0),
-                style=Qt.PenStyle.DashLine,
-                name=f"Эталонная кривая (S={skin_val:.1f})",
-                runtime_settings=self.app_state.runtime_settings,
-            )
-
-        # Соседние кривые
-        if ref_curves and ref_curves.neighbours:
-            neighbor_colors = {
-                -2: (0, 114, 178),   # синий
-                -1: (118, 171, 47),  # зелёный
-                +1: (230, 159, 0),   # оранжевый
-                +2: (204, 37, 41),   # красный (но ярче)
-            }
-            for nb in ref_curves.neighbours:
-                offset = nb.skin_offset
-                color = neighbor_colors.get(offset, (128, 128, 128))
-                skin_val = offset  # для лейбла используем offset
-
-                if offset < 0:
-                    name_suffix = f"(Skin-{abs(offset)})"
-                else:
-                    name_suffix = f"(Skin+{offset})"
-
-                plot_xy(
-                    plot=plot,
-                    X=nb.dimensionless.X,
-                    Y=nb.dimensionless.Y,
-                    color=color,
-                    style=Qt.PenStyle.DashLine,
-                    name=f"Сосед {name_suffix} (S={offset:+d})",
-                    runtime_settings=self.app_state.runtime_settings,
-                )
+        plot_reference_family(
+            plot=self.ui.plot_xy,
+            factual_dimensionless=self.app_state.dimensionless,
+            reference_curves=self.app_state.reference_curves,
+            runtime_settings=self.app_state.runtime_settings,
+        )
 
     def update_burde_plot(self):
         """Перерисовка дока Бурде."""
