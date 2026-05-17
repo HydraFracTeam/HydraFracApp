@@ -24,18 +24,21 @@ from ui.ui import Ui_MainWindow
 from ui.compare_dialog import CompareDialog
 from ui import ( 
     setup_dock_area, 
-    update_data_table_view, 
-    clear_data_table,
     plot_pressure, 
     plot_debit,
     plot_xy,
     plot_burde,
     clear_plot,
     plot_autosplit_line,
-    export_processing_to_csv,
     PasteDataDialog,
     fill_state_to_ui,
     )
+from ui.table_data_builder import (
+    build_dimensional_dataframe,
+    build_dimensionless_dataframe,
+    update_data_table_view,
+    clear_data_table,
+)
 import pyqtgraph as pg
 from core.app_state import AppState
 from core.reference_repo import ReferenceRepository
@@ -44,7 +47,7 @@ from solver.solver_wrapper import SolverResult
 from solver import Solver
 from solver.solver_worker import SolverWorker
 from core.dimensionless import calculate_x, calculate_y
-from utils import format_pydantic_error
+from utils import export_dataframe_to_csv, format_pydantic_error
 
 # pydantic
 from schemas import StaticParams
@@ -64,7 +67,7 @@ from helpers import (
     calculate_k_value,
     copy_processing_data,
     )
-from utils import get_file_suffix, get_filename
+from utils import get_file_suffix, get_filename, export_dataframe_to_csv
 # загрузки данных
 from processing.loaders import csv_loader, las_loader
 from ui.report_service import ReportService
@@ -167,11 +170,8 @@ class SessionWidget(QWidget):
         self.ui.import_session_btn.clicked.connect(self.import_session)
             
     def insert_data_from_buffer(self):
-
         dialog = PasteDataDialog(self)
-
         if dialog.exec():
-
             try:
                 raw = dialog.get_data()
 
@@ -832,43 +832,65 @@ class SessionWidget(QWidget):
             return None
             
     def refresh_ui(self):
-        self.update_data_table()
+        self.update_data_tables()
         self.update_dim_plots()
     
     def reset_ui(self):
         self.reset_plots()
-        self.reset_data_table()
+        self.reset_data_tables()
 
-    def update_data_table(self):
-        update_data_table_view(
-            table_view=self.ui.data_table,
-            processing=self.app_state.processing_dynamic_data,
-            dimensionless=self.app_state.dimensionless,
-        )
-    
+    def update_data_tables(self):
+        processing = self.app_state.processing_dynamic_data
+        dimensionless = self.app_state.dimensionless
+        if processing is not None:
+            dimensional_df = build_dimensional_dataframe(processing)
+            update_data_table_view(self.ui.dim_data_table, dimensional_df)
+        else:
+            clear_data_table(self.ui.dim_data_table)
+        if dimensionless is not None:
+            dimensionless_df = build_dimensionless_dataframe(dimensionless)
+            update_data_table_view(self.ui.dimless_data_table, dimensionless_df)
+        else:
+            clear_data_table(self.ui.dimless_data_table)
+        
     def setup_data_table_elements(self):
-        self.ui.export_data_table_btn.clicked.connect(self.export_data_table)
+        self.ui.export_dim_data_table_btn.clicked.connect(self.export_dimensional_table)
+        self.ui.export_dimless_data_table_btn.clicked.connect(self.export_dimensionless_table)
     
-    def export_data_table(self):
-
+    def export_dimensional_table(self):
+        processing = self.app_state.processing_dynamic_data
+        if processing is None:
+            return
         filepath, _ = QFileDialog.getSaveFileName(
             self,
-            "Сохранить данные",
+            "Сохранить размерные данные",
             "",
             "CSV Files (*.csv)"
         )
-
         if not filepath:
             return
-
-        export_processing_to_csv(
-            filepath=filepath,
-            processing=self.app_state.processing_dynamic_data,
-            dimensionless=self.app_state.dimensionless,
+        df = build_dimensional_dataframe(processing)
+        export_dataframe_to_csv(filepath, df)
+    
+    def export_dimensionless_table(self):
+        dimensionless = self.app_state.dimensionless
+        if dimensionless is None:
+            return
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить безразмерные данные",
+            "",
+            "CSV Files (*.csv)"
         )
+        if not filepath:
+            return
+        df = build_dimensionless_dataframe(dimensionless)
+
+        export_dataframe_to_csv(filepath,df,)
         
-    def reset_data_table(self):
-        clear_data_table(self.ui.data_table)
+    def reset_data_tables(self):
+        clear_data_table(self.ui.dim_data_table)
+        clear_data_table(self.ui.dimless_data_table)
     
     def reset_plots(self):
         clear_plot(self.ui.plot_pressure)
@@ -1043,7 +1065,7 @@ class SessionWidget(QWidget):
         self.disable_threshold_controls()
         self.disable_calculation_controls()
         self.report.clear()
-        self.reset_data_table()
+        self.reset_data_tables()
         self.reset_plots()
         self.ui.load_file_label.setText("Файл не загружен")
         

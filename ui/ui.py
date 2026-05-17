@@ -34,10 +34,9 @@ class Ui_MainWindow(object):
         MainWindow.setSizePolicy(sizePolicy)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
-        self.horizontalLayout_5 = QHBoxLayout(self.centralwidget)
-        self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
         self.main_panel = QGroupBox(self.centralwidget)
         self.main_panel.setObjectName(u"main_panel")
+        self.main_panel.setGeometry(QRect(9, 9, 1775, 950))
         sizePolicy.setHeightForWidth(self.main_panel.sizePolicy().hasHeightForWidth())
         self.main_panel.setSizePolicy(sizePolicy)
         self.main_panel.setMinimumSize(QSize(1775, 950))
@@ -56,7 +55,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scroll_panel = QWidget()
         self.scroll_panel.setObjectName(u"scroll_panel")
-        self.scroll_panel.setGeometry(QRect(0, -458, 504, 1429))
+        self.scroll_panel.setGeometry(QRect(0, 0, 504, 1429))
         self.verticalLayout = QVBoxLayout(self.scroll_panel)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.groupBox_3 = QGroupBox(self.scroll_panel)
@@ -701,24 +700,46 @@ class Ui_MainWindow(object):
         self.tab_widget.addTab(self.timeseries_tab, "")
         self.data_tab = QWidget()
         self.data_tab.setObjectName(u"data_tab")
-        self.verticalLayout_8 = QVBoxLayout(self.data_tab)
+        self.horizontalLayout_5 = QHBoxLayout(self.data_tab)
+        self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
+        self.verticalLayout_8 = QVBoxLayout()
         self.verticalLayout_8.setObjectName(u"verticalLayout_8")
-        self.data_table = QTableView(self.data_tab)
-        self.data_table.setObjectName(u"data_table")
+        self.dim_data_table = QTableView(self.data_tab)
+        self.dim_data_table.setObjectName(u"dim_data_table")
 
-        self.verticalLayout_8.addWidget(self.data_table)
+        self.verticalLayout_8.addWidget(self.dim_data_table)
 
-        self.export_data_table_btn = QPushButton(self.data_tab)
-        self.export_data_table_btn.setObjectName(u"export_data_table_btn")
+        self.export_dim_data_table_btn = QPushButton(self.data_tab)
+        self.export_dim_data_table_btn.setObjectName(u"export_dim_data_table_btn")
 
-        self.verticalLayout_8.addWidget(self.export_data_table_btn)
+        self.verticalLayout_8.addWidget(self.export_dim_data_table_btn)
+
+
+        self.horizontalLayout_5.addLayout(self.verticalLayout_8)
+
+        self.verticalLayout_9 = QVBoxLayout()
+        self.verticalLayout_9.setObjectName(u"verticalLayout_9")
+        self.dimless_data_table = QTableView(self.data_tab)
+        self.dimless_data_table.setObjectName(u"dimless_data_table")
+        sizePolicy7 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        sizePolicy7.setHorizontalStretch(0)
+        sizePolicy7.setVerticalStretch(0)
+        sizePolicy7.setHeightForWidth(self.dimless_data_table.sizePolicy().hasHeightForWidth())
+        self.dimless_data_table.setSizePolicy(sizePolicy7)
+
+        self.verticalLayout_9.addWidget(self.dimless_data_table)
+
+        self.export_dimless_data_table_btn = QPushButton(self.data_tab)
+        self.export_dimless_data_table_btn.setObjectName(u"export_dimless_data_table_btn")
+
+        self.verticalLayout_9.addWidget(self.export_dimless_data_table_btn)
+
+
+        self.horizontalLayout_5.addLayout(self.verticalLayout_9)
 
         self.tab_widget.addTab(self.data_tab, "")
 
         self.horizontalLayout_4.addWidget(self.tab_widget)
-
-
-        self.horizontalLayout_5.addWidget(self.main_panel)
 
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
@@ -728,7 +749,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.tab_widget.setCurrentIndex(0)
+        self.tab_widget.setCurrentIndex(1)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -788,7 +809,8 @@ class Ui_MainWindow(object):
         self.cb_burde_curve_dock.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u043d\u0430\u044f \u0411\u0443\u0440\u0434\u0435 (dP/dt)", None))
         self.cb_calc_XY_dock.setText(QCoreApplication.translate("MainWindow", u"\u0411\u0435\u0437\u0440\u0430\u0437\u043c\u0435\u0440\u043d\u044b\u0435 X-Y", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.timeseries_tab), QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
-        self.export_data_table_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", None))
+        self.export_dim_data_table_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0440\u0430\u0437\u043c\u0435\u0440\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435", None))
+        self.export_dimless_data_table_btn.setText(QCoreApplication.translate("MainWindow", u"\u042d\u043a\u0441\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0431\u0435\u0437\u0440\u0430\u0437\u043c\u0435\u0440\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435", None))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.data_tab), QCoreApplication.translate("MainWindow", u"\u0422\u0430\u0431\u043b\u0438\u0447\u043d\u043e\u0435 \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435", None))
     # retranslateUi
 
