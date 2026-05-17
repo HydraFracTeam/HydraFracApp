@@ -1,3 +1,5 @@
+# ui/plot_reference_family.py
+
 from PySide6.QtCore import Qt
 
 from core.models import (
@@ -21,55 +23,78 @@ def plot_reference_family(
     - эталонной
     - соседних
 
-    Поддерживает сценарий,
-    когда reference_curves отсутствуют.
+    Reference-кривые отображаются
+    со сдвигом относительно factual,
+    чтобы стартовые точки совпадали.
     """
 
     plot.clear()
 
     # factual
 
-    if factual_dimensionless is not None:
+    if factual_dimensionless is None:
+        return
 
-        plot_xy(
-            plot=plot,
-            X=factual_dimensionless.X,
-            Y=factual_dimensionless.Y,
-            color=(255, 255, 255),
-            width=2,
-            name="Фактическая кривая",
-            runtime_settings=runtime_settings,
-            symbol_size=5,
-        )
+    xf = factual_dimensionless.X
+    yf = factual_dimensionless.Y
 
-    # references 
+    print(f"xf:{xf}")
+    plot_xy(
+        plot=plot,
+        X=xf,
+        Y=yf,
+        color=(255, 255, 255),
+        width=2,
+        name="Фактическая кривая",
+        runtime_settings=runtime_settings,
+        symbol_size=5,
+    )
+
+    # no references
 
     if reference_curves is None:
         return
 
-    if reference_curves.main is not None:
+    if reference_curves.main is None:
+        return
 
-        main = reference_curves.main
+    # shift calculation
 
-        skin_val = (
-            main.static_params.Skin
-            if main.static_params is not None
-            else 0
-        )
+    main = reference_curves.main
 
-        plot_xy(
-            plot=plot,
-            X=main.dimensionless.X,
-            Y=main.dimensionless.Y,
-            color=(220, 50, 47),
-            width=3,
-            style=Qt.PenStyle.DashLine,
-            name=f"Эталонная кривая (S={skin_val:.1f})",
-            runtime_settings=runtime_settings,
-            symbol_size=3,
-        )
+    xr0 = main.dimensionless.X[1]
+    yr0 = main.dimensionless.Y[1]
+
+    xf0 = xf[1]
+    yf0 = yf[1]
+    dx = xf0 - xr0
+    dy = yf0 - yr0
+
+    # main reference
+
+    skin_val = (
+        main.static_params.Skin
+        if main.static_params is not None
+        else 0
+    )
+
+    xr = main.dimensionless.X + dx
+    yr = main.dimensionless.Y + dy
+
+    plot_xy(
+        plot=plot,
+        X=xr,
+        Y=yr,
+        color=(220, 50, 47),
+        width=3,
+        style=Qt.PenStyle.DashLine,
+        name=f"Эталонная кривая (S={skin_val:.1f})",
+        runtime_settings=runtime_settings,
+        symbol_size=3,
+    )
 
     # neighbours
+
     if not reference_curves.neighbours:
         return
 
@@ -89,10 +114,13 @@ def plot_reference_family(
             (120, 120, 120)
         )
 
+        xn = nb.dimensionless.X + dx
+        yn = nb.dimensionless.Y + dy
+
         plot_xy(
             plot=plot,
-            X=nb.dimensionless.X,
-            Y=nb.dimensionless.Y,
+            X=xn,
+            Y=yn,
             color=color,
             width=1.5,
             style=Qt.PenStyle.DashLine,

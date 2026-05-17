@@ -14,7 +14,6 @@ def plot_xy(
     plot: PlotItem,
     X: np.ndarray,
     Y: np.ndarray,
-    *,
     clear: bool = False,
     color: tuple = (50,120,220),
     width: int = 2,
