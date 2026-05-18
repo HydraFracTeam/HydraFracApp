@@ -1,19 +1,9 @@
-DEFAULT_DERIVATIVE_MODES = [
-    "linear",
-    "loglog"
-]
-
-DEFAULT_METRICS = [
-    "L2",
-    "L1",
-    "integral"
-]
-
+# solver/config.py
+# Configuration constants for the solver
+DEFAULT_BEAM_WIDTH = 5
 DEFAULT_N_POINTS = 200
-
-# beam search параметры
-SKIN_BEAM_WIDTH = 3
-N_BEAM_WIDTH = 3
-
-# bayesian optimization
-BAYES_ITER = 40
+DEFAULT_K_BOUNDS = (1e-5, 100)
+DEFAULT_L_BOUNDS = (1e-3, 100)
+DEFAULT_W_FIXED = None
+DEFAULT_N_FIXED = None
+DEFAULT_H_KNOWN = None
