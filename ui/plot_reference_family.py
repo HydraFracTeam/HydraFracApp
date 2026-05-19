@@ -38,7 +38,6 @@ def plot_reference_family(
     xf = factual_dimensionless.X
     yf = factual_dimensionless.Y
 
-    print(f"xf:{xf}")
     plot_xy(
         plot=plot,
         X=xf,
