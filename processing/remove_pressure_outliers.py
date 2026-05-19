@@ -8,9 +8,25 @@ from core.models import (
 
 def remove_pressure_outliers(
     data: ProcessingDynamicData,
-    window: int = 7,
-    threshold: float = 7.0,
+    window_percent: float = 0.01,
+    relative_threshold: float = 0.015,
 ) -> ProcessingOperationResult:
+
+    """
+    Удаление выбросов давления с помощью:
+    - локанной медианы,
+    - относительного отклонения,
+    - мягкой коррекции выбросов.
+
+    Вместо полного удаления точки
+    выброс ограничивается относительно
+    локального тренда.
+
+    Это позволяет:
+    - сохранить локальную форму кривой,
+    - уменьшить влияние spike-артефактов,
+    - избежать фазовых искажений derivative.
+    """
 
     if data is None:
         raise ValueError(
@@ -20,6 +36,30 @@ def remove_pressure_outliers(
     P = data.P.copy()
 
     mask_valid = np.isfinite(P)
+    n_valid = int(mask_valid.sum())
+
+    window = int(
+        n_valid * window_percent
+    )
+
+    # минимально разумное окно
+    window = max(window, 5)
+
+    # окно должно быть нечетным
+    if window % 2 == 0:
+        window += 1
+        
+    if n_valid < 5:
+        return ProcessingOperationResult(
+            data=data,
+            operation="pressure_outlier_removal",
+            details=[
+                (
+                    "Удаление выбросов давления: "
+                    "недостаточно точек для обработки"
+                ),
+            ],
+        )
 
     if mask_valid.sum() < window:
 
@@ -37,6 +77,8 @@ def remove_pressure_outliers(
         P,
         dtype=bool,
     )
+
+    corrected_count = 0
 
     for i in range(len(P)):
 
@@ -61,34 +103,43 @@ def remove_pressure_outliers(
 
         median = np.median(window_vals)
 
-        mad = np.median(
-            np.abs(window_vals - median)
-        )
-
-        if mad == 0:
+        if median == 0:
             continue
 
-        score = (
-            np.abs(P[i] - median) / mad
+        relative_deviation = (
+            np.abs(P[i] - median)
+            / np.abs(median)
         )
 
-        if score > threshold:
+        if relative_deviation > relative_threshold:
+
             outlier_mask[i] = True
 
-    # сохраняем первую точку
-    outlier_mask[0] = False
+            corrected_count += 1
 
-    n_outliers = int(
-        np.sum(outlier_mask)
-    )
+            # Мягкая коррекция выброса
+
+            sign = np.sign(
+                P[i] - median
+            )
+
+            P[i] = (
+                median
+                + sign
+                * relative_threshold
+                * np.abs(median)
+            )
+
+    # первая точка не трогаем
+    outlier_mask[0] = False
 
     total_points = len(P)
 
     outlier_percent = (
-        n_outliers / total_points * 100
+        corrected_count
+        / total_points
+        * 100
     )
-
-    P[outlier_mask] = np.nan
 
     data.P = P
 
@@ -96,11 +147,21 @@ def remove_pressure_outliers(
     data.is_Q_interpolated = False
 
     details = [
-        f"Удаление выбросов давления: найдено выбросов = {n_outliers}",
-        f"Удаление выбросов давления: удалено {outlier_percent:.2f}% ряда",
         (
             "Удаление выбросов давления: "
-            f"window={window}, threshold={threshold}"
+            f"скорректировано выбросов = {corrected_count}"
+        ),
+
+        (
+            "Удаление выбросов давления: "
+            f"изменено {outlier_percent:.2f}% ряда"
+        ),
+
+        (
+            "Удаление выбросов давления: "
+            f"window={window} "
+            f"({window_percent:.1%} ряда), "
+            f"relative_threshold={relative_threshold:.3f}"
         ),
     ]
 
