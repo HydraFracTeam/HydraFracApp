@@ -360,6 +360,8 @@ class SessionWidget(QWidget):
             "P0": self.ui.reservoir_pressure_spinbox.value(),
         }
 
+        if static_dict["P0"] < np.max(self.app_state.raw_dynamic_data.P):
+            raise ValueError("Пластовое давление скважины должно быть больше всех значений ряда давления P. Проверьте параметр.")
         # если дебит был не в динамике 
         if not self.app_state.raw_dynamic_data.is_Q_in_dynamic_input:
             static_dict["Q_constant"] = self.ui.debit_doubleSpinBox.value()
