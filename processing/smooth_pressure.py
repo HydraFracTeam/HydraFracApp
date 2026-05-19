@@ -48,9 +48,7 @@ def smooth_pressure(
 
         n = len(P_valid)
 
-        window_length = int(
-            max(9, n * 0.01)
-        )
+        window_length = int(n * 0.05)
 
         if window_length % 2 == 0:
             window_length += 1
