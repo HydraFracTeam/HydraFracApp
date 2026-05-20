@@ -9,6 +9,7 @@ import pandas as pd
 from typing import List, Tuple, Optional, Dict
 import logging
 import os
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,8 @@ class ReferenceRepository:
             
             sample = {
                 'dynamic': dynamic_df,
+                'x': dynamic_df['X'].to_numpy(dtype=float),
+                'y': dynamic_df['Y'].to_numpy(dtype=float),
                 'h': row['h'],
                 'N': row['N'],
                 'W': row['W'],
@@ -107,51 +110,82 @@ class ReferenceRepository:
         _global_db_path = self.db_path
         
         return skin_library
-    
-    def get_available_skins(self) -> List[float]:
-        """Get list of available skin values."""
+
+    @lru_cache(maxsize=1)
+    def _cached_available_skins(self) -> Tuple[float, ...]:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT DISTINCT Skin FROM statics ORDER BY Skin")
-        skins = [row[0] for row in cursor.fetchall()]
-        # Не закрываем соединение - оставляем для повторного использования
-        return skins
+        return tuple(float(row[0]) for row in cursor.fetchall())
 
-    def get_available_N_values(self) -> List[int]:
-        """Get sorted list of unique N values from database."""
+    @lru_cache(maxsize=1)
+    def _cached_available_N_values(self) -> Tuple[int, ...]:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT DISTINCT N FROM statics WHERE N IS NOT NULL ORDER BY N")
-        return [int(row[0]) for row in cursor.fetchall()]
-    
-    def get_curves_by_skin(self, skin: float) -> List[int]:
-        """Get curve IDs for a specific skin value."""
+        return tuple(int(row[0]) for row in cursor.fetchall())
+
+    @lru_cache(maxsize=512)
+    def _cached_curve_ids_by_skin(self, skin: float) -> Tuple[int, ...]:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT curve_id FROM statics WHERE ABS(Skin - ?) < 0.001 ORDER BY curve_id",
-            (skin,)
+            (skin,),
         )
-        curve_ids = [row[0] for row in cursor.fetchall()]
-        # Не закрываем соединение - оставляем для повторного использования
-        return curve_ids
-    
-    def get_reference_curve(self, curve_id: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Get reference curve by ID."""
+        return tuple(int(row[0]) for row in cursor.fetchall())
+
+    @lru_cache(maxsize=2048)
+    def _cached_reference_curve(self, curve_id: int) -> Tuple[Tuple[float, ...], Tuple[float, ...]]:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT X, Y FROM dynamics WHERE curve_id = ? ORDER BY elemIdx",
-            (curve_id,)
+            (curve_id,),
         )
         rows = cursor.fetchall()
-        # Не закрываем соединение - оставляем для повторного использования
-        
         if not rows:
             raise ValueError(f"No curve found with curve_id {curve_id}")
-        
-        x = np.array([row[0] for row in rows])
-        y = np.array([row[1] for row in rows])
+        x = tuple(float(row[0]) for row in rows)
+        y = tuple(float(row[1]) for row in rows)
+        return x, y
+
+    @lru_cache(maxsize=2048)
+    def _cached_static_params(self, curve_id: int) -> Tuple[float, float, float, float, int]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",
+            (curve_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError(f"No static params found for curve_id {curve_id}")
+        return (
+            float(row["Skin"]),
+            float(row["L"]),
+            float(row["W"]),
+            float(row["h"]),
+            int(row["N"]),
+        )
+    
+    def get_available_skins(self) -> List[float]:
+        """Get list of available skin values."""
+        return list(self._cached_available_skins())
+
+    def get_available_N_values(self) -> List[int]:
+        """Get sorted list of unique N values from database."""
+        return list(self._cached_available_N_values())
+    
+    def get_curves_by_skin(self, skin: float) -> List[int]:
+        """Get curve IDs for a specific skin value."""
+        return list(self._cached_curve_ids_by_skin(round(float(skin), 6)))
+    
+    def get_reference_curve(self, curve_id: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Get reference curve by ID."""
+        x, y = self._cached_reference_curve(int(curve_id))
+        x = np.array(x, dtype=float)
+        y = np.array(y, dtype=float)
         return x, y
 
     def get_static_params(self, curve_id: int) -> dict:
@@ -161,21 +195,13 @@ class ReferenceRepository:
         Returns:
             dict с ключами: Skin, L, W, h, N
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT Skin, L, W, h, N FROM statics WHERE curve_id = ?",
-            (curve_id,)
-        )
-        row = cursor.fetchone()
-        if row is None:
-            raise ValueError(f"No static params found for curve_id {curve_id}")
+        skin, length, width, height, n_value = self._cached_static_params(int(curve_id))
         return {
-            'Skin': row['Skin'],
-            'L': row['L'],
-            'W': row['W'],
-            'h': row['h'],
-            'N': row['N'],
+            'Skin': skin,
+            'L': length,
+            'W': width,
+            'h': height,
+            'N': n_value,
         }
 
     def find_best_curve(

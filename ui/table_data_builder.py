@@ -1,5 +1,7 @@
 #ui/table_data_builder.py
 import pandas as pd
+import numpy as np
+import hashlib
 
 from PySide6.QtGui import (
     QStandardItemModel,
@@ -16,10 +18,31 @@ from core.models import (
     DimensionlessData,
 )
 
+_dimensional_df_cache = {}
+_dimensionless_df_cache = {}
+
+
+def _array_cache_key(arr: np.ndarray | None) -> tuple:
+    if arr is None:
+        return ("none",)
+    arr = np.ascontiguousarray(np.asarray(arr))
+    digest = hashlib.blake2b(arr.view(np.uint8), digest_size=16).hexdigest()
+    return (str(arr.dtype), arr.shape, digest)
+
 
 def build_dimensional_dataframe(
     processing: ProcessingDynamicData,
 ) -> pd.DataFrame:
+    cache_key = (
+        _array_cache_key(processing.t),
+        _array_cache_key(processing.P),
+        _array_cache_key(processing.dP),
+        _array_cache_key(processing.Q),
+        _array_cache_key(processing.burde),
+    )
+    cached = _dimensional_df_cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     data = {
         "t": processing.t,
@@ -31,12 +54,22 @@ def build_dimensional_dataframe(
 
     df = pd.DataFrame(data)
 
-    return df.dropna(axis=1, how="all")
+    df = df.dropna(axis=1, how="all")
+    _dimensional_df_cache.clear()
+    _dimensional_df_cache[cache_key] = df
+    return df
 
 
 def build_dimensionless_dataframe(
     dimensionless: DimensionlessData,
 ) -> pd.DataFrame:
+    cache_key = (
+        _array_cache_key(dimensionless.X),
+        _array_cache_key(dimensionless.Y),
+    )
+    cached = _dimensionless_df_cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     data = {
         "X": dimensionless.X,
@@ -45,7 +78,10 @@ def build_dimensionless_dataframe(
 
     df = pd.DataFrame(data)
 
-    return df.dropna(axis=1, how="all")
+    df = df.dropna(axis=1, how="all")
+    _dimensionless_df_cache.clear()
+    _dimensionless_df_cache[cache_key] = df
+    return df
 
 
 def update_data_table_view(

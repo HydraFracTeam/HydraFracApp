@@ -80,7 +80,10 @@ def _all_ref_x_median(skin_library):
     first_x = []
     for samples in skin_library.values():
         for s in samples:
-            x = s["dynamic"]["X"].values
+            x = s.get("x")
+            if x is None:
+                x = s["dynamic"]["X"].to_numpy(dtype=float)
+                s["x"] = x
             if len(x) > 0 and x[0] > 0:
                 first_x.append(x[0])
     return float(np.median(first_x)) if first_x else 1.0
@@ -171,6 +174,7 @@ class ReservoirSolver:
         self._y_fact = None
         self._x_fact_raw = None
         self._y_fact_raw = None
+        self._sample_misfit_cache = {}
 
         # Медиана первых X по всей библиотеке — верхняя граница stretch.
         # Вычисляется один раз при инициализации.
@@ -190,6 +194,7 @@ class ReservoirSolver:
         # Сырые данные сохраняем для align_fact_to_ref
         self._x_fact_raw = x_fact
         self._y_fact_raw = y_fact
+        self._sample_misfit_cache.clear()
 
         x_grid = np.logspace(
             np.log10(x_fact.min()), np.log10(x_fact.max()), n_points
@@ -248,8 +253,25 @@ class ReservoirSolver:
 
         Возвращает (F_penalized, shift_x, stretch).
         """
-        x_ref = sample["dynamic"]["X"].values.astype(float)
-        y_ref = sample["dynamic"]["Y"].values.astype(float)
+        cache_key = (
+            sample.get("skin"),
+            sample.get("N"),
+            sample.get("W"),
+            sample.get("L"),
+            sample.get("a/L"),
+            sample.get("h"),
+        )
+        cached = self._sample_misfit_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        x_ref = sample.get("x")
+        y_ref = sample.get("y")
+        if x_ref is None or y_ref is None:
+            x_ref = sample["dynamic"]["X"].values.astype(float)
+            y_ref = sample["dynamic"]["Y"].values.astype(float)
+            sample["x"] = x_ref
+            sample["y"] = y_ref
 
         # stretch_max для этого референса: медиана библиотеки / первая точка этого ref
         try:
@@ -257,7 +279,9 @@ class ReservoirSolver:
         except IndexError:
             # Нет положительных X в референсе
             logger.warning(f"Референс {sample.get('skin', '?')}/{sample.get('N', '?')} не имеет положительных X")
-            return np.inf, 1.0, 1.0
+            result = (np.inf, 1.0, 1.0)
+            self._sample_misfit_cache[cache_key] = result
+            return result
         
         stretch_max = self._lib_x0_median / x_ref_0 if x_ref_0 > 0 else 1.0
         stretch_max = max(stretch_max, 1.0)  # минимум 1 — без сжатия ниже якорной точки
@@ -273,7 +297,9 @@ class ReservoirSolver:
         x_ref_pos = x_ref[x_ref > 0]
         if len(x_al_pos) == 0 or len(x_ref_pos) == 0:
             logger.debug(f"Нет положительных X для {sample.get('skin', '?')}/{sample.get('N', '?')}")
-            return np.inf, shift_x, stretch
+            result = (np.inf, shift_x, stretch)
+            self._sample_misfit_cache[cache_key] = result
+            return result
 
         xmin = max(x_al_pos.min(), x_ref_pos.min())
         xmax = min(x_al_pos.max(), x_ref_pos.max())
@@ -298,7 +324,9 @@ class ReservoirSolver:
             # Возвращаем с штрафом, но не inf - чтобы хоть что-то выбрать
             F = 1e10
 
-        return F / max(overlap, 0.1), shift_x, stretch
+        result = (F / max(overlap, 0.1), shift_x, stretch)
+        self._sample_misfit_cache[cache_key] = result
+        return result
 
     # ------------------------------------------------------------------
     # Шаги 1–4 (аналогичны предыдущей версии, но с _sample_misfit v2)
@@ -444,10 +472,10 @@ class ReservoirSolver:
             alpha = _choose_alpha(best_F, F_nb)
 
             if 0.0 < alpha < 1.0:
-                x1 = L_best_s[best_L]["dynamic"]["X"].values.astype(float)
-                y1 = L_best_s[best_L]["dynamic"]["Y"].values.astype(float)
-                x2 = s_nb["dynamic"]["X"].values.astype(float)
-                y2 = s_nb["dynamic"]["Y"].values.astype(float)
+                x1 = L_best_s[best_L].get("x")
+                y1 = L_best_s[best_L].get("y")
+                x2 = s_nb.get("x")
+                y2 = s_nb.get("y")
 
                 xb = np.logspace(
                     np.log10(max(x1.min(), x2.min())),
@@ -489,8 +517,8 @@ class ReservoirSolver:
             # Возвращаем None вместо падения
             return None, None, None, None, None, None, np.inf
         
-        x_b = L_best_s[best_L]["dynamic"]["X"].values.astype(float)
-        y_b = L_best_s[best_L]["dynamic"]["Y"].values.astype(float)
+        x_b = L_best_s[best_L].get("x")
+        y_b = L_best_s[best_L].get("y")
         return best_L, L_best_s[best_L]["a/L"], x_b, y_b, best_sx, best_sy, best_F
 
     # ------------------------------------------------------------------
@@ -540,7 +568,7 @@ class ReservoirSolver:
 
         Медиана робастна к выбросам на краях кривой.
         """
-        x_ref  = best_sample["dynamic"]["X"].values.astype(float)
+        x_ref  = best_sample.get("x")
         x_ref  = x_ref[x_ref > 0]
         x_fact = self._x_fact_raw[self._x_fact_raw > 0]
 

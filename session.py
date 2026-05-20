@@ -8,6 +8,7 @@ from PySide6.QtGui import QStandardItemModel, QStandardItem
 import sys
 import logging
 import numpy as np
+import hashlib
 from typing import List, Dict, Tuple
 from pyqtgraph.dockarea import Dock
 
@@ -104,6 +105,8 @@ class SessionWidget(QWidget):
         self.solver_worker = None
         self.ref_repo = ReferenceRepository(db_path=settings.REF_DATABASE_PATH)
         self.session_number = session_number
+        self._processing_cache: Dict[Tuple, object] = {}
+        self._dimensionless_cache: Dict[Tuple, DimensionlessData] = {}
         # Заполняем комбобокс количества трещин из БД
         self._populate_N_combobox()
         
@@ -147,6 +150,72 @@ class SessionWidget(QWidget):
         self.ui.add_settings_button.clicked.connect(self.on_runtime_settings_changed)
         # Создаем интерфейс с DockArea
         setup_dock_area(self)
+
+    @staticmethod
+    def _array_cache_key(arr: np.ndarray | None) -> Tuple:
+        if arr is None:
+            return ("none",)
+        arr = np.ascontiguousarray(np.asarray(arr))
+        digest = hashlib.blake2b(arr.view(np.uint8), digest_size=16).hexdigest()
+        return (str(arr.dtype), arr.shape, digest)
+
+    def _processing_cache_key(self) -> Tuple | None:
+        static = self.app_state.static_params
+        if static is None:
+            return None
+
+        current = self.app_state.processing_dynamic_data
+        if current is None:
+            raw = self.app_state.raw_dynamic_data
+            if raw is None:
+                return None
+            return (
+                "raw",
+                float(static.P0),
+                float(static.N),
+                self._array_cache_key(raw.t),
+                self._array_cache_key(raw.P),
+                self._array_cache_key(raw.Q),
+            )
+
+        return (
+            "current",
+            float(static.P0),
+            float(static.N),
+            bool(current.is_Q_normalized),
+            bool(current.is_P_interpolated),
+            bool(current.is_Q_interpolated),
+            bool(current.is_t_extrapolated),
+            bool(current.is_P_extrapolated),
+            bool(current.is_Q_extrapolated),
+            self._array_cache_key(current.t),
+            self._array_cache_key(current.P),
+            self._array_cache_key(current.Q),
+            self._array_cache_key(current.P_interpolated_mask),
+            self._array_cache_key(current.Q_interpolated_mask),
+            self._array_cache_key(current.t_extrapolated_mask),
+            self._array_cache_key(current.P_extrapolated_mask),
+            self._array_cache_key(current.Q_extrapolated_mask),
+        )
+
+    def _dimensionless_cache_key(self) -> Tuple | None:
+        dyn = self.app_state.processing_dynamic_data
+        static = self.app_state.static_params
+        solver = self.app_state.solver_state
+        if dyn is None or static is None or solver is None:
+            return None
+        return (
+            float(solver.k_current),
+            float(solver.L_current),
+            float(static.h),
+            float(static.mu),
+            float(static.B),
+            float(static.phi),
+            float(static.ct),
+            self._array_cache_key(dyn.dP),
+            self._array_cache_key(dyn.Q),
+            self._array_cache_key(dyn.t),
+        )
     
     # ЗАПОЛНЕНИЕ КОМБОБОКСОВ
     def _populate_N_combobox(self):
@@ -973,11 +1042,16 @@ class SessionWidget(QWidget):
     
     ## ВЫЗОВ РАСЧЕТОВ
     def recalculate_dimensionless(self):
+        cache_key = self._dimensionless_cache_key()
+        if cache_key is not None and cache_key in self._dimensionless_cache:
+            self.app_state.dimensionless = self._dimensionless_cache[cache_key]
+            return
+
         dyn = self.app_state.processing_dynamic_data
         static = self.app_state.static_params
         solver = self.app_state.solver_state
 
-        self.app_state.dimensionless = DimensionlessData(
+        dimensionless = DimensionlessData(
             X=calculate_x(
                 delta_p=dyn.dP,
                 k=solver.k_current,
@@ -998,23 +1072,36 @@ class SessionWidget(QWidget):
                 L=solver.L_current,
             )
         )
+        self.app_state.dimensionless = dimensionless
+        if cache_key is not None:
+            self._dimensionless_cache = {cache_key: dimensionless}
         
     def recalculate_processing_dynamic_data(self):
+        cache_key = self._processing_cache_key()
+        if cache_key is not None and cache_key in self._processing_cache:
+            self.app_state.processing_dynamic_data = self._processing_cache[cache_key]
+            return
+
         raw = self.app_state.raw_dynamic_data
         static = self.app_state.static_params
         dyn = self.app_state.processing_dynamic_data
         
-        self.app_state.processing_dynamic_data = rebuild_processing_dynamic(
+        processing = rebuild_processing_dynamic(
             raw_data=raw,
             static_data=static,
             current_processing_data=dyn,
         )
+        self.app_state.processing_dynamic_data = processing
+        if cache_key is not None:
+            self._processing_cache = {cache_key: processing}
     
         
         
     ## ПРОЧЕЕ / ВСПОМОГАТЕЛЬНОЕ
     def reset_all_data(self): # сброс всех данных
         self.app_state = AppState()
+        self._processing_cache.clear()
+        self._dimensionless_cache.clear()
         self.enable_load_controls()
         self.disable_static_controls()
         self.disable_threshold_controls()
