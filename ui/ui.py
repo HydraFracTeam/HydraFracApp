@@ -579,7 +579,7 @@ class Ui_MainWindow(object):
         self.downsample_points_per_decade_spinbox.setReadOnly(False)
         self.downsample_points_per_decade_spinbox.setDecimals(0)
         self.downsample_points_per_decade_spinbox.setMinimum(20.000000000000000)
-        self.downsample_points_per_decade_spinbox.setMaximum(1000000.000000000000000)
+        self.downsample_points_per_decade_spinbox.setMaximum(100000.000000000000000)
         self.downsample_points_per_decade_spinbox.setValue(400.000000000000000)
 
         self.horizontalLayout_21.addWidget(self.downsample_points_per_decade_spinbox)

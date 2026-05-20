@@ -31,8 +31,16 @@ def extrapolate_time(
             "Недостаточно точек для экстраполяции."
         )
 
-    dt = float(np.mean(np.diff(t)))
+    positive = t[t > 0]
 
+    if len(positive) < 2:
+        raise ValueError(
+            "Недостаточно положительных точек времени."
+        )
+
+    # сетка
+
+    dt = float(np.median(np.diff(t[-20:])))
     n = len(t)
 
     n_new = max(
@@ -41,13 +49,13 @@ def extrapolate_time(
     )
 
     t_last = t[-1]
+    t_new = (t_last + dt * np.arange(1, n_new + 1))
 
-    t_new = (
-        t_last
-        + dt * np.arange(1, n_new + 1)
-    )
-
-    t_ext = np.concatenate([t, t_new])
+    # Объединение
+    t_ext = np.concatenate([
+        t,
+        t_new,
+    ])
 
     mask = np.zeros_like(
         t_ext,
@@ -67,9 +75,19 @@ def extrapolate_time(
     )
 
     details = [
-        f"Экстраполяция времени: добавлено точек = {n_new}",
-        f"Экстраполяция времени: добавлено {extrapolated_percent:.2f}% ряда",
-        f"Экстраполяция времени: средний шаг времени = {dt:.4f}",
+        (
+            "Экстраполяция времени: "
+            f"добавлено точек = {n_new}"
+        ),
+        (
+            "Экстраполяция времени: "
+            f"добавлено "
+            f"{extrapolated_percent:.2f}% ряда"
+        ),
+        (
+            "Экстраполяция времени: "
+            f"средний шаг = {dt:.6f}"
+        ),
     ]
 
     return ProcessingOperationResult(
