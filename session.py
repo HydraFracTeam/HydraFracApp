@@ -1039,14 +1039,13 @@ class SessionWidget(QWidget):
         rs = self.app_state.runtime_settings
         rs.downsample_threshold = self.ui.downsample_treshold_spinbox.value()
         rs.downsample_points_per_decade = self.ui.downsample_points_per_decade_spinbox.value()
+        rs.overlap_percentage = self.ui.overlap_percantage_spinbox.value()
 
     def on_runtime_settings_changed(self):
 
         self.sync_runtime_settings_from_ui()
-
-        self.report.info(
-            "Runtime settings обновлены"
-        )
+        print(self.app_state.runtime_settings.overlap_percentage)
+        self.report.info("Runtime settings обновлены")
         try:
             self.refresh_ui()
         except:

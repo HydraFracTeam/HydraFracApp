@@ -55,7 +55,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scroll_panel = QWidget()
         self.scroll_panel.setObjectName(u"scroll_panel")
-        self.scroll_panel.setGeometry(QRect(0, 0, 504, 1429))
+        self.scroll_panel.setGeometry(QRect(0, -543, 504, 1464))
         self.verticalLayout = QVBoxLayout(self.scroll_panel)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.groupBox_3 = QGroupBox(self.scroll_panel)
@@ -579,13 +579,35 @@ class Ui_MainWindow(object):
         self.downsample_points_per_decade_spinbox.setReadOnly(False)
         self.downsample_points_per_decade_spinbox.setDecimals(0)
         self.downsample_points_per_decade_spinbox.setMinimum(20.000000000000000)
-        self.downsample_points_per_decade_spinbox.setMaximum(100000.000000000000000)
+        self.downsample_points_per_decade_spinbox.setMaximum(1000000.000000000000000)
         self.downsample_points_per_decade_spinbox.setValue(400.000000000000000)
 
         self.horizontalLayout_21.addWidget(self.downsample_points_per_decade_spinbox)
 
 
         self.verticalLayout_4.addLayout(self.horizontalLayout_21)
+
+        self.horizontalLayout_29 = QHBoxLayout()
+        self.horizontalLayout_29.setObjectName(u"horizontalLayout_29")
+        self.overlap_percantage_label = QLabel(self.add_settings_block)
+        self.overlap_percantage_label.setObjectName(u"overlap_percantage_label")
+
+        self.horizontalLayout_29.addWidget(self.overlap_percantage_label)
+
+        self.overlap_percantage_spinbox = QDoubleSpinBox(self.add_settings_block)
+        self.overlap_percantage_spinbox.setObjectName(u"overlap_percantage_spinbox")
+        self.overlap_percantage_spinbox.setEnabled(True)
+        self.overlap_percantage_spinbox.setMaximumSize(QSize(16777215, 16777215))
+        self.overlap_percantage_spinbox.setReadOnly(False)
+        self.overlap_percantage_spinbox.setDecimals(0)
+        self.overlap_percantage_spinbox.setMinimum(1.000000000000000)
+        self.overlap_percantage_spinbox.setMaximum(100.000000000000000)
+        self.overlap_percantage_spinbox.setValue(5.000000000000000)
+
+        self.horizontalLayout_29.addWidget(self.overlap_percantage_spinbox)
+
+
+        self.verticalLayout_4.addLayout(self.horizontalLayout_29)
 
         self.add_settings_button = QPushButton(self.add_settings_block)
         self.add_settings_button.setObjectName(u"add_settings_button")
@@ -796,6 +818,7 @@ class Ui_MainWindow(object):
         self.add_settings_block.setTitle(QCoreApplication.translate("MainWindow", u"\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", None))
         self.downsample_treshold_label.setText(QCoreApplication.translate("MainWindow", u"\u041a\u043e\u043b-\u0432\u043e \u0442\u043e\u0447\u0435\u043a \u0434\u043b\u044f \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f \u0433\u0440\u0430\u0444\u0438\u043a\u0430", None))
         self.downsample_points_per_decade_label.setText(QCoreApplication.translate("MainWindow", u"\u041a\u043e\u043b-\u0432\u043e \u0442\u043e\u0447\u0435\u043a \u043d\u0430 \u0434\u0435\u043a\u0430\u0434\u0435 log-log \u0433\u0440\u0430\u0444\u0438\u043a\u0430", None))
+        self.overlap_percantage_label.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u0446\u0435\u043d\u0442 \u043f\u0435\u0440\u0435\u043a\u0440\u044b\u0442\u0438\u044f \u043a\u0440\u0438\u0432\u044b\u0445, %", None))
         self.add_settings_button.setText(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438", None))
         self.preprocessing_groupBoxs.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u0438 \u043d\u0430\u0434 \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u0435\u043c \u0438 \u0434\u0435\u0431\u0438\u0442\u043e\u043c", None))
         self.interp_btn.setText(QCoreApplication.translate("MainWindow", u"\u0412\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u043f\u0440\u043e\u043f\u0443\u0441\u043a\u0438", None))

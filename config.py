@@ -12,5 +12,7 @@ class Settings:
     MIN_POINTS_FOR_t: int = 20
     DOWNSAMPLE_THRESHOLD: int = 5000
     DOWNSAMPLE_POINTS_PER_DECADE: int = 400
+    
+    OVERLAP_PERCENTAGE = 5
 
 settings = Settings()

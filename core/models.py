@@ -101,3 +101,4 @@ class ReferenceCurves:
 class RuntimeSettings:
     downsample_threshold: int = settings.DOWNSAMPLE_THRESHOLD
     downsample_points_per_decade: int = settings.DOWNSAMPLE_POINTS_PER_DECADE
+    overlap_percentage: int = settings.OVERLAP_PERCENTAGE
