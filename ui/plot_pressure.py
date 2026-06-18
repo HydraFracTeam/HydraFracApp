@@ -2,6 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import PlotItem
 
+from core.models import RuntimeSettings
 from ui.downsampling import downsample_for_plot
 
 
@@ -12,13 +13,20 @@ def plot_pressure(
     P_interpolated_mask: np.ndarray | None = None,
     P_extrapolated_mask: np.ndarray | None = None,
     clear: bool = True,
+    runtime_settings: RuntimeSettings | None = None,
 ):
     if clear:
         plot.clear()
+        
+    threshold = None
+    if runtime_settings is not None:
+        threshold = runtime_settings.downsample_threshold
 
     plot.setTitle("Давление во времени")
     plot.setLabel("bottom", "Время, ч")
     plot.setLabel("left", "Давление, кгс/см²")
+    plot.getAxis("bottom").enableAutoSIPrefix(False)
+    plot.getAxis("left").enableAutoSIPrefix(False)
     plot.showGrid(x=True, y=True)
 
     if plot.legend is None:
@@ -28,10 +36,11 @@ def plot_pressure(
         return
 
     t, P, interp_mask, extra_mask = downsample_for_plot(
-        t,
-        P,
-        P_interpolated_mask,
-        P_extrapolated_mask,
+        x=t,
+        y=P,
+        interp_mask=P_interpolated_mask,
+        extrap_mask=P_extrapolated_mask,
+        threshold=threshold,   
     )
 
     plot.plot(

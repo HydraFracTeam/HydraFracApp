@@ -42,7 +42,6 @@ def load_state(path: str) -> AppState:
 
         state = AppState()
 
-
         # RAW
         raw_path = tmp / "raw.parquet"
         if raw_path.exists():

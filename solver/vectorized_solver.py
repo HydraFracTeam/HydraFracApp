@@ -19,6 +19,40 @@ from .misfit import misfit_shape
 from .beam_search import select_top_k
 from .derivative import compute_derivative
 from .metrics import compute_metric
+from .solver_new import align_fact_to_ref
+
+
+def _choose_alpha(f1, f2):
+    """
+    Коэффициент смешивания по относительной разности ошибок:
+      < 30%  → берём ближайшую (0 или 1)
+      30-40% → линейная интерполяция
+      > 40%  → середина (0.5)
+    """
+    if not (np.isfinite(f1) and np.isfinite(f2)):
+        return 0.0 if np.isfinite(f1) else 1.0
+    denom = max(f1, f2)
+    if denom == 0:
+        return 0.0
+    rel = abs(f1 - f2) / denom
+    if rel < 0.30:
+        return 0.0 if f1 <= f2 else 1.0
+    elif rel > 0.40:
+        return 0.5
+    else:
+        t = (rel - 0.30) / 0.10
+        return t * 0.5
+
+
+def _blend_curves(y1, y2, alpha):
+    """
+    Линейная смесь двух кривых: alpha=0 → y1, alpha=1 → y2.
+    nan-точки одной кривой заполняются из другой.
+    """
+    out = (1.0 - alpha) * y1 + alpha * y2
+    out = np.where(np.isnan(y1), y2, out)
+    out = np.where(np.isnan(y2), y1, out)
+    return out
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +155,9 @@ def _misfit_batch(
 
     for i in np.where(valid_mask)[0]:
         mv = mask_valid[i]
+        # Filter both fact and reference to points where both are valid
+        x_common = xg[mv]
+        y1g_f = y1g[mv]
         y2g = Y_ri[i][mv]
 
         med1 = np.median(y1g)
@@ -128,13 +165,13 @@ def _misfit_batch(
         if med1 <= 0 or med2 <= 0:
             continue
 
-        y1n = y1g / med1
+        y1n = y1g_f / med1
         y2n = y2g / med2
 
-        _, a1 = compute_derivative(xg, y1n, derivative_mode)
-        _, a2 = compute_derivative(xg, y2n, derivative_mode)
+        _, a1 = compute_derivative(x_common, y1n, derivative_mode)
+        _, a2 = compute_derivative(x_common, y2n, derivative_mode)
 
-        F[i] = compute_metric(a1, a2, metric_type, X=xg)
+        F[i] = compute_metric(a1, a2, metric_type, X=x_common)
 
     # Штраф за малое перекрытие
     F = F / np.maximum(overlap_per_sample, 0.1)
@@ -186,7 +223,7 @@ class VectorizedLibrary:
             y_clean = y[mask]
             X_clean_list.append(x_clean)
             Y_clean_list.append(y_clean)
-            skin_list.append(float(s.get("skin", 0.0)))
+            skin_list.append(float(s["skin"]))
             L_list.append(float(s.get("L", 0.0)))
             aL_list.append(float(s.get("a/L", 0.0)))
             N_list.append(int(s.get("N", 1)))
@@ -291,7 +328,9 @@ class VectorizedLibrary:
         samples = []
         for skin_val, slist in skin_library.items():
             for s in slist:
-                samples.append(s)
+                s_copy = dict(s)
+                s_copy["skin"] = skin_val  # Ensure skin is in sample
+                samples.append(s_copy)
         return samples
 
 
@@ -362,6 +401,9 @@ class VectorizedReservoirSolver:
     ) -> np.ndarray:
         """
         Вычисляет взвешенную невязку для батча индексов референсов.
+
+        Фильтрация по W: если W_fixed задан и != 0, выбираются только
+        образцы с W == W_fixed. W_scale_factor вычисляется позже.
 
         Векторизованная замена последовательных вызовов _sample_misfit.
         """
@@ -683,8 +725,8 @@ class VectorizedReservoirSolver:
 
         best_L, best_aL, x_ref_f, y_ref_f, _, _, misfit_f = result_L
 
-        # Шаг 5 — k (скалярно)
-        logger.info("\n--- Шаг 5: k ---")
+        # Compute W_scale_factor from best sample
+        # Find the best sample index to get its W value
         L_diffs = np.abs(self.vlib.L_arr - best_L)
         skin_b  = self.vlib.skin_arr
         n_b     = self.vlib.N_arr
@@ -694,11 +736,19 @@ class VectorizedReservoirSolver:
         else:
             L_diffs[:] = np.inf
         best_sample_idx = int(np.argmin(L_diffs))
+        best_W = float(self.vlib.W_arr[best_sample_idx])
+
+        if W_fixed is not None and W_fixed > 0 and best_W > 0:
+            W_scale_factor = best_W / W_fixed
+        else:
+            W_scale_factor = 1.0
+
+        # Шаг 5 — k (скалярно)
+        logger.info("\n--- Шаг 5: k ---")
         X_ref_best = self.vlib.X_ref[best_sample_idx]
 
         k_opt = self.recover_k(X_ref_best, k_ref=5.0, k_bounds=k_bounds)
         best_h = float(self.vlib.h_arr[best_sample_idx])
-        best_W = float(self.vlib.W_arr[best_sample_idx])
 
         logger.info(
             f"\nРЕЗУЛЬТАТ: Skin={best_skin:.4f}, k={k_opt:.6f} мД, "
@@ -714,6 +764,7 @@ class VectorizedReservoirSolver:
             "aL":    best_aL,
             "h":     best_h,
             "W":     best_W,
+            "W_scale_factor": W_scale_factor,
             "params": {"k": k_opt, "xf": best_L},
             "misfit": misfit_f,
             "x_ref_matched": x_ref_f,

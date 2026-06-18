@@ -372,14 +372,25 @@ class ReservoirSolver:
             logger.info(f"  a/L={al:.4f} → misfit={al_scores[al]:.6f}")
         return top_aL, al_scores
 
-    def select_L(self, samples, skin, N, top_aL):
+    def select_L(
+        self,
+        samples,
+        skin,
+        N,
+        top_aL,
+        xf_bounds,
+    ):
         relevant = [s for s in samples
                     if s["skin"] == skin and s["N"] == N
                     and s["a/L"] in top_aL]
 
+        L_min, L_max = xf_bounds
         L_dict = {}
         for s in relevant:
-            L_dict.setdefault(s["L"], []).append(s)
+            L = s["L"]
+            if not (L_min <= L <= L_max):
+                continue
+            L_dict.setdefault(L, []).append(s)
 
         L_values = sorted(L_dict.keys())
         if not L_values:
@@ -466,7 +477,10 @@ class ReservoirSolver:
                     f"alpha={alpha:.2f} → L={L_bl:.2f}, F={F_bl:.6f}"
                 )
 
-                if F_bl <= best_F:
+                if (
+                    F_bl <= best_F
+                    and L_min <= L_bl <= L_max
+                ):
                     return L_bl, aL_bl, xb, yb, sx_bl, sy_bl, F_bl
 
         # Проверяем, что best_s существует
@@ -611,7 +625,7 @@ class ReservoirSolver:
             if x_ref_f is None:
                 raise ValueError("Не удалось подобрать L - нет подходящих образцов в библиотеке.")
 
-        # Шаг 5: k из горизонтального сдвига X
+# Шаг 5: k из горизонтального сдвига X
         logger.info("\n--- Шаг 5: k ---")
         best_sample_for_k = None
         for s in samples:
@@ -726,7 +740,8 @@ class ReservoirSolver:
                 samples,
                 skin,
                 N,
-                top_aL
+                top_aL,
+                xf_bounds=xf_bounds,
             )
 
             if L is None:

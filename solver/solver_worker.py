@@ -31,7 +31,8 @@ class SolverWorker(QObject):
                 k_bounds=(thresholds.k_min, thresholds.k_max),
                 L_bounds=(thresholds.L_min, thresholds.L_max),
             )
-
+            results = sorted(results, key=lambda x: x.error_value)
+            
             self.finished.emit(results)
 
         except Exception as e:

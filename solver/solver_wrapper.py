@@ -174,6 +174,12 @@ class Solver:
             f"N={result['N']}, error={result['misfit']:.6f}"
         )
 
+        W_scale_factor = result.get("W_scale_factor", 1.0)
+
+        # For non-vectorized solver, compute W_scale_factor
+        if W_scale_factor == 1.0 and W_fixed is not None and W_fixed > 0 and result.get("W"):
+            W_scale_factor = result["W"] / W_fixed
+
         return SolverResult(
             S_opt=float(result["skin"]),
             k_opt=k_opt,
@@ -181,7 +187,7 @@ class Solver:
             aL_opt=float(result["aL"]),
             N_opt=float(result["N"]) if result["N"] is not None else None,
             error_value=float(error_val),
-            W_scale_factor=1.0,
+            W_scale_factor=W_scale_factor,
         )
 
     def solve_top5(

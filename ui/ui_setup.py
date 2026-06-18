@@ -100,10 +100,10 @@ def setup_dock_area(app) -> None:
     
     
     dock_area.addDock(dock_p)
-    dock_area.addDock(dock_q, 'right', dock_p)
+    dock_area.addDock(dock_q, 'bottom', dock_p)
     dock_area.addDock(dock_xy, 'bottom', dock_p)
     dock_area.addDock(dock_b, 'bottom', dock_q)
 
-    # Скрываем все доки при старте (отложенно, чтобы DockArea успел проинициализироваться)
-    for d in [dock_q, dock_xy, dock_b]:
+    # Скрываем xy, burde при старте (отложенно, чтобы DockArea успел проинициализироваться)
+    for d in [dock_xy, dock_b]:
         QTimer.singleShot(0, d.hide)

@@ -8,4 +8,8 @@ def compute_metric(alpha1, alpha2, metric_type="integral", X=None):
     else:  # integral
         if X is None:
             X = np.arange(len(alpha1), dtype=float)
-        return np.trapz(np.abs(alpha1 - alpha2), X)
+        # np.trapz was renamed to np.trapezoid in NumPy 2.0
+        trapz_fn = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+        if trapz_fn is None:
+            return np.trapz(np.abs(alpha1 - alpha2), X)
+        return trapz_fn(np.abs(alpha1 - alpha2), X)

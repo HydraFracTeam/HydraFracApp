@@ -14,7 +14,7 @@ class RawDynamicDataInput(BaseModel):
     P: List[float]
     Q: Optional[List[float]] = None
 
-    MIN_POINTS: int = settings.MIN_POINTS
+    MIN_POINTS: int = settings.MIN_POINTS_FOR_t
 
     @model_validator(mode="after")
     def validate_lengths(self):

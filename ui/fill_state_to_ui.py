@@ -13,7 +13,7 @@ def fill_static_params(ui, state: AppState):
     ui.porosity_spinBox.setValue(s.phi)
     ui.volume_coef_spinBox.setValue(s.B)
     ui.compressibility_spinBox.setValue(s.ct)
-    ui.frac_amount_spinBox.setValue(s.N)
+    ui.frac_amount_combobox.setCurrentText(str(s.N))
     ui.reservoir_pressure_spinbox.setValue(s.P0)
 
     if s.Q_constant is not None:
