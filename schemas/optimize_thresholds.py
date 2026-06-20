@@ -9,11 +9,20 @@ class OptimizeThresholds(BaseModel):
     k_min: float
     k_max: float
 
+    misfit_threshold: float = 0.1
+
     @field_validator("L_min", "L_max", "k_min", "k_max")
     @classmethod
     def must_be_positive(cls, v):
         if v <= 0:
             raise ValueError("Границы оптимизации должны быть положительными")
+        return v
+
+    @field_validator("misfit_threshold")
+    @classmethod
+    def must_be_non_negative(cls, v):
+        if v < 0:
+            raise ValueError("Порог misfit не может быть отрицательным")
         return v
 
     @model_validator(mode="after")

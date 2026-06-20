@@ -127,6 +127,7 @@ class SessionWidget(QWidget):
             self.ui.frac_length_max_border_doubleSpinBox,
             self.ui.permeability_min_border_doubleSpinBox,
             self.ui.permeability_max_border_doubleSpinBox,
+            self.ui.misfit_threshold_doubleSpinBox,
             self.ui.insert_thresholds_button,
         ]
         self._calculation_controls: List[QWidget] = [
@@ -428,6 +429,7 @@ class SessionWidget(QWidget):
             "L_max": self.ui.frac_length_max_border_doubleSpinBox.value(),
             "k_min": self.ui.permeability_min_border_doubleSpinBox.value(),
             "k_max": self.ui.permeability_max_border_doubleSpinBox.value(),
+            "misfit_threshold": self.ui.misfit_threshold_doubleSpinBox.value(),
         }
 
         return OptimizeThresholds(**optimize_dict)
@@ -464,7 +466,8 @@ class SessionWidget(QWidget):
         
         self.report.success(
             f"Границы оптимизации: L [{thresholds.L_min}..{thresholds.L_max}] м, "
-            f"k [{thresholds.k_min}..{thresholds.k_max}] мД"
+            f"k [{thresholds.k_min}..{thresholds.k_max}] мД, "
+            f"misfit_threshold = {thresholds.misfit_threshold}"
         )
         self.report.success("Ввод данных успешен. Проверить динамические данные можете на вкладке 'Табличное представление'")
         self.refresh_ui() # обновление таблицы
@@ -632,17 +635,28 @@ class SessionWidget(QWidget):
         self.enable_calculation_controls()
         self.ui.calculate_opt_parameters_button.setEnabled(True)
         
-        if not results:
+        misfit_threshold = self.app_state.optimize_thresholds.misfit_threshold
+        filtered = [r for r in results if r.error_value <= misfit_threshold]
+        
+        if not filtered:
+            best_misfit = min(r.error_value for r in results) if results else float('inf')
             QMessageBox.warning(
                 self,
                 "Нет решения",
-                "Не найдено ни одного подходящего решения.\n"
-                "Проверьте параметры (длину скважины, кол-во трещин, диапазоны ограничений)."
+                f"Лучшее misfit = {best_misfit:.6f} превышает порог {misfit_threshold}.\n"
+                "Проверьте параметры (длину скважины, кол-во трещин, диапазоны ограничений, порог misfit)."
             )
             return
 
-        result: SolverResult = results[0]
-        self.report.solver(f"Результат солвера получены. \nЛучшее решение: \nSkin-фактор: {result.S_opt};\nПроницаемость k: {result.k_opt};\nПолудлина трещины: {result.L_opt}.")
+        result: SolverResult = filtered[0]
+        self.report.solver(
+            f"Результат солвера получены. \n"
+            f"Лучшее решение: \n"
+            f"Skin-фактор: {result.S_opt};\n"
+            f"Проницаемость k: {result.k_opt};\n"
+            f"Полудлина трещины: {result.L_opt};\n"
+            f"Misfit: {result.error_value:.6f} (порог: {misfit_threshold})."
+        )
         
         self.ui.skin_result_spinbox.setValue(result.S_opt)
         self.ui.permeability_result_spinbox.setValue(result.k_opt)

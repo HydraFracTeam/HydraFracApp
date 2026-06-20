@@ -426,6 +426,21 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_19.addWidget(self.permeability_max_border_doubleSpinBox)
 
+        self.misfit_threshold_label = QLabel(self.groupBox_5)
+        self.misfit_threshold_label.setObjectName(u"misfit_threshold_label")
+
+        self.horizontalLayout_19.addWidget(self.misfit_threshold_label)
+
+        self.misfit_threshold_doubleSpinBox = QDoubleSpinBox(self.groupBox_5)
+        self.misfit_threshold_doubleSpinBox.setObjectName(u"misfit_threshold_doubleSpinBox")
+        self.misfit_threshold_doubleSpinBox.setEnabled(False)
+        self.misfit_threshold_doubleSpinBox.setDecimals(4)
+        self.misfit_threshold_doubleSpinBox.setMinimum(0.000100000000000)
+        self.misfit_threshold_doubleSpinBox.setMaximum(10.000000000000000)
+        self.misfit_threshold_doubleSpinBox.setValue(0.100000000000000)
+
+        self.horizontalLayout_19.addWidget(self.misfit_threshold_doubleSpinBox)
+
 
         self.verticalLayout_12.addWidget(self.groupBox_5)
 

@@ -30,6 +30,7 @@ def fill_thresholds(ui, state: AppState):
     ui.frac_length_max_border_doubleSpinBox.setValue(t.L_max)
     ui.permeability_min_border_doubleSpinBox.setValue(t.k_min)
     ui.permeability_max_border_doubleSpinBox.setValue(t.k_max)
+    ui.misfit_threshold_doubleSpinBox.setValue(t.misfit_threshold)
 
 
 def fill_solver(ui, state: AppState):

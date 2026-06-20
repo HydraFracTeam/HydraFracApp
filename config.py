@@ -14,5 +14,6 @@ class Settings:
     DOWNSAMPLE_POINTS_PER_DECADE: int = 400
     
     OVERLAP_PERCENTAGE = 5
+    MISFIT_THRESHOLD: float = 0.1
 
 settings = Settings()
