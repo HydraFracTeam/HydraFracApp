@@ -55,7 +55,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scroll_panel = QWidget()
         self.scroll_panel.setObjectName(u"scroll_panel")
-        self.scroll_panel.setGeometry(QRect(0, -543, 504, 1464))
+        self.scroll_panel.setGeometry(QRect(0, 0, 504, 1536))
         self.verticalLayout = QVBoxLayout(self.scroll_panel)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.groupBox_3 = QGroupBox(self.scroll_panel)
@@ -395,7 +395,28 @@ class Ui_MainWindow(object):
         self.groupBox_5 = QGroupBox(self.optimize_params_block)
         self.groupBox_5.setObjectName(u"groupBox_5")
         self.groupBox_5.setMinimumSize(QSize(0, 0))
-        self.horizontalLayout_19 = QHBoxLayout(self.groupBox_5)
+        self.verticalLayout_5 = QVBoxLayout(self.groupBox_5)
+        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
+        self.horizontalLayout_30 = QHBoxLayout()
+        self.horizontalLayout_30.setObjectName(u"horizontalLayout_30")
+        self.permeability_max_border_label = QLabel(self.groupBox_5)
+        self.permeability_max_border_label.setObjectName(u"permeability_max_border_label")
+
+        self.horizontalLayout_30.addWidget(self.permeability_max_border_label)
+
+        self.permeability_max_border_doubleSpinBox = QDoubleSpinBox(self.groupBox_5)
+        self.permeability_max_border_doubleSpinBox.setObjectName(u"permeability_max_border_doubleSpinBox")
+        self.permeability_max_border_doubleSpinBox.setEnabled(False)
+        self.permeability_max_border_doubleSpinBox.setDecimals(2)
+        self.permeability_max_border_doubleSpinBox.setMaximum(10.000000000000000)
+        self.permeability_max_border_doubleSpinBox.setValue(10.000000000000000)
+
+        self.horizontalLayout_30.addWidget(self.permeability_max_border_doubleSpinBox)
+
+
+        self.verticalLayout_5.addLayout(self.horizontalLayout_30)
+
+        self.horizontalLayout_19 = QHBoxLayout()
         self.horizontalLayout_19.setObjectName(u"horizontalLayout_19")
         self.permeability_min_border_label = QLabel(self.groupBox_5)
         self.permeability_min_border_label.setObjectName(u"permeability_min_border_label")
@@ -407,31 +428,26 @@ class Ui_MainWindow(object):
         self.permeability_min_border_doubleSpinBox.setEnabled(False)
         self.permeability_min_border_doubleSpinBox.setDecimals(2)
         self.permeability_min_border_doubleSpinBox.setMinimum(0.010000000000000)
-        self.permeability_min_border_doubleSpinBox.setMaximum(1000.000000000000000)
+        self.permeability_min_border_doubleSpinBox.setMaximum(10.000000000000000)
+        self.permeability_min_border_doubleSpinBox.setSingleStep(0.010000000000000)
         self.permeability_min_border_doubleSpinBox.setValue(0.010000000000000)
 
         self.horizontalLayout_19.addWidget(self.permeability_min_border_doubleSpinBox)
 
-        self.permeability_max_border_label = QLabel(self.groupBox_5)
-        self.permeability_max_border_label.setObjectName(u"permeability_max_border_label")
 
-        self.horizontalLayout_19.addWidget(self.permeability_max_border_label)
+        self.verticalLayout_5.addLayout(self.horizontalLayout_19)
 
-        self.permeability_max_border_doubleSpinBox = QDoubleSpinBox(self.groupBox_5)
-        self.permeability_max_border_doubleSpinBox.setObjectName(u"permeability_max_border_doubleSpinBox")
-        self.permeability_max_border_doubleSpinBox.setEnabled(False)
-        self.permeability_max_border_doubleSpinBox.setDecimals(2)
-        self.permeability_max_border_doubleSpinBox.setMaximum(10.000000000000000)
-        self.permeability_max_border_doubleSpinBox.setValue(10.000000000000000)
 
-        self.horizontalLayout_19.addWidget(self.permeability_max_border_doubleSpinBox)
+        self.verticalLayout_12.addWidget(self.groupBox_5)
 
-        self.misfit_threshold_label = QLabel(self.groupBox_5)
+        self.horizontalLayout_31 = QHBoxLayout()
+        self.horizontalLayout_31.setObjectName(u"horizontalLayout_31")
+        self.misfit_threshold_label = QLabel(self.optimize_params_block)
         self.misfit_threshold_label.setObjectName(u"misfit_threshold_label")
 
-        self.horizontalLayout_19.addWidget(self.misfit_threshold_label)
+        self.horizontalLayout_31.addWidget(self.misfit_threshold_label)
 
-        self.misfit_threshold_doubleSpinBox = QDoubleSpinBox(self.groupBox_5)
+        self.misfit_threshold_doubleSpinBox = QDoubleSpinBox(self.optimize_params_block)
         self.misfit_threshold_doubleSpinBox.setObjectName(u"misfit_threshold_doubleSpinBox")
         self.misfit_threshold_doubleSpinBox.setEnabled(False)
         self.misfit_threshold_doubleSpinBox.setDecimals(4)
@@ -439,10 +455,10 @@ class Ui_MainWindow(object):
         self.misfit_threshold_doubleSpinBox.setMaximum(10.000000000000000)
         self.misfit_threshold_doubleSpinBox.setValue(0.100000000000000)
 
-        self.horizontalLayout_19.addWidget(self.misfit_threshold_doubleSpinBox)
+        self.horizontalLayout_31.addWidget(self.misfit_threshold_doubleSpinBox)
 
 
-        self.verticalLayout_12.addWidget(self.groupBox_5)
+        self.verticalLayout_12.addLayout(self.horizontalLayout_31)
 
         self.insert_thresholds_button = QPushButton(self.optimize_params_block)
         self.insert_thresholds_button.setObjectName(u"insert_thresholds_button")
@@ -820,8 +836,9 @@ class Ui_MainWindow(object):
         self.frac_length_min_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0438\u043d. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
         self.frac_length_max_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0430\u043a\u0441. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
         self.groupBox_5.setTitle(QCoreApplication.translate("MainWindow", u"\u041f\u0440\u043e\u043d\u0438\u0446\u0430\u0435\u043c\u043e\u0441\u0442\u044c, \u043c\u0414", None))
-        self.permeability_min_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0438\u043d. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
         self.permeability_max_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0430\u043a\u0441. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
+        self.permeability_min_border_label.setText(QCoreApplication.translate("MainWindow", u"\u041c\u0438\u043d. \u0433\u0440\u0430\u043d\u0438\u0446\u0430", None))
+        self.misfit_threshold_label.setText(QCoreApplication.translate("MainWindow", u"\u041f\u043e\u0440\u043e\u0433 misfit", None))
         self.insert_thresholds_button.setText(QCoreApplication.translate("MainWindow", u"\u0412\u0432\u0435\u0441\u0442\u0438 \u0433\u0440\u0430\u043d\u0438\u0446\u044b \u043e\u043f\u0442\u0438\u043c\u0438\u0437\u0430\u0446\u0438\u0438", None))
         self.calculate_block.setTitle(QCoreApplication.translate("MainWindow", u"\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u044f \u0440\u0430\u0441\u0447\u0435\u0442\u0430", None))
         self.calculate_opt_parameters_button.setText(QCoreApplication.translate("MainWindow", u"\u0420\u0430\u0441\u0447\u0438\u0442\u0430\u0442\u044c \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b", None))
