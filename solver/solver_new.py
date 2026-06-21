@@ -160,9 +160,10 @@ class ReservoirSolver:
         4: select_L      — перебор L + интерполяция между соседями
     """
 
-    def __init__(self, skin_library, progress_callback=None):
+    def __init__(self, skin_library, progress_callback=None, overlap_threshold=0.0):
         self.skin_library = skin_library
         self.progress_callback = progress_callback
+        self.overlap_threshold = overlap_threshold
 
         self.derivative_mode = "linear"
         self.metric_type = "integral"
@@ -280,11 +281,8 @@ class ReservoirSolver:
         span = x_al_pos.max() - x_al_pos.min()
         overlap = (xmax - xmin) / span if span > 0 else 0.0
 
-        if overlap < 0.05:
-            # Логарифмируем только для отладки - не блокируем
-            logger.debug(f"Малое перекрытие {overlap:.2%} для {sample.get('skin', '?')}/{sample.get('N', '?')}: "
-                        f"x_al=[{x_al_pos.min():.4f}, {x_al_pos.max():.4f}], "
-                        f"x_ref=[{x_ref_pos.min():.4f}, {x_ref_pos.max():.4f}]")
+        if overlap < self.overlap_threshold:
+            return np.inf, shift_x, stretch
 
         F = misfit_shape(
             x_al, y_al, x_ref, y_ref,

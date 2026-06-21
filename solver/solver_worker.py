@@ -14,7 +14,10 @@ class SolverWorker(QObject):
 
     def run(self):
         try:
-            solver = Solver()
+            overlap_percentage = getattr(
+                self.app_state.runtime_settings, "overlap_percentage", 0
+            )
+            solver = Solver(overlap_percentage=overlap_percentage)
 
             static_params = self.app_state.static_params
             thresholds = self.app_state.optimize_thresholds

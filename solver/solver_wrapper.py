@@ -61,14 +61,16 @@ class Solver:
     что и в оригинале.
     """
 
-    def __init__(self, db_path: str = None, use_vectorized: bool = False):
+    def __init__(self, db_path: str = None, use_vectorized: bool = False, overlap_percentage: float = 5.0):
         self.reference_repo = ReferenceRepository(db_path)
         self.use_vectorized = use_vectorized
+        self.overlap_percentage = overlap_percentage
         self._reservoir_solver: Optional[ReservoirSolver] = None
         self._vectorized_lib: Optional[VectorizedLibrary] = None
         self._vectorized_solver: Optional[VectorizedReservoirSolver] = None
 
     def _ensure_library_loaded(self):
+        overlap_threshold = self.overlap_percentage / 100.0
         if self.use_vectorized:
             if self._vectorized_lib is None:
                 skin_library = self.reference_repo.get_skin_library()
@@ -76,14 +78,18 @@ class Solver:
                     raise ValueError("Библиотека референсных кривых пуста")
                 logger.info("Сборка векторизованной библиотеки…")
                 self._vectorized_lib = build_vectorized_library(skin_library)
-                self._vectorized_solver = VectorizedReservoirSolver(self._vectorized_lib)
+                self._vectorized_solver = VectorizedReservoirSolver(
+                    self._vectorized_lib, overlap_threshold=overlap_threshold
+                )
                 logger.info("Векторизованная библиотека готова.")
         else:
             if self._reservoir_solver is None:
                 skin_library = self.reference_repo.get_skin_library()
                 if not skin_library:
                     raise ValueError("Библиотека референсных кривых пуста")
-                self._reservoir_solver = ReservoirSolver(skin_library)
+                self._reservoir_solver = ReservoirSolver(
+                    skin_library, overlap_threshold=overlap_threshold
+                )
 
     def solve_from_dimensionless(
         self,

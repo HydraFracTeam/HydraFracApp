@@ -582,6 +582,7 @@ class SessionWidget(QWidget):
     ## РАЗДЕЛ РАСЧЁТА ОПТИМАЛЬНЫХ ПАРАМЕТРОВ
     def calculate_optimal_parameters(self):
         """Execute the solver to find optimal S, k, L parameters."""
+        self.sync_runtime_settings_from_ui()
         # Проверяем наличие всех необходимых данных
         if self.app_state.processing_dynamic_data is None:
             QMessageBox.warning(self, "Ошибка", "Сначала загрузите и обработайте динамические данные.")

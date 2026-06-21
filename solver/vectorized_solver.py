@@ -352,9 +352,10 @@ class VectorizedReservoirSolver:
       - шаг 5 (k): скалярный, как в оригинале
     """
 
-    def __init__(self, vlib: VectorizedLibrary, progress_callback=None):
+    def __init__(self, vlib: VectorizedLibrary, progress_callback=None, overlap_threshold=0.0):
         self.vlib = vlib
         self.progress_callback = progress_callback
+        self.overlap_threshold = overlap_threshold
         self.derivative_mode = "linear"
         self.metric_type = "integral"
 
@@ -450,6 +451,10 @@ class VectorizedReservoirSolver:
         # Взвешивание по h
         h_weights = _h_weight_batch(self.vlib.h_arr[indices], None)
         F_w = np.where(np.isfinite(F_raw), F_raw / h_weights, np.inf)
+
+        # Пороговая фильтрация по перекрытию
+        if self.overlap_threshold > 0:
+            F_w[overlap < self.overlap_threshold] = np.inf
 
         return F_w
 
